@@ -35,7 +35,7 @@ type ScoreInput = {
   committed: bigint;
   expectedCalls: bigint;
   supporters: number;
-  deadlineUnix: number;
+  deadlineUnix: bigint;
 };
 
 type Opportunity = {
@@ -47,7 +47,7 @@ type Opportunity = {
   supporters: number;
   expectedCalls: string;
   maxUnitPrice: string;
-  deadline: string;
+  deadline: string | null;
   status: string;
   creator: string;
   builder: string;
@@ -246,9 +246,10 @@ function percentileNumber(values: number[], value: number): number {
   return below / (sorted.length - 1);
 }
 
-export function scoreOpportunity(item: ScoreInput, pool: ScoreInput[], nowUnix: number): number {
-  const horizon = 30 * 24 * 3600;
-  const freshness = Math.min(1, Math.max(0, item.deadlineUnix - nowUnix) / horizon);
+export function scoreOpportunity(item: ScoreInput, pool: ScoreInput[], nowUnix: bigint): number {
+  const horizon = 30n * 24n * 3600n;
+  const remaining = item.deadlineUnix > nowUnix ? item.deadlineUnix - nowUnix : 0n;
+  const freshness = Number(remaining > horizon ? horizon : remaining) / Number(horizon);
   return 0.5 * percentileBig(pool.map((p) => p.committed), item.committed)
     + 0.25 * percentileBig(pool.map((p) => p.expectedCalls), item.expectedCalls)
     + 0.15 * percentileNumber(pool.map((p) => p.supporters), item.supporters)
@@ -260,23 +261,23 @@ function raw(entry: IndexEntry): ScoreInput {
     committed: entry.data.committed,
     expectedCalls: entry.data.expectedCalls,
     supporters: Number(entry.data.supporterCount),
-    deadlineUnix: Number(entry.data.deadline),
+    deadlineUnix: entry.data.deadline,
   };
 }
 
-function effectiveStatus(entry: IndexEntry, nowUnix: number): string {
+function effectiveStatus(entry: IndexEntry, nowUnix: bigint): string {
   const base = statusLabel(Number(entry.data.status));
   if (base === "FULFILLED" || base === "CLOSED") return base;
   if (base === "SUBMITTED" && entry.quorumReached) return "READY";
-  if (nowUnix >= Number(entry.data.deadline)) {
+  if (nowUnix >= entry.data.deadline) {
     if (base === "OPEN") return "EXPIRED";
-    if (base === "SUBMITTED" && (nowUnix >= Number(entry.data.reviewEndsAt) || entry.candidateRejected)) return "EXPIRED";
+    if (base === "SUBMITTED" && (nowUnix >= entry.data.reviewEndsAt || entry.candidateRejected)) return "EXPIRED";
   }
   if (base === "SUBMITTED" && entry.candidateRejected) return "REJECTED";
   return base;
 }
 
-function toOpportunity(entry: IndexEntry, pool: ScoreInput[], nowUnix: number): Opportunity {
+function toOpportunity(entry: IndexEntry, pool: ScoreInput[], nowUnix: bigint): Opportunity {
   return {
     demandId: entry.demandId.toString(),
     capability: entry.data.capability,
@@ -340,7 +341,7 @@ export function validateOpportunitiesInput(body: unknown): { ok: true; value: Qu
   return { ok: true, value: { minBounty, minSupporters, status, sort: sort as QueryInput["sort"], limit } };
 }
 
-export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = Math.floor(Date.now() / 1000)): Opportunity[] {
+export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000))): Opportunity[] {
   const filtered = entries.filter((entry) => {
     if (entry.data.committed < input.minBounty) return false;
     if (Number(entry.data.supporterCount) < input.minSupporters) return false;
@@ -352,7 +353,15 @@ export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix 
   scored.sort((a, b) => {
     if (input.sort === "supporters") return b.supporters - a.supporters || compareIdDesc(a.demandId, b.demandId);
     if (input.sort === "calls") return compareBigDesc(BigInt(a.expectedCalls), BigInt(b.expectedCalls)) || compareIdDesc(a.demandId, b.demandId);
-    if (input.sort === "deadline") return Date.parse(a.deadline) - Date.parse(b.deadline) || compareIdDesc(a.demandId, b.demandId);
+    if (input.sort === "deadline") {
+      if (a.deadline === null || b.deadline === null) {
+        if (a.deadline !== b.deadline) return a.deadline === null ? 1 : -1;
+      } else {
+        const byDeadline = Date.parse(a.deadline) - Date.parse(b.deadline);
+        if (byDeadline !== 0) return byDeadline;
+      }
+      return compareIdDesc(a.demandId, b.demandId);
+    }
     if (input.sort === "score") return b.score - a.score || compareIdDesc(a.demandId, b.demandId);
     return compareBigDesc(parseUnits6(a.currentEscrow), parseUnits6(b.currentEscrow)) || compareIdDesc(a.demandId, b.demandId);
   });

@@ -2,9 +2,8 @@
 
 ## Evidence setup
 
-Have ready:
-- X Layer contract address
-- deployment tx
+Before a public submission, have ready:
+- deployed X Layer Testnet contract address and receipt
 - requester wallet A
 - supporter wallet B
 - builder wallet C
@@ -12,6 +11,8 @@ Have ready:
 - public backend HTTPS URL
 - public frontend HTTPS URL
 - OKX.AI listing/integration URL
+
+The contract, local browser E2E, and UNMET x402 seller flow have already passed on X Layer Testnet (`eip155:1952`); their receipts and balance deltas are in [STATUS.md](STATUS.md). Public URLs and OKX.AI publication remain deferred. The official Mock Merchant's seller replay is a separate known failure; do not present it as the UNMET seller flow.
 
 ## 1 — Problem
 
@@ -57,9 +58,11 @@ After quorum, finalize.
 
 Show:
 - successful finalize receipt
-- builder token balance increase
-- protocol treasury fee increase
+- builder token balance increase from explicit approver funds, net of fee
+- protocol treasury fee calculated from the approved amount
 - demand state `FULFILLED`
+
+Funds from non-approvers remain refundable after fulfillment. Refunds do not reduce historical supporter count or aggregate expected calls.
 
 ## 7 — Safety fixture
 
@@ -71,18 +74,21 @@ Briefly show an expired non-approved demand where each supporter can pull only i
 
 ## Submission evidence checklist
 
-- [ ] contract tests pass
-- [ ] backend tests pass
-- [ ] TS typecheck passes
-- [ ] frontend production build passes
-- [ ] testnet deploy receipt
-- [ ] immutable config readback
-- [ ] create/support receipts + readback
-- [ ] real 402 challenge
-- [ ] real paid replay + settlement evidence
-- [ ] submit/approve/finalize receipts
-- [ ] payout/fee balance deltas
-- [ ] refund receipt
+- [x] contract tests pass
+- [x] backend tests pass
+- [x] TS typecheck passes
+- [x] frontend production build passes
+- [x] testnet deploy receipt
+- [x] immutable config readback
+- [x] create/support receipts + readback
+- [x] real UNMET 402 challenge
+- [x] real UNMET paid replay + settlement evidence
+- [x] submit/approve/finalize receipts
+- [x] payout/fee balance deltas
+- [x] refund receipt
+- [x] browser E2E against the deployed testnet contract
 - [ ] public URLs
 - [ ] OKX.AI listing/integration URL
-- [ ] security disclaimer
+- [x] security disclaimer
+
+The checked items are supported by the receipts and readbacks in [STATUS.md](STATUS.md). The official Mock Merchant seller replay is a separate known failure and does not substitute for or negate the passing UNMET seller flow. Public URLs and OKX.AI publication remain deferred.

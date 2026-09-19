@@ -2,9 +2,10 @@
 
 ## 1. Toolchain
 
-Required:
+Required verified WSL toolchain:
 - Bun `1.4.2`
-- stable Foundry with Solidity `0.8.37`
+- Foundry Forge `1.8.3`
+- Solidity `0.8.37`
 
 ```bash
 bun --version
@@ -14,7 +15,7 @@ forge --version
 ## 2. Dependency install
 
 ```bash
-bun install
+bun install --frozen-lockfile
 
 cd backend
 git clone --depth 1 --branch v5.6.1 https://github.com/OpenZeppelin/openzeppelin-contracts.git lib/openzeppelin-contracts
@@ -22,7 +23,7 @@ git clone --depth 1 --branch v1.16.1 https://github.com/foundry-rs/forge-std.git
 cd ..
 ```
 
-OpenZeppelin `5.6.1` is deliberately used as the audited npm `latest` baseline for this release.
+OpenZeppelin Contracts v5.6.1 and forge-std v1.16.1 are checked out at the dependency tags used by this repository. This version statement is not an independent security audit.
 
 ## 3. Pre-deploy verification
 
@@ -38,6 +39,9 @@ Do not deploy if any command fails.
 Contract tests must cover at minimum:
 - exact duplicate prevention
 - fixed ceil-rounded quorum snapshot
+- approver and rejection weights use pre-submission commitments
+- a supporter cannot approve and reject the same submission
+- rejection threshold, `SubmissionRejected` event and reopen progress reset
 - refund cannot shrink quorum
 - approval nonce isolation
 - replacement of expired demand
@@ -107,11 +111,13 @@ Prove with successful receipts + state readback:
 1. create demand
 2. second wallet supports
 3. builder submits
-4. supporters approve to threshold
-5. finalize
-6. builder balance delta is correct
-7. treasury fee delta is correct
-8. status is `FULFILLED`
+4. supporters approve or reject; verify rejection threshold and progress reset on reopen
+5. supporters approve to threshold
+6. finalize
+7. only explicit approver funds are settled: approved amount less fee to builder, fee to treasury
+8. non-approver funds remain in escrow and can be individually refunded after fulfillment
+9. aggregate supporter count and expected calls remain historical after refunds
+10. status is `FULFILLED`
 
 Separate fixture:
 1. create demand
@@ -133,6 +139,8 @@ OKX_PASSPHRASE=...
 OKX_PAY_TO=0x...
 OPPORTUNITY_PRICE=0.01
 ```
+
+`OKX_PAY_TO` is canonical. `PAY_TO_ADDRESS` remains a legacy fallback for existing local configuration; use `OKX_PAY_TO` for new setup.
 
 The server intentionally refuses to start the paid production path without these credentials.
 
@@ -172,6 +180,7 @@ Set `VITE_*` values at build time. Never place secret/private OKX or wallet cred
 Browser verification:
 - connect wallet
 - detect wrong chain
+- show loading/error states distinctly from an empty demand board
 - create demand and wait receipt
 - board readback
 - support from second wallet

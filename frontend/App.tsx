@@ -33,11 +33,16 @@ type Tab = "board" | "create" | "activity";
 export default function App() {
   const [tab, setTab] = useState<Tab>("board");
   const [board, setBoard] = useState<DemandView[]>([]);
+  const [boardLoading, setBoardLoading] = useState(true);
+  const [boardLoadError, setBoardLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
   const [account, setAccount] = useState<Address | null>(null);
   const [chainOk, setChainOk] = useState(true);
   const [support, setSupport] = useState<SupportView>(EMPTY_SUPPORT);
+  const [supportKey, setSupportKey] = useState("");
+  const [supportState, setSupportState] = useState<"loading" | "ready" | "error">("ready");
   const [mySupportIds, setMySupportIds] = useState<Set<string>>(new Set());
+  const [activityState, setActivityState] = useState<"loading" | "ready" | "error">("ready");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [lastTx, setLastTx] = useState<Hash | null>(null);
@@ -46,15 +51,23 @@ export default function App() {
     () => selectedId === null ? null : board.find((d) => d.demandId === selectedId) ?? null,
     [board, selectedId],
   );
+  const supportIdentity = account && selectedId !== null ? `${account.toLowerCase()}:${selectedId}` : "";
+  const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
+  const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
 
   const refresh = useCallback(async (): Promise<boolean> => {
+    setBoardLoading(true);
+    setBoardLoadError(false);
     try {
       const latestBoard = await readBoard();
       setBoard(latestBoard);
       return true;
     } catch (error) {
       setStatus(errorMessage(error));
+      setBoardLoadError(true);
       return false;
+    } finally {
+      setBoardLoading(false);
     }
   }, []);
 
@@ -78,33 +91,61 @@ export default function App() {
   useEffect(() => {
     if (!account || selectedId === null) {
       setSupport(EMPTY_SUPPORT);
+      setSupportKey("");
+      setSupportState("ready");
       return;
     }
     let live = true;
+    const key = `${account.toLowerCase()}:${selectedId}`;
+    setSupport(EMPTY_SUPPORT);
+    setSupportKey(key);
+    setSupportState("loading");
     void readSupport(selectedId, account)
-      .then((value) => { if (live) setSupport(value); })
-      .catch(() => { if (live) setSupport(EMPTY_SUPPORT); });
+      .then((value) => { if (live) { setSupport(value); setSupportState("ready"); } })
+      .catch((error: unknown) => {
+        if (live) {
+          setSupport(EMPTY_SUPPORT);
+          setSupportState("error");
+          setStatus(errorMessage(error));
+        }
+      });
     return () => { live = false; };
   }, [account, selectedId, board]);
 
   useEffect(() => {
-    if (!account || board.length === 0) {
+    if (!account) {
       setMySupportIds(new Set());
+      setActivityState("ready");
+      return;
+    }
+    if (boardLoading) {
+      setActivityState("loading");
+      return;
+    }
+    if (board.length === 0) {
+      setMySupportIds(new Set());
+      setActivityState("ready");
       return;
     }
     let live = true;
+    setMySupportIds(new Set());
+    setActivityState("loading");
     void Promise.all(board.map(async (d) => {
-      try {
-        const own = await readSupport(d.demandId, account);
-        return own.commitment > 0n ? d.demandId.toString() : null;
-      } catch {
-        return null;
-      }
+      const own = await readSupport(d.demandId, account);
+      return own.commitment > 0n ? d.demandId.toString() : null;
     })).then((ids) => {
-      if (live) setMySupportIds(new Set(ids.filter((id): id is string => id !== null)));
+      if (live) {
+        setMySupportIds(new Set(ids.filter((id): id is string => id !== null)));
+        setActivityState("ready");
+      }
+    }).catch((error: unknown) => {
+      if (live) {
+        setActivityState("error");
+        setStatus(errorMessage(error));
+      }
     });
     return () => { live = false; };
-  }, [account, board]);
+  }, [account, board, boardLoading]);
 
   async function connect() {
     setBusy(true);
@@ -122,6 +163,7 @@ export default function App() {
 
   async function run(label: string, fn: () => Promise<Hash>) {
     setBusy(true);
+    if (account && selectedId !== null) setSupportState("loading");
     setStatus(`${label} pending`);
     setLastTx(null);
     try {
@@ -167,7 +209,7 @@ export default function App() {
         <button className={tab === "board" ? "active" : ""} onClick={() => setTab("board")}>Demand</button>
         <button className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>Create</button>
         <button className={tab === "activity" ? "active" : ""} onClick={() => setTab("activity")}>My Activity</button>
-        <button onClick={() => void refresh()} disabled={busy}>Refresh chain</button>
+        <button onClick={() => { if (account && selectedId !== null) setSupportState("loading"); void refresh(); }} disabled={busy}>Refresh chain</button>
       </nav>
 
       {!DEMAND_CONTRACT && <div className="status-line err">VITE_DEMAND_CONTRACT is not configured.</div>}
@@ -175,12 +217,14 @@ export default function App() {
       {status && <div className={`status-line ${status.includes("success") ? "ok" : status.includes("pending") ? "" : "err"}`}>{status}</div>}
       {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
 
-      {tab === "board" && <DemandBoard board={board} onSelect={setSelectedId} />}
+      {tab === "board" && <DemandBoard board={board} loading={boardLoading} loadError={boardLoadError} onSelect={setSelectedId} />}
       {tab === "create" && <CreatePanel busy={busy} run={run} />}
       {tab === "activity" && (
         <section className="panel">
           <h2>My Activity</h2>
           {!account ? <div className="empty">Connect a wallet to see your activity.</div>
+            : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
+            : activityState === "error" ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
             : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
             : <div className="grid">{activity.map((d) => <DemandCard key={d.demandId.toString()} demand={d} onSelect={setSelectedId} />)}</div>}
         </section>
@@ -189,7 +233,8 @@ export default function App() {
       {selected && (
         <DemandDetail
           demand={selected}
-          support={support}
+          support={currentSupport}
+          supportState={currentSupportState}
           account={account}
           busy={busy}
           close={() => setSelectedId(null)}
@@ -204,12 +249,14 @@ export default function App() {
   );
 }
 
-function DemandBoard({ board, onSelect }: { board: DemandView[]; onSelect: (id: bigint) => void }) {
+function DemandBoard({ board, loading, loadError, onSelect }: { board: DemandView[]; loading: boolean; loadError: boolean; onSelect: (id: bigint) => void }) {
   return (
     <section className="panel">
       <h2>Funded Demand</h2>
       <p className="muted">Canonical state comes directly from AgentDemand on X Layer.</p>
-      {board.length === 0 ? <div className="empty">No demands yet.</div> : (
+      {loading ? <div className="empty" role="status">Loading onchain demands…</div>
+        : loadError ? <div className="empty" role="alert">Could not load demands. Refresh the chain view to retry.</div>
+        : board.length === 0 ? <div className="empty">No demands yet.</div> : (
         <div className="grid">
           {board.map((d) => <DemandCard key={d.demandId.toString()} demand={d} onSelect={onSelect} />)}
         </div>
@@ -235,10 +282,11 @@ function DemandCard({ demand, onSelect }: { demand: DemandView; onSelect: (id: b
 }
 
 function DemandDetail({
-  demand, support, account, busy, close, run,
+  demand, support, supportState, account, busy, close, run,
 }: {
   demand: DemandView;
   support: SupportView;
+  supportState: "loading" | "ready" | "error";
   account: Address | null;
   busy: boolean;
   close: () => void;
@@ -248,10 +296,10 @@ function DemandDetail({
   const [supportCalls, setSupportCalls] = useState("1000");
   const [serviceUrl, setServiceUrl] = useState("");
   const [evidence, setEvidence] = useState("");
-  const now = Math.floor(Date.now() / 1000);
+  const now = BigInt(Math.floor(Date.now() / 1000));
   const state = effectiveStatus(demand, now);
-  const reviewExpired = demand.status === 1 && Number(demand.reviewEndsAt) <= now;
-  const canReopen = (reviewExpired || demand.candidateRejected) && !demand.quorumReached && Number(demand.deadline) > now;
+  const reviewExpired = demand.status === 1 && demand.reviewEndsAt <= now;
+  const canReopen = (reviewExpired || demand.candidateRejected) && !demand.quorumReached && demand.deadline > now;
   const safeUrl = safeHttpsUrl(demand.serviceUrl);
   const percent = demand.approvalRequired === 0n ? 0 : Math.min(100, Number((demand.approvalWeight * 10_000n) / demand.approvalRequired) / 100);
 
@@ -276,6 +324,8 @@ function DemandDetail({
         <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl || "—"}</dd>
         <dt>Evidence hash</dt><dd>{demand.evidenceHash}</dd>
         <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
+        {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
+        {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
         <dt>Approval</dt>
         <dd>
           {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0 weighted approval
@@ -305,21 +355,21 @@ function DemandDetail({
           </div>
         )}
 
-        {demand.status === 1 && !reviewExpired && support.commitment > 0n && !support.approved && !support.rejected && (
+        {demand.status === 1 && !reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
           <>
             <button className="primary" disabled={busy || !account} onClick={() => void run("approve", () => approveService(demand.demandId))}>Approve candidate</button>
             <button className="danger" disabled={busy || !account} onClick={() => void run("reject", () => rejectService(demand.demandId))}>Reject candidate</button>
           </>
         )}
-        {demand.status === 1 && support.approved && <span className="status-line ok">You approved the current submission; your commitment is included in builder settlement.</span>}
-        {demand.status === 1 && support.rejected && <span className="status-line err">You rejected the current submission.</span>}
+        {demand.status === 1 && supportState === "ready" && support.approved && <span className="status-line ok">You approved the current submission; your commitment is included in builder settlement.</span>}
+        {demand.status === 1 && supportState === "ready" && support.rejected && <span className="status-line err">You rejected the current submission.</span>}
         {demand.status === 1 && demand.quorumReached && (
           <button className="primary" disabled={busy} onClick={() => void run("finalize", () => finalizeDemand(demand.demandId))}>Finalize payout</button>
         )}
         {canReopen && (
           <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", () => reopenDemand(demand.demandId))}>Reject expired review & reopen</button>
         )}
-        {support.refundable && (
+        {supportState === "ready" && support.refundable && (
           <button className="danger" disabled={busy || !account} onClick={() => void run("refund", () => refundDemand(demand.demandId))}>Refund {formatUsd0(support.commitment)} USD₮0</button>
         )}
       </div>
@@ -366,7 +416,13 @@ function safeHttpsUrl(value: string): string | null {
   } catch { return null; }
 }
 
-function iso(value: bigint): string { return new Date(Number(value) * 1000).toISOString(); }
+function iso(value: bigint): string {
+  const millis = value * 1000n;
+  const maxDateMillis = 8_640_000_000_000_000n;
+  return millis > maxDateMillis || millis < -maxDateMillis
+    ? "Outside displayable date range"
+    : new Date(Number(millis)).toISOString();
+}
 function short(value: string): string { return `${value.slice(0, 6)}…${value.slice(-4)}`; }
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "INTERNAL_ERROR";

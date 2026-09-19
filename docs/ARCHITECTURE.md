@@ -47,9 +47,10 @@ OPEN
 SUBMITTED
  | quorum reached -> finalize ----------------> FULFILLED
  |
- | review ends below quorum + deadline active
+ | rejection threshold reached, or review ends below quorum
+ | while demand deadline is active
  v
-reopen -> OPEN
+reopen -> SubmissionRejected -> OPEN
 
 OPEN after deadline --------------------------> supporter refunds
 SUBMITTED after deadline + review end
@@ -63,6 +64,8 @@ Important invariants:
 - Refunds cannot lower the threshold for an existing submission.
 - A submission that reached quorum is not refundable.
 - Approvals are scoped to `submissionNonce`; old votes never carry into a new candidate.
+- Approvers may not also reject the same submission. Rejection weight is measured against the review snapshot; reaching `reviewCommitted - approvalRequired + 1` makes quorum impossible and permits immediate reopen before the demand deadline.
+- Reopening emits `SubmissionRejected` and clears candidate-specific vote progress. The demand returns to `Open` while its deadline remains active.
 - Refunds are pull-based; there is no unbounded payout loop.
 - Expired demand can be replaced by a new exact demand even before every old supporter refunds. An old refund cannot clear the replacement's active key.
 - Contract computes the exact duplicate key itself from the validated capability slug + specification.
@@ -82,9 +85,10 @@ UNMET assumes a normal ERC-20 accounting model. `_pullExact()` compares contract
 `finalize()`:
 1. checks fixed quorum snapshot
 2. sets terminal state before transfers
-3. zeroes committed accounting
-4. transfers protocol fee
-5. transfers builder payout
+3. treats explicit `approvalWeight` as the approved settlement amount
+4. removes only that amount from current escrow and total escrow accounting
+5. calculates the protocol fee from the approved amount and transfers the net to the builder
+6. leaves non-approver escrow in the fulfilled demand for individual refunds
 
 `refund()` zeroes the caller's entitlement before transfer.
 
@@ -138,8 +142,8 @@ Remaining assumptions:
 - `committed` is current escrow remaining in the demand.
 - `reviewCommitted` snapshots total escrow at candidate submission and never changes during that review.
 - `approvalRequired` is calculated once from the snapshot using ceil division.
-- `approvalWeight` is also the maximum amount eligible for settlement because only explicit approvers are paid through to the builder.
-- Non-approver funds remain refundable after successful fulfillment.
+- `approvalWeight` is the maximum amount eligible for settlement because only explicit approvers are paid through to the builder. The `DemandFulfilled` event's `approvedAmount` equals that weight; builder payout plus fee equals `approvedAmount`, never the full original pool by default.
+- Non-approver funds remain refundable after successful fulfillment. Refunding reduces current escrow and the individual position, while aggregate supporter count and expected calls remain historical.
 - `supporterCount` and aggregate `expectedCalls` are historical demand signals and are not decremented by later refunds.
 
 This prevents a majority from seizing minority deposits while preserving the original demand signal.

@@ -262,13 +262,13 @@ export function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" |
   return "UNKNOWN";
 }
 
-export function effectiveStatus(demand: DemandView, now = Math.floor(Date.now() / 1000)): string {
+export function effectiveStatus(demand: DemandView, now = BigInt(Math.floor(Date.now() / 1000))): string {
   const base = statusName(demand.status);
   if (base === "FULFILLED" || base === "CLOSED") return base;
   if (base === "SUBMITTED" && demand.quorumReached) return "READY";
-  if (now >= Number(demand.deadline)) {
+  if (now >= demand.deadline) {
     if (base === "OPEN") return "EXPIRED";
-    if (base === "SUBMITTED" && (now >= Number(demand.reviewEndsAt) || demand.candidateRejected)) return "EXPIRED";
+    if (base === "SUBMITTED" && (now >= demand.reviewEndsAt || demand.candidateRejected)) return "EXPIRED";
   }
   if (base === "SUBMITTED" && demand.candidateRejected) return "REJECTED";
   return base;
@@ -312,7 +312,7 @@ export async function readBoard(): Promise<DemandView[]> {
   for (let i = 0; i < ids.length; i += 20) {
     output.push(...await Promise.all(ids.slice(i, i + 20).map((id) => readDemandWithClient(client, id))));
   }
-  output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : Number(b.demandId - a.demandId)));
+  output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
   return output;
 }
 

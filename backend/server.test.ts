@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { isoFromUnix } from "./contract.ts";
 import { scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
 
 describe("opportunity score", () => {
   test("is deterministic and bounded", () => {
-    const now = 1_700_000_000;
+    const now = 1_700_000_000n;
     const pool = [
-      { committed: 100n, expectedCalls: 10n, supporters: 1, deadlineUnix: now + 86400 },
-      { committed: 360n, expectedCalls: 25_000n, supporters: 37, deadlineUnix: now + 86400 * 20 },
-      { committed: 50n, expectedCalls: 5n, supporters: 2, deadlineUnix: now + 86400 * 2 },
+      { committed: 100n, expectedCalls: 10n, supporters: 1, deadlineUnix: now + 86_400n },
+      { committed: 360n, expectedCalls: 25_000n, supporters: 37, deadlineUnix: now + 86_400n * 20n },
+      { committed: 50n, expectedCalls: 5n, supporters: 2, deadlineUnix: now + 86_400n * 2n },
     ];
     const first = scoreOpportunity(pool[1]!, pool, now);
     const second = scoreOpportunity(pool[1]!, pool, now);
@@ -17,12 +18,22 @@ describe("opportunity score", () => {
   });
 
   test("keeps bigint precision above Number.MAX_SAFE_INTEGER", () => {
-    const now = 1_700_000_000;
+    const now = 1_700_000_000n;
     const pool = [
-      { committed: 9_007_199_254_740_993n, expectedCalls: 9_007_199_254_740_993n, supporters: 2, deadlineUnix: now + 86400 },
-      { committed: 9_007_199_254_740_994n, expectedCalls: 9_007_199_254_740_994n, supporters: 2, deadlineUnix: now + 86400 },
+      { committed: 9_007_199_254_740_993n, expectedCalls: 9_007_199_254_740_993n, supporters: 2, deadlineUnix: now + 86_400n },
+      { committed: 9_007_199_254_740_994n, expectedCalls: 9_007_199_254_740_994n, supporters: 2, deadlineUnix: now + 86_400n },
     ];
     expect(scoreOpportunity(pool[1]!, pool, now)).toBeGreaterThan(scoreOpportunity(pool[0]!, pool, now));
+  });
+});
+
+describe("Unix deadline serialization", () => {
+  test("formats representable timestamps without a lossy seconds conversion", () => {
+    expect(isoFromUnix(1_700_000_000n)).toBe("2023-11-14T22:13:20.000Z");
+  });
+
+  test("returns null for uint64 deadlines outside JavaScript Date range", () => {
+    expect(isoFromUnix((1n << 64n) - 1n)).toBeNull();
   });
 });
 

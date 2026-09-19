@@ -23,7 +23,7 @@ The hackathon integration is **UNMET Demand Intelligence**, a paid OKX.AI/A2MCP 
 | `backend/server.ts` | chain-derived index + deterministic ranking + OKX x402 API | No |
 | `frontend/` | wallet UI and direct contract reads/writes | No |
 
-There is **no persistent application database**. Backend cache is disposable, reorg-aware, and rebuilt from the contract. `committed` means current escrow; `reviewCommitted` is the immutable review snapshot. Supporter count and expected calls are historical demand signals.
+There is **no persistent application database**. Backend cache is disposable, reorg-aware, and rebuilt from the contract. `committed` means current escrow; `reviewCommitted` is the immutable review snapshot. `approvalWeight` is the maximum amount eligible for builder settlement: only explicit approver funds are split between builder and treasury. Non-approver funds remain refundable. Supporter count and expected calls are historical demand signals and refunds do not decrement them.
 
 ## Repository layout
 
@@ -35,37 +35,39 @@ frontend/  React/Vite wallet UI
 docs/      PRD, architecture, API, errors, runbook, demo
 ```
 
-## Stable stack pinned in this source
+## Stack versions
 
-- Bun 1.4.2
+- Bun runtime 1.4.2 (`packageManager`)
 - TypeScript 7.0.2
 - React 19.3.0
 - Vite 8.3.0
 - viem 2.56.7
 - Solidity 0.8.37
-- OpenZeppelin Contracts 5.6.1 audited npm `latest`
-- official OKX x402 packages (`@okxweb3/x402-*`)
+- Express 4.22.3 (official OKX x402 middleware adapter)
+- `@okxweb3/x402-core` 0.1.0, `@okxweb3/x402-evm` 0.2.1, `@okxweb3/x402-express` 0.1.1
+- OpenZeppelin Contracts v5.6.1 and forge-std v1.16.1 (Foundry dependency tags)
+- Foundry Forge 1.8.3 (verified WSL toolchain; not pinned by a repository manifest)
 
 ## Install and verify
 
-Prerequisites: Bun 1.4.2 and current stable Foundry.
+Prerequisites: Bun 1.4.2 and Foundry Forge 1.8.3 for the verified WSL toolchain.
 
 ```bash
-bun install
-cp .env.example .env
+bun install --frozen-lockfile
+cp -n .env.example .env
 
 cd backend
 git clone --depth 1 --branch v5.6.1 https://github.com/OpenZeppelin/openzeppelin-contracts.git lib/openzeppelin-contracts
 git clone --depth 1 --branch v1.16.1 https://github.com/foundry-rs/forge-std.git lib/forge-std
 cd ..
 
-bun run typecheck
-bun run test:backend
-bun run test:contract
-bun run build:frontend
+bun run check
+forge fmt --check
+forge build
+forge test -vvv
 ```
 
-For reproducible installs, use `bun install --frozen-lockfile`; `bun.lock` is committed.
+`bun.lock` is committed; OpenZeppelin and forge-std are checked out at the exact tags shown above.
 
 ## Testnet deployment
 
@@ -88,21 +90,31 @@ There is no test bypass and no arbitrary `x-payment-id` acceptance path.
 
 See `docs/API.md` and `docs/RUNBOOK.md`.
 
-## Current deployment fields
+## Verified X Layer Testnet evidence
 
 | Item | Value |
 | --- | --- |
-| X Layer Testnet | chainId `1952` |
+| Network | X Layer Testnet `eip155:1952` |
+| AgentDemand | `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
+| Deployment transaction | `0x11cf1b6415dba756c98c88f8d1c174b2e38c0c2b0f8fb5ba61dac930ebc94284` (successful receipt, block `41369800`) |
 | Test USD₮0 | `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c` |
-| X Layer Mainnet | chainId `196` |
-| Mainnet USD₮0 | `0x779ded0c9e1022225f8e0630b35a9b54be713736` |
-| AgentDemand contract | configure after deployment |
-| Backend URL | configure after deployment |
-| Frontend URL | configure after deployment |
-| OKX.AI listing | configure after publication |
+| Browser finalize | `0x8fa5b789c5e4aebcb688cafc9d42f210c03f5ad75cbb56c6436b2348ab476663` (successful receipt, block `41372377`) |
+| Separate refund | `0xd70d104b2b3248b676e030356414301fe1686c9e8b3eff58df4d8513344bc244` (successful receipt, block `41374315`) |
+| UNMET x402 payment | `0x0cefbdfbc8bade0442629fe3ba0531babb7ca10b441baef985cff8c323b079a9` (successful receipt, block `41376569`) |
+| Browser finalize balance deltas | Builder `+0.0196 USD₮0`; treasury `+0.0004`; escrow `−0.02` |
+| Public backend / frontend | Not deployed |
+| OKX.AI listing | Not published |
+
+See [docs/STATUS.md](docs/STATUS.md) for constructor readback, full create/support/approve/finalize/refund receipts, token balance deltas, x402 replay evidence, and the separate Mock Merchant failure.
+
+## Readiness
+
+**Ready locally:** verified X Layer Testnet contract flows, browser E2E against the deployed testnet contract, UNMET unpaid 402 → official SDK payment → replay 200, and the listed local checks.
+
+**Deferred until deployment:** public backend/frontend URLs and OKX.AI publication. The official Mock Merchant seller replay also remains an external issue; this does not invalidate the separately verified UNMET seller flow. The contract is not independently audited. This project is not production-ready.
 
 ## Security status
 
-The implementation is hardened for real-value testing, but the smart contract has **not been independently audited**. Do not describe it as audited or guaranteed secure. Use tiny values first, prove the full testnet path, then perform a separate mainnet release review.
+The smart contract has **not been independently audited**. Do not describe it as audited or guaranteed secure. Mainnet is outside the verified scope and requires a separate release review.
 
 Wallet count is not identity count. UNMET reports supporting wallets, not unique humans.

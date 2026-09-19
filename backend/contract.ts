@@ -369,6 +369,9 @@ export function parseUnits6(value: string): bigint {
   return BigInt(whole) * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
 }
 
-export function isoFromUnix(ts: bigint | number): string {
-  return new Date(Number(ts) * 1000).toISOString();
+export function isoFromUnix(ts: bigint): string | null {
+  const millis = ts * 1000n;
+  const maxDateMillis = 8_640_000_000_000_000n;
+  if (millis > maxDateMillis || millis < -maxDateMillis) return null;
+  return new Date(Number(millis)).toISOString();
 }

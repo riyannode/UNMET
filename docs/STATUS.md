@@ -2,7 +2,11 @@
 
 Date: 2026-09-20
 
-Status: **PARTIAL — TESTNET CONTRACT/BROWSER AND UNMET X402 PAID FLOW PASS; MOCK CHALLENGE DEFECT AND SELLER REPLAY FAILURE REPRODUCED**
+Status: **PARTIAL — TESTNET CONTRACT, BROWSER E2E, AND UNMET X402 PAID FLOW VERIFIED LOCALLY; OFFICIAL MOCK SELLER REPLAY STILL FAILS; PUBLIC RELEASE DEFERRED**
+
+**Ready locally:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; browser E2E and the UNMET seller 402 → payment → replay → 200 flow passed; local checks are recorded below.
+
+**Deferred until deployment:** public frontend/backend URLs and OKX.AI publication. This repository is not production-ready. The official Mock Merchant seller replay failure is separate from the passing UNMET seller endpoint.
 
 All chain writes in this run used X Layer Testnet (`eip155:1952`). Mainnet (`196`) and real assets were not used. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
 
@@ -93,7 +97,7 @@ Demand #1 was created with 0.01 USD₮0 and refunded from the browser after its 
 
 USD₮0 balance delta for the expiry refund (6 decimals): creator increased from 9,955,700 to 9,965,700 units (+10,000 = 0.01 USD₮0); contract escrow decreased from 10,000 to 0 units (−10,000 = 0.01 USD₮0).
 
-## Local checks
+## Local checks from the recorded testnet verification
 
 | Command | Result |
 | --- | --- |
@@ -102,7 +106,7 @@ USD₮0 balance delta for the expiry refund (6 decimals): creator increased from
 | `forge build` | Passed; two test-analysis warnings about `block.timestamp` reads around `vm.warp` |
 | `forge test -vvv` | Passed: 19 tests, 0 failures |
 
-The Vite build reports the main JavaScript chunk at 523.40 KiB, above its 500 KiB warning threshold. No check failed.
+The Vite build reported the main JavaScript chunk at 523.40 KiB, above its 500 KiB warning threshold. No check failed.
 
 ## OKX x402 verification and Mock Merchant diagnosis
 
@@ -148,26 +152,27 @@ The three seller credentials supplied for this run are in ignored `.env` with mo
 
 | Command / check | Result |
 | --- | --- |
-| `bun install --frozen-lockfile` | Passed; no lockfile or package changes |
-| `bun run check` | Passed: backend/frontend typecheck, 6 backend tests (14 assertions), 19 Foundry tests, frontend production build |
+| `bun install --frozen-lockfile` | Passed; 127 installs checked, no lockfile or package changes |
+| `bun run check` | Passed after targeted fixes: backend/frontend typecheck, 8 backend tests (16 assertions), 19 Foundry tests, frontend production build |
 | `forge fmt --check` | Passed |
-| `forge build` | Passed; two existing `block.timestamp` / `vm.warp` analysis warnings |
+| `forge build` | Passed; two existing `block.timestamp` / `vm.warp` test-analysis warnings |
 | `forge test -vvv` | Passed: 19 tests, 0 failures |
-| `bun --env-file=../.env run admin.ts inspect` | Passed; chain 1952, contract bytecode present, constructor/config and accounting read back |
-| Local unpaid seller request | Passed: health 200; `POST /v1/opportunities` 402 with `PAYMENT-REQUIRED` for USD₮0; server exited and port 8787 closed |
-| `bun run typecheck` after adding payment debug harness | Passed |
-| Official Mock replay / facilitator diagnostic | Facilitator verify and 0.01 USDC_TEST settlement passed with on-chain receipt/readback; Mock unpaid and paid replay both returned 402 |
+| ABI comparison | Passed; all 32 backend and 14 frontend ABI fragments match the compiled contract artifact; no missing or mismatched fragment |
+| Source audit | No TODO/FIXME/XXX markers or payment bypass in implementation; optional `PAY_TO_ADDRESS` is documented as a legacy alias for `OKX_PAY_TO` |
 
-The current pass did not repeat the browser transaction E2E recorded above. No `agent-browser`, Chromium, or Playwright binary is installed in this WSL checkout; Codex's remote Node REPL also rejected this workspace URI. No new browser result is claimed. Added `backend/payment-debug.ts` as a bounded, secret-redacting official-SDK reproduction and paid-proof replay harness; its updated version passed backend typecheck. The production build still warns that the main JS chunk is 523.40 KiB (over 500 KiB).
+The backend now keeps `uint64` deadlines as `bigint` through status checks and ranking. ISO conversion returns `null` outside JavaScript's `Date` range, with out-of-range API deadlines sorted last; regression tests cover representable and `uint64`-maximum timestamps. The frontend compares deadlines as `bigint` and uses a safe display label outside the date range. The board and My Activity distinguish loading, RPC failure, and empty results; wallet position reads clear stale values and gate approval/refund actions until readback finishes. Mobile demand cards use one column at narrow widths.
+
+The frontend production build reports a 525.04 KiB main JavaScript chunk, above Vite's 500 KiB warning threshold. The browser transaction E2E evidence remains the earlier verified testnet run above; this documentation/code cleanup did not submit transactions or repeat that browser flow.
 
 ## Local changes and remaining work
 
 - `backend/admin.ts` now preflights the configured chain before deployment, serializes the BigInt deployment config safely, and retries deployment readback after a successful receipt.
 - `backend/server.ts` now honors an optional `HOST` environment variable; the default bind behavior remains unchanged. This allowed the temporary seller test server to bind to loopback.
 - `backend/payment-debug.ts` normalizes the Mock's legacy-shaped x402 v2 body, checks live token/chain/wallet limits, uses the official SDK for signing and header encoding, optionally settles only under an explicit `--settle-facilitator` flag, and can replay an already-used on-chain authorization without another signature. Its balance verification is block-anchored and it polls delayed broker status.
-- Local ignored `.env` contains testnet addresses/config, seller credentials, and signer keys; secret values are not recorded here.
-- GitHub repository: [`riyannode/UNMET`](https://github.com/riyannode/UNMET) (private), branch `main`.
+- The ignored local `.env` is mode `600`; it is not tracked, and no secret values are recorded here.
+- GitHub repository: [`riyannode/UNMET`](https://github.com/riyannode/UNMET), branch `main`.
 - Repository publication commit: `03ed2a3b0fc568d2d92a045f216463be0866650f`.
-- Before this documentation-only correction, `git status --short` returned no output; `git rev-parse HEAD` and `git rev-parse origin/main` both returned `03ed2a3b0fc568d2d92a045f216463be0866650f`.
+- Before this cleanup, `git status --short` was empty and `HEAD` / `origin/main` both resolved to `45c4578b427fff2240e356f25bb1dade85858ac4`.
+- After the push, `main` and `origin/main` point to the commit containing this update; the exact resulting SHA is included in the completion report because a commit cannot contain its own final hash.
 - Do not pay the Mock again while it returns `extra.version=1` for this token. OKX needs to fix the Mock challenge and make the seller accept the official SDK proof; the deployed testnet token and facilitator settlement both worked with version `2`. Do not switch to chain 196.
 - Replace the supporter test key that appeared in diagnostic output before using that signer again.

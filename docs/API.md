@@ -75,6 +75,9 @@ Rules:
       "builder": "0x0000000000000000000000000000000000000000",
       "approvalWeight": "0",
       "approvalRequired": "0",
+      "rejectionWeight": "0",
+      "rejectionThreshold": "0",
+      "candidateRejected": false,
       "score": 0.87
     }
   ]
@@ -82,6 +85,7 @@ Rules:
 ```
 
 Large integer values are serialized as decimal strings so JSON never loses EVM integer precision.
+`deadline` is an ISO timestamp, or `null` when a valid onchain `uint64` deadline exceeds JavaScript's supported date range. Deadline sorting places these `null` values last.
 
 ## Derived status
 
@@ -91,12 +95,17 @@ API/UI additionally derive:
 - `READY`: submitted and fixed approval quorum reached
 - `REJECTED`: enough rejection weight makes approval quorum mathematically impossible
 - `EXPIRED`: deadline passed and no successful path is pending
+- `CLOSED`: all remaining refundable escrow has been withdrawn
+
+During review, `rejectService` records a supporter's pre-submission commitment as rejection weight. A supporter can approve or reject once for the current submission nonce, but cannot do both. `rejectionWeight >= reviewCommitted - approvalRequired + 1` marks the candidate rejected and permits immediate reopen while the demand deadline is active. Reopening emits `SubmissionRejected`, clears the candidate and review vote progress, and returns the demand to `OPEN`.
 
 Economic field semantics:
 - `currentEscrow`: funds still held by the contract for this demand. After fulfillment this is only non-approver money that remains refundable.
 - `reviewCommitted`: immutable total escrow snapshot when the current candidate entered review.
 - `fundedBounty`: `reviewCommitted` once a candidate has been reviewed, otherwise current escrow. It is a historical funding signal, not necessarily the amount still payable.
-- `supporters` and `expectedCalls` are historical demand signals. Refunds do not rewrite historical demand.
+- `approvalWeight`: total funds explicitly approved for the current candidate; it is the maximum amount eligible for builder settlement.
+- The `DemandFulfilled` event's `approvedAmount` equals `approvalWeight` at finalization. Builder payout plus fee equals this approved amount, not the original committed pool.
+- Non-approver funds remain in escrow and refundable after fulfillment. `supporters` and aggregate `expectedCalls` are historical demand signals; refunds do not decrement them.
 
 ## Deterministic demand score
 
@@ -109,7 +118,7 @@ Ranking only. It is not quality, probability, financial advice, or builder reput
 + 0.10 * time-to-deadline factor (capped at 30 days)
 ```
 
-BigInt values remain BigInt during percentile comparisons.
+EVM integers and percentile comparisons remain `bigint`. The deadline freshness ratio converts only a remaining duration already capped at 30 days to `number` for scoring.
 
 ## Error shape
 

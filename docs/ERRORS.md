@@ -49,7 +49,11 @@ Official x402 payment errors/challenges are produced by the OKX x402 middleware/
 | `ReviewEnded` | approval attempted after review closes |
 | `NotSupporter` | approval caller has no commitment |
 | `AlreadyApproved` | supporter already approved this submission nonce |
+| `AlreadyRejected` | supporter already rejected this submission nonce |
+| `ConflictingVote` | supporter tried to approve and reject the same submission |
 | `QuorumNotReached` | finalize attempted below fixed threshold |
 | `NothingToRefund` | caller has no currently refundable commitment |
 | `InvalidEvidence` | zero evidence hash |
 | `UnsupportedToken` | transfer received amount differs from requested amount |
+
+Reaching the rejection threshold is a successful vote, not a revert: the contract marks the candidate rejected and allows `reopen` while the demand deadline is still active. `SubmissionRejected` is the event emitted when a candidate is cleared during reopen.
