@@ -166,6 +166,8 @@ The current pass did not repeat the browser transaction E2E recorded above. No `
 - `backend/server.ts` now honors an optional `HOST` environment variable; the default bind behavior remains unchanged. This allowed the temporary seller test server to bind to loopback.
 - `backend/payment-debug.ts` normalizes the Mock's legacy-shaped x402 v2 body, checks live token/chain/wallet limits, uses the official SDK for signing and header encoding, optionally settles only under an explicit `--settle-facilitator` flag, and can replay an already-used on-chain authorization without another signature. Its balance verification is block-anchored and it polls delayed broker status.
 - Local ignored `.env` contains testnet addresses/config, seller credentials, and signer keys; secret values are not recorded here.
-- Root contains no Git metadata, so there is no repository diff or commit history to report.
+- GitHub repository: [`riyannode/UNMET`](https://github.com/riyannode/UNMET) (private), branch `main`.
+- Repository publication commit: `03ed2a3b0fc568d2d92a045f216463be0866650f`.
+- Before this documentation-only correction, `git status --short` returned no output; `git rev-parse HEAD` and `git rev-parse origin/main` both returned `03ed2a3b0fc568d2d92a045f216463be0866650f`.
 - Do not pay the Mock again while it returns `extra.version=1` for this token. OKX needs to fix the Mock challenge and make the seller accept the official SDK proof; the deployed testnet token and facilitator settlement both worked with version `2`. Do not switch to chain 196.
 - Replace the supporter test key that appeared in diagnostic output before using that signer again.
