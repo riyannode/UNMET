@@ -1,0 +1,19 @@
+[profile.default]
+src = "."
+test = "."
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.37"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+skip = ["lib/**", "node_modules/**", "out/**", "cache/**"]
+fs_permissions = [{ access = "read", path = "./" }]
+
+[rpc_endpoints]
+xlayer_testnet = "${XLAYER_RPC_URL}"
+xlayer_mainnet = "https://rpc.xlayer.tech"
