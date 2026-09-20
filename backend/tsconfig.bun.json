@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  "include": ["admin.ts", "payment-debug.ts", "server.test.ts"],
+  "exclude": []
+}

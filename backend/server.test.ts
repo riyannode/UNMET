@@ -1,6 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { isoFromUnix } from "./contract.ts";
-import { scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
+import { app, createApp, scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
+
+describe("Vercel Express entrypoint", () => {
+  test("exports an Express app and mounts payment middleware only on the paid route", async () => {
+    expect(typeof app).toBe("function");
+    let middlewareCalls = 0;
+    const server = createApp({
+      middleware: (_req, res) => {
+        middlewareCalls += 1;
+        res.status(402).end();
+      },
+    }).listen(0, "127.0.0.1");
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(response.status).toBe(402);
+      expect(middlewareCalls).toBe(1);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+  });
+});
 
 describe("opportunity score", () => {
   test("is deterministic and bounded", () => {

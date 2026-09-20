@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun run server.ts",
     "start": "bun run server.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.bun.json",
     "test": "bun test server.test.ts",
     "admin": "bun run admin.ts"
   },

@@ -391,6 +391,40 @@ function requirePaymentEnv() {
   };
 }
 
+async function createPaymentMiddleware(): Promise<RequestHandler> {
+  const pay = requirePaymentEnv();
+  const facilitatorClient = new OKXFacilitatorClient({
+    apiKey: pay.apiKey,
+    secretKey: pay.secretKey,
+    passphrase: pay.passphrase,
+    syncSettle: true,
+  });
+  const resourceServer = new x402ResourceServer(facilitatorClient).register(pay.network, new ExactEvmScheme());
+  await resourceServer.initialize();
+
+  return paymentMiddleware({
+    "POST /v1/opportunities": {
+      accepts: [{
+        scheme: "exact",
+        network: pay.network,
+        payTo: pay.payTo,
+        price: pay.price,
+      }],
+      description: "Rank funded AI-agent capabilities that still need builders",
+      mimeType: "application/json",
+    },
+  }, resourceServer);
+}
+
+let vercelPaymentMiddlewarePromise: Promise<RequestHandler> | null = null;
+const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
+  const pending = vercelPaymentMiddlewarePromise ??= createPaymentMiddleware();
+  void pending.then((middleware) => middleware(req, res, next)).catch((error: unknown) => {
+    if (vercelPaymentMiddlewarePromise === pending) vercelPaymentMiddlewarePromise = null;
+    next(error);
+  });
+};
+
 export function createApp(payment: { middleware: RequestHandler } | null = null) {
   const app = express();
   app.disable("x-powered-by");
@@ -429,7 +463,7 @@ export function createApp(payment: { middleware: RequestHandler } | null = null)
     } catch (error) { next(error); }
   });
 
-  if (payment) app.use(payment.middleware);
+  if (payment) app.post("/v1/opportunities", payment.middleware);
 
   app.post("/v1/opportunities", async (req, res, next) => {
     try {
@@ -467,31 +501,13 @@ export function createApp(payment: { middleware: RequestHandler } | null = null)
   return app;
 }
 
+export const app = createApp({ middleware: lazyPaymentMiddleware });
+export default app;
+
 export async function startServer() {
   if (!cfg.contract) throw new Error("DEMAND_CONTRACT is required before server start");
   const pay = requirePaymentEnv();
-  const facilitatorClient = new OKXFacilitatorClient({
-    apiKey: pay.apiKey,
-    secretKey: pay.secretKey,
-    passphrase: pay.passphrase,
-    syncSettle: true,
-  });
-  const resourceServer = new x402ResourceServer(facilitatorClient).register(pay.network, new ExactEvmScheme());
-  await resourceServer.initialize();
-
-  const middleware = paymentMiddleware({
-    "POST /v1/opportunities": {
-      accepts: [{
-        scheme: "exact",
-        network: pay.network,
-        payTo: pay.payTo,
-        price: pay.price,
-      }],
-      description: "Rank funded AI-agent capabilities that still need builders",
-      mimeType: "application/json",
-    },
-  }, resourceServer);
-
+  const middleware = await createPaymentMiddleware();
   const app = createApp({ middleware });
   const port = Number(process.env.PORT || 8787);
   const host = process.env.HOST || "0.0.0.0";

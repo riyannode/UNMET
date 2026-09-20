@@ -8,11 +8,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["bun"],
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["*.ts"]
+  "include": ["contract.ts", "server.ts"]
 }
