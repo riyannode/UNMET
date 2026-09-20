@@ -2,6 +2,14 @@
   {
     "date": "2026-09-21",
     "scope": "app",
+    "macrostructure": "Market Ledger (wide operational form)",
+    "theme": "Warm canvas, diffuse green ambient wash, no connector rules",
+    "enrichment": "anime.js ambient drift with reduced-motion support",
+    "brief": "Apply screenshot feedback: full-width create workflow, blended background motion, remove decorative dividers"
+  },
+  {
+    "date": "2026-09-21",
+    "scope": "app",
     "macrostructure": "Market Ledger (split workspace)",
     "theme": "Custom warm paper and forest green",
     "enrichment": "none",

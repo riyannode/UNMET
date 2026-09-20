@@ -5,7 +5,6 @@ import type { Address, Hash } from "viem";
 import {
   CHAIN_ID,
   DEMAND_CONTRACT,
-  PAYMENT_TOKEN,
   approveService,
   connectWallet,
   createDemand,
@@ -34,6 +33,7 @@ type Tab = "board" | "create" | "activity";
 
 export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const ambientRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>("board");
   const [board, setBoard] = useState<DemandView[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
@@ -90,6 +90,33 @@ export default function App() {
     void syncWallet();
     return watchWallet(() => void syncWallet());
   }, [refresh, syncWallet]);
+
+  useEffect(() => {
+    const ambient = ambientRef.current;
+    if (!ambient) return;
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let animation: ReturnType<typeof animate> | null = null;
+    const syncMotion = () => {
+      animation?.revert();
+      animation = null;
+      if (motionPreference.matches) return;
+      animation = animate(ambient, {
+        translateX: ["-1.2%", "1.2%"],
+        translateY: ["0%", "1.1%"],
+        opacity: [0.34, 0.62],
+        duration: 14_000,
+        alternate: true,
+        loop: true,
+        ease: "inOutSine",
+      });
+    };
+    syncMotion();
+    motionPreference.addEventListener("change", syncMotion);
+    return () => {
+      motionPreference.removeEventListener("change", syncMotion);
+      animation?.revert();
+    };
+  }, []);
 
   useEffect(() => {
     if (!account || selectedId === null) {
@@ -208,6 +235,7 @@ export default function App() {
 
   return (
     <>
+      <div className="ambient-background" ref={ambientRef} aria-hidden="true" />
       <a className="skip-link" href="#workspace">Skip to market</a>
       <header className="top">
         <div className="brand">
@@ -230,8 +258,8 @@ export default function App() {
         <button className="refresh" aria-label={boardLoading ? "Updating demand data" : "Refresh demand data"} onClick={() => { if (account && selectedId !== null) setSupportState("loading"); void refresh(); }} disabled={busy || boardLoading}>{boardLoading ? "Updating" : "Refresh"}</button>
       </nav>
 
-      {!DEMAND_CONTRACT && <div className="status-line err">VITE_DEMAND_CONTRACT is not configured.</div>}
-      {!chainOk && <div className="status-line err">Wallet is on the wrong network. A write will request X Layer {CHAIN_ID}.</div>}
+      {!DEMAND_CONTRACT && <div className="status-line err">Contract not configured.</div>}
+      {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
       {status && <div role="status" aria-live="polite" className={`status-line ${status.includes("success") ? "ok" : status.includes("pending") ? "" : "err"}`}>{status}</div>}
       {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
 
@@ -264,9 +292,6 @@ export default function App() {
       )}
 
       </main>
-      <footer className="foot">
-        Contract: <code>{DEMAND_CONTRACT ?? "not configured"}</code> · USD₮0: <code>{PAYMENT_TOKEN}</code>
-      </footer>
     </>
   );
 }
@@ -445,18 +470,21 @@ function CreatePanel({ busy, run }: {
   return (
     <section className="panel create-panel">
       <h1>Create demand</h1>
-      <form className="stack create-form" onSubmit={(event) => {
+      <form className="create-form" onSubmit={(event) => {
         event.preventDefault();
         void run("create", () => createDemand({ capability, specification, maxPrice, expectedCalls, deadlineDays, commitment }));
       }}>
-        <label className="full-field">Capability<input value={capability} onChange={(e) => setCapability(e.target.value)} maxLength={64} required /></label>
-        <label className="full-field">Specification<textarea value={specification} onChange={(e) => setSpecification(e.target.value)} maxLength={2048} required /></label>
-        <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
-        <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
-        <label>Deadline (days from now)<input inputMode="decimal" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} required /></label>
-        <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
-        <button className="primary" disabled={busy} type="submit">Create demand</button>
-        <div className="form-note">Commitment enters escrow. Refunds follow contract eligibility.</div>
+        <div className="create-core">
+          <label>Capability<input value={capability} onChange={(e) => setCapability(e.target.value)} maxLength={64} required /></label>
+          <label>Specification<textarea value={specification} onChange={(e) => setSpecification(e.target.value)} maxLength={2048} required /></label>
+        </div>
+        <div className="create-terms">
+          <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
+          <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
+          <label>Deadline (days from now)<input inputMode="decimal" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} required /></label>
+          <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
+        </div>
+        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Create demand</button></div>
       </form>
     </section>
   );
