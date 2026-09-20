@@ -1,16 +1,29 @@
 # Verification Status
 
-Date: 2026-09-20
+Date: 2026-09-21
 
-Status: **PARTIAL — A PUBLIC DEMAND-READ REGRESSION WAS REPORTED ON 2026-09-20; A TARGETED LOCAL FIX IS UNDER VALIDATION. Earlier contract and payment evidence below remains historical and was not repeated.**
+Status: **PARTIAL — THE PUBLIC DEMAND-READ REGRESSION IS FIXED AND VERIFIED ON X LAYER TESTNET; WALLET-PROVIDER E2E AND OKX.AI PUBLICATION REMAIN. No paid x402 test was repeated.**
 
 ## Production incident: demand indexing RPC range (2026-09-20)
 
 The live `GET https://unmet-api.vercel.app/v1/demands` regression was independently reported as HTTP 503. Vercel logs identified `eth_getLogs` failing with `block range greater than 100 max`. The backend issued one log request spanning `lastIndexedBlock + 1` through the current head; X Layer Testnet RPC permits at most 100 inclusive blocks per request.
 
-The backend fix chunks that inclusive range into windows of at most 100 blocks, merges decoded demand IDs across windows, and leaves the checkpoint and reorg-triggered rebuild rules intact. Regression coverage exercises a 100-block request, multi-window requests and merged IDs, empty ranges, a simulated 151-block index lag, and a changed indexed-block hash that must rebuild rather than query logs. The first Vercel build from the fix commit was READY, and its unique deployment URL returned HTTP 200 for `/v1/demands`; however, the public alias still returned 503. Vercel runtime logs confirmed those alias requests were still served by the previous deployment (`dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx`), while the new deployment was `dpl_5cbb1R2XGHYX83MiMpXv2ebkvp5a`. The backend project had no repository declaration for the `unmet-api.vercel.app` alias, so `backend/vercel.json` now declares that alias for subsequent builds. Alias reassignment and the >100-block public gap check remain pending. No payment test or chain transaction was run for this incident.
+The backend fix chunks that inclusive range into windows of at most 100 blocks, merges decoded demand IDs across windows, and leaves the checkpoint and reorg-triggered rebuild rules intact. Regression coverage exercises a 100-block request, multi-window requests and merged IDs, empty ranges, a simulated 151-block index lag, and a changed indexed-block hash that must rebuild rather than query logs. The first Vercel build from the fix commit was READY, and its unique deployment URL returned HTTP 200 for `/v1/demands`; however, the public alias still returned 503. Vercel runtime logs confirmed those alias requests were served by the old deployment (`dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx`), while the first fixed deployment was `dpl_5cbb1R2XGHYX83MiMpXv2ebkvp5a`. The backend project had no repository declaration for `unmet-api.vercel.app`, so `backend/vercel.json` now declares the alias. The subsequent deployment `dpl_3Qvp7UE8jr1TqwcifFzj1yTeuSv7` is READY from commit `4c65b1bbebe16aef9d6a46a8cf2994cc57cb1dad`, lists `unmet-api.vercel.app` as an alias, and has `aliasError=null`.
 
-The public deployment and API checks below describe the last verified state before this incident; they are not evidence that the current production `/v1/demands` endpoint is healthy.
+Production recovery evidence on `https://unmet-api.vercel.app`:
+
+| Check | Result |
+| --- | --- |
+| `GET /health` | HTTP 200; chain `1952`, existing contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`; initial latest block `41464810` |
+| Baseline `GET /v1/demands` | HTTP 200; checkpoint `41464811`; 3 demands; Vercel log recorded `index_rebuilt` at this block |
+| >100-block idle gap | `/health` reached block `41464928`, 117 blocks after the baseline checkpoint |
+| `GET /v1/demands` after gap | Three consecutive HTTP 200 responses at blocks `41464938`, `41464942`, `41464945`, each with 3 demands; all ran on `dpl_3Qvp7UE8jr1TqwcifFzj1yTeuSv7`. Vercel logs show no `index_rebuilt` on those requests, consistent with the incremental refresh path. The exact chunk boundaries are covered by the backend regression tests. |
+| Limit error in new deployment | No `block range greater than 100 max` matches and no `/v1/demands` runtime errors in the post-deploy log query |
+| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:1952`, USD₮0 asset `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
+
+No chain transaction or paid x402 request was performed while fixing or verifying this incident. Earlier contract and payment evidence below remains historical and was not repeated.
+
+The deployment and API checks below describe earlier releases; the incident recovery and current public API checks are recorded above.
 
 **Ready locally and publicly:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
 
@@ -18,7 +31,7 @@ The public deployment and API checks below describe the last verified state befo
 
 All chain writes in this run used X Layer Testnet (`eip155:1952`). Mainnet (`196`) and real assets were not used. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
 
-## Public Vercel deployment and smoke verification
+## Previous public Vercel deployment and smoke verification
 
 Both projects are production deployments from repository `riyannode/UNMET`, branch `main`, deployment source SHA `de77198aef994feae84059e1ae7413852a99326e`.
 
