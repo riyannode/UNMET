@@ -12,7 +12,7 @@ Before a public submission, have ready:
 - public frontend HTTPS URL
 - OKX.AI listing/integration URL
 
-The contract, local browser E2E, and UNMET x402 seller flow have already passed on X Layer Testnet (`eip155:1952`); their receipts and balance deltas are in [STATUS.md](STATUS.md). Public URLs and OKX.AI publication remain deferred. The official Mock Merchant's seller replay is a separate known failure; do not present it as the UNMET seller flow.
+The contract and local browser E2E passed on X Layer Testnet (`eip155:1952`). The public frontend and backend are live, and the public UNMET x402 route has completed one paid testnet request with a successful receipt. Receipts and balance deltas are in [STATUS.md](STATUS.md). The production paid response was empty because there were no open demands at the time. OKX.AI publication remains pending. The official Mock Merchant seller replay is a separate known failure; do not present it as the UNMET seller flow.
 
 ## 1 — Problem
 
@@ -87,8 +87,11 @@ Briefly show an expired non-approved demand where each supporter can pull only i
 - [x] payout/fee balance deltas
 - [x] refund receipt
 - [x] browser E2E against the deployed testnet contract
-- [ ] public URLs
+- [x] public frontend and backend URLs
+- [x] public unpaid 402 and one paid x402 replay with successful receipt
+- [x] public browser load, chain state, and no-console-error smoke check
+- [ ] production wallet-provider connection and write flow (headless browser had no injected provider)
 - [ ] OKX.AI listing/integration URL
 - [x] security disclaimer
 
-The checked items are supported by the receipts and readbacks in [STATUS.md](STATUS.md). The official Mock Merchant seller replay is a separate known failure and does not substitute for or negate the passing UNMET seller flow. Public URLs and OKX.AI publication remain deferred.
+The checked items are supported by the receipts and readbacks in [STATUS.md](STATUS.md). The official Mock Merchant seller replay is a separate known failure and does not substitute for or negate the passing UNMET seller flow. The project is not production-ready while wallet-provider verification, OKX.AI publication, and an independent contract audit remain outstanding.

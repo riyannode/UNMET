@@ -2,13 +2,52 @@
 
 Date: 2026-09-20
 
-Status: **PARTIAL — TESTNET CONTRACT, BROWSER E2E, AND UNMET X402 PAID FLOW VERIFIED LOCALLY; OFFICIAL MOCK SELLER REPLAY STILL FAILS; PUBLIC RELEASE DEFERRED**
+Status: **PARTIAL — TESTNET CONTRACT AND PUBLIC DEPLOYMENT VERIFIED; PUBLIC X402 PAYMENT SUCCEEDED; WALLET-PROVIDER E2E AND OKX.AI PUBLICATION REMAIN**
 
-**Ready locally:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; browser E2E and the UNMET seller 402 → payment → replay → 200 flow passed; local checks are recorded below.
+**Ready locally and publicly:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
 
-**Deferred until deployment:** public frontend/backend URLs and OKX.AI publication. This repository is not production-ready. The official Mock Merchant seller replay failure is separate from the passing UNMET seller endpoint.
+**Remaining:** automated production wallet connection/write verification and OKX.AI publication. The production paid request returned an empty opportunities array because there were no open demands. This repository is not production-ready. The official Mock Merchant seller replay failure is separate from the passing UNMET production seller endpoint.
 
 All chain writes in this run used X Layer Testnet (`eip155:1952`). Mainnet (`196`) and real assets were not used. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
+
+## Public Vercel deployment and smoke verification
+
+Both projects are production deployments from repository `riyannode/UNMET`, branch `main`, deployment source SHA `de77198aef994feae84059e1ae7413852a99326e`.
+
+| Project | URL | Deployment ID | Runtime/build |
+| --- | --- | --- | --- |
+| Frontend | [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app) | `dpl_B6dHSuUcdB6V4EMUY2rELjB3N4qC` | Vite; `READY` |
+| Backend | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) | `dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx` | Express, Node.js 24; `READY` |
+
+The backend deployment is configured without `DEPLOYER_PRIVATE_KEY`.
+
+| Public check | Result |
+| --- | --- |
+| `GET /health` | HTTP 200; `ok=true`, chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, block `41461618` |
+| `GET /v1/demands` | HTTP 200; chain `1952`, same contract, block `41461619`, 3 live demand records |
+| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, scheme `exact`, network `eip155:1952`, USD₮0 `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`, EIP-712 name/version `USD₮0` / `1` |
+| CORS, frontend origin | `https://unmet-ai.vercel.app` is allowed |
+| CORS, localhost and foreign origin | No `Access-Control-Allow-Origin` header for `http://localhost:5173` or `https://untrusted.example` |
+
+The production browser loaded [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app), rendered the live testnet demand board, showed chain `1952` and the configured contract/token, and reported no console errors or localhost requests. The headless browser had no `window.ethereum`/wallet provider; clicking Connect reported `WALLET_NOT_FOUND`. No public frontend transaction was submitted. The previously recorded browser E2E used the same application source against the same deployed contract; this release changed Vercel configuration and backend entrypoint only.
+
+## Public production x402 payment
+
+The public backend was first checked with an unpaid request, then exactly one paid replay was sent using `@okxweb3/x402-core` and `@okxweb3/x402-evm`. The SDK produced `PAYMENT-SIGNATURE`; no custom payment header was constructed. The challenge was verified against the on-chain EIP-712 domain through `eip712Domain()` (name `USD₮0`, version `1`, chain ID `1952`, verifying contract equal to the token). The challenge amount was exactly 10,000 raw units (0.01 USD₮0).
+
+| Evidence | Result |
+| --- | --- |
+| Paid production `POST /v1/opportunities` | HTTP 200; response body had `opportunities: []` |
+| `PAYMENT-RESPONSE` | Present; status `success`, network `eip155:1952` |
+| Payer | Builder test wallet `0xe83daba4A2601482a190e53dA08105f1d53CF1fB` |
+| Treasury | `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
+| Payment transaction | `0xb03a645fe2fecae7703a88e0ce6f8dd56ccad5b3bb432473d7bb0c4ede323bf2` |
+| Receipt | Success (`0x1`), block `41462370`, X Layer Testnet chain `1952` |
+| USD₮0 transfer | `10,000` raw units from payer to treasury |
+| Payer balance | `24,300` → `14,300` raw units (`−0.01 USD₮0`) |
+| Treasury balance | `9,975,700` → `9,985,700` raw units (`+0.01 USD₮0`) |
+
+The receipt, transfer event and balances were read back at the receipt block. The direct local read-only facilitator `/verify` call failed with `ConnectionRefused` to `https://web3.okx.com` before any payment request was sent; the production Express middleware then verified and settled the single official SDK replay successfully. No retry or second payment was made.
 
 ## Verified WSL environment
 
@@ -164,15 +203,13 @@ The backend now keeps `uint64` deadlines as `bigint` through status checks and r
 
 The frontend production build reports a 525.04 KiB main JavaScript chunk, above Vite's 500 KiB warning threshold. The browser transaction E2E evidence remains the earlier verified testnet run above; this documentation/code cleanup did not submit transactions or repeat that browser flow.
 
-## Local changes and remaining work
+## Repository and remaining work
 
-- `backend/admin.ts` now preflights the configured chain before deployment, serializes the BigInt deployment config safely, and retries deployment readback after a successful receipt.
-- `backend/server.ts` now honors an optional `HOST` environment variable; the default bind behavior remains unchanged. This allowed the temporary seller test server to bind to loopback.
-- `backend/payment-debug.ts` normalizes the Mock's legacy-shaped x402 v2 body, checks live token/chain/wallet limits, uses the official SDK for signing and header encoding, optionally settles only under an explicit `--settle-facilitator` flag, and can replay an already-used on-chain authorization without another signature. Its balance verification is block-anchored and it polls delayed broker status.
-- The ignored local `.env` is mode `600`; it is not tracked, and no secret values are recorded here.
 - GitHub repository: [`riyannode/UNMET`](https://github.com/riyannode/UNMET), branch `main`.
-- Repository publication commit: `03ed2a3b0fc568d2d92a045f216463be0866650f`.
-- Before this cleanup, `git status --short` was empty and `HEAD` / `origin/main` both resolved to `45c4578b427fff2240e356f25bb1dade85858ac4`.
-- After the push, `main` and `origin/main` point to the commit containing this update; the exact resulting SHA is included in the completion report because a commit cannot contain its own final hash.
-- Do not pay the Mock again while it returns `extra.version=1` for this token. OKX needs to fix the Mock challenge and make the seller accept the official SDK proof; the deployed testnet token and facilitator settlement both worked with version `2`. Do not switch to chain 196.
+- The deployment compatibility release is commit `de77198aef994feae84059e1ae7413852a99326e`. The final evidence-only documentation commit is reported with the completion result.
+- The Vercel projects were built from the exact GitHub commit above; no contract deployment or contract code change was made during this public deployment task.
+- The ignored local `.env` has mode `600`; no secret values are recorded here.
+- The direct local read-only facilitator verification could not reach `https://web3.okx.com` from this WSL session. The official production middleware verified and settled the one public SDK replay successfully.
+- Do not pay the Mock Merchant again while its USDC_TEST challenge still advertises `extra.version=1` for a token whose EIP-712 version is `2`. Its failure is separate from UNMET's successful public USD₮0 flow. Do not switch to chain 196.
 - Replace the supporter test key that appeared in diagnostic output before using that signer again.
+- Remaining before describing the project as production-ready: verify an injected wallet connection/write against the public frontend, publish the OKX.AI listing/integration, and obtain an independent contract audit. No open demand was available in the paid production response, so the endpoint returned an empty array.

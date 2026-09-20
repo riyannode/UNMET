@@ -192,6 +192,21 @@ Browser verification:
 
 ## 8. Public deployment
 
+### Verified production state
+
+The public X Layer Testnet deployment is live from GitHub commit `de77198aef994feae84059e1ae7413852a99326e`:
+
+| Project | URL | Deployment | Runtime |
+| --- | --- | --- | --- |
+| Frontend | [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app) | `dpl_B6dHSuUcdB6V4EMUY2rELjB3N4qC` | Vite static deployment |
+| Backend | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) | `dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx` | Express on Node.js 24 |
+
+Verified production requests: `/health` and `/v1/demands` return HTTP 200 on chain `1952`; unpaid `POST /v1/opportunities` returns an x402 v2 HTTP 402 challenge for exact USD₮0 at `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, amount `10000`, and the configured treasury. One official SDK replay returned HTTP 200 and `PAYMENT-RESPONSE` status `success`; the successful receipt and token deltas are in [STATUS.md](STATUS.md). The paid request returned an empty opportunity list because no open demands were available.
+
+Production CORS returns `Access-Control-Allow-Origin: https://unmet-ai.vercel.app`; it does not allow `http://localhost:5173` or an arbitrary foreign origin. The backend runtime does not include `DEPLOYER_PRIVATE_KEY`. The headless browser smoke test loaded live chain state without console errors or localhost requests; it had no injected wallet provider, so production wallet transaction signing remains unverified.
+
+### Deployment configuration
+
 Backend:
 - bind to `0.0.0.0`
 - terminate TLS at platform/reverse proxy
