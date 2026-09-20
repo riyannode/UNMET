@@ -67,10 +67,18 @@ type QueryInput = {
   limit: number;
 };
 
-const memoryIndex = new Map<string, IndexEntry>();
-let indexReady = false;
-let lastIndexedBlock = 0n;
-let lastIndexedBlockHash: `0x${string}` | null = null;
+export type DemandIndexState = {
+  entries: Map<string, IndexEntry>;
+  ready: boolean;
+  lastIndexedBlock: bigint;
+  lastIndexedBlockHash: `0x${string}` | null;
+};
+
+export function createDemandIndexState(): DemandIndexState {
+  return { entries: new Map(), ready: false, lastIndexedBlock: 0n, lastIndexedBlockHash: null };
+}
+
+const demandIndex = createDemandIndexState();
 let refreshPromise: Promise<void> | null = null;
 
 function log(fields: Record<string, unknown>) {
@@ -149,7 +157,7 @@ async function mapInChunks(ids: bigint[], size: number, task: (id: bigint) => Pr
   }
 }
 
-async function rebuildIndex(client: PublicClient, contract: Address) {
+async function rebuildIndex(client: PublicClient, contract: Address, state: DemandIndexState) {
   const [nextId, block] = await Promise.all([readNextDemandId(client, contract), client.getBlock()]);
   const fresh = new Map<string, IndexEntry>();
   const ids: bigint[] = [];
@@ -160,69 +168,73 @@ async function rebuildIndex(client: PublicClient, contract: Address) {
     fresh.set(id.toString(), entry);
   });
 
-  memoryIndex.clear();
-  for (const [key, value] of fresh) memoryIndex.set(key, value);
-  lastIndexedBlock = block.number;
-  lastIndexedBlockHash = block.hash;
-  indexReady = true;
-  log({ level: "info", event: "index_rebuilt", demands: memoryIndex.size, block: block.number.toString(), blockHash: block.hash });
+  state.entries.clear();
+  for (const [key, value] of fresh) state.entries.set(key, value);
+  state.lastIndexedBlock = block.number;
+  state.lastIndexedBlockHash = block.hash;
+  state.ready = true;
+  log({ level: "info", event: "index_rebuilt", demands: state.entries.size, block: block.number.toString(), blockHash: block.hash });
 }
 
-async function changedDemandIds(client: PublicClient, contract: Address, fromBlock: bigint, toBlock: bigint): Promise<Set<bigint>> {
+export async function changedDemandIds(client: PublicClient, contract: Address, fromBlock: bigint, toBlock: bigint): Promise<Set<bigint>> {
   if (fromBlock > toBlock) return new Set();
-  const logs = await client.getLogs({ address: contract, fromBlock, toBlock });
   const ids = new Set<bigint>();
-  for (const entry of logs) {
-    try {
-      const decoded = decodeEventLog({ abi: AGENT_DEMAND_ABI, data: entry.data, topics: entry.topics, strict: false });
-      const args = decoded.args as Record<string, unknown> | undefined;
-      const demandId = args?.demandId;
-      if (typeof demandId === "bigint") ids.add(demandId);
-    } catch {
-      // Unknown event from a future contract version: force a full read on next restart, but do not corrupt current state.
+  for (let start = fromBlock; start <= toBlock;) {
+    const end = start + 99n > toBlock ? toBlock : start + 99n;
+    const logs = await client.getLogs({ address: contract, fromBlock: start, toBlock: end });
+    for (const entry of logs) {
+      try {
+        const decoded = decodeEventLog({ abi: AGENT_DEMAND_ABI, data: entry.data, topics: entry.topics, strict: false });
+        const args = decoded.args as Record<string, unknown> | undefined;
+        const demandId = args?.demandId;
+        if (typeof demandId === "bigint") ids.add(demandId);
+      } catch {
+        // Unknown event from a future contract version: force a full read on next restart, but do not corrupt current state.
+      }
     }
+    start = end + 1n;
   }
   return ids;
 }
 
-async function refreshIndex(client: PublicClient, contract: Address) {
-  if (!indexReady) {
-    await rebuildIndex(client, contract);
+export async function refreshIndex(client: PublicClient, contract: Address, state: DemandIndexState) {
+  if (!state.ready) {
+    await rebuildIndex(client, contract, state);
     return;
   }
 
   const current = await client.getBlock();
   const currentBlock = current.number;
-  if (currentBlock < lastIndexedBlock) {
-    await rebuildIndex(client, contract);
+  if (currentBlock < state.lastIndexedBlock) {
+    await rebuildIndex(client, contract, state);
     return;
   }
-  if (lastIndexedBlock > 0n && lastIndexedBlockHash) {
-    const indexed = await client.getBlock({ blockNumber: lastIndexedBlock });
-    if (indexed.hash !== lastIndexedBlockHash) {
-      await rebuildIndex(client, contract);
+  if (state.lastIndexedBlock > 0n && state.lastIndexedBlockHash) {
+    const indexed = await client.getBlock({ blockNumber: state.lastIndexedBlock });
+    if (indexed.hash !== state.lastIndexedBlockHash) {
+      await rebuildIndex(client, contract, state);
       return;
     }
   }
-  if (currentBlock === lastIndexedBlock) return;
+  if (currentBlock === state.lastIndexedBlock) return;
 
-  const ids = await changedDemandIds(client, contract, lastIndexedBlock + 1n, currentBlock);
+  const ids = await changedDemandIds(client, contract, state.lastIndexedBlock + 1n, currentBlock);
   const nextId = await readNextDemandId(client, contract);
   for (let id = 1n; id < nextId; id += 1n) {
-    if (!memoryIndex.has(id.toString())) ids.add(id);
+    if (!state.entries.has(id.toString())) ids.add(id);
   }
 
   await mapInChunks([...ids], 20, async (id) => {
-    memoryIndex.set(id.toString(), await readEntry(client, contract, id));
+    state.entries.set(id.toString(), await readEntry(client, contract, id));
   });
-  lastIndexedBlock = currentBlock;
-  lastIndexedBlockHash = current.hash;
+  state.lastIndexedBlock = currentBlock;
+  state.lastIndexedBlockHash = current.hash;
 }
 
 async function ensureIndex(client: PublicClient) {
   if (!cfg.contract) throw new Error("DEMAND_CONTRACT not configured");
   if (refreshPromise) return refreshPromise;
-  refreshPromise = refreshIndex(client, cfg.contract).finally(() => {
+  refreshPromise = refreshIndex(client, cfg.contract, demandIndex).finally(() => {
     refreshPromise = null;
   });
   return refreshPromise;
@@ -457,9 +469,9 @@ export function createApp(payment: { middleware: RequestHandler } | null = null)
       if (!cfg.contract) throw new Error("DEMAND_CONTRACT not configured");
       const client = getPublicClient();
       await ensureIndex(client);
-      const entries = [...memoryIndex.values()];
+      const entries = [...demandIndex.entries.values()];
       const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 });
-      res.json({ chainId: cfg.chainId, contract: cfg.contract, blockNumber: lastIndexedBlock.toString(), generatedAt: new Date().toISOString(), demands });
+      res.json({ chainId: cfg.chainId, contract: cfg.contract, blockNumber: demandIndex.lastIndexedBlock.toString(), generatedAt: new Date().toISOString(), demands });
     } catch (error) { next(error); }
   });
 
@@ -475,11 +487,11 @@ export function createApp(payment: { middleware: RequestHandler } | null = null)
       if (!cfg.contract) throw new Error("DEMAND_CONTRACT not configured");
       const client = getPublicClient();
       await ensureIndex(client);
-      const opportunities = filterAndSort([...memoryIndex.values()], parsed.value);
+      const opportunities = filterAndSort([...demandIndex.entries.values()], parsed.value);
       res.json({
         chainId: cfg.chainId,
         contract: cfg.contract,
-        blockNumber: lastIndexedBlock.toString(),
+        blockNumber: demandIndex.lastIndexedBlock.toString(),
         generatedAt: new Date().toISOString(),
         opportunities,
       });

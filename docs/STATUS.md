@@ -2,7 +2,15 @@
 
 Date: 2026-09-20
 
-Status: **PARTIAL — TESTNET CONTRACT AND PUBLIC DEPLOYMENT VERIFIED; PUBLIC X402 PAYMENT SUCCEEDED; WALLET-PROVIDER E2E AND OKX.AI PUBLICATION REMAIN**
+Status: **PARTIAL — A PUBLIC DEMAND-READ REGRESSION WAS REPORTED ON 2026-09-20; A TARGETED LOCAL FIX IS UNDER VALIDATION. Earlier contract and payment evidence below remains historical and was not repeated.**
+
+## Production incident: demand indexing RPC range (2026-09-20)
+
+The live `GET https://unmet-api.vercel.app/v1/demands` regression was independently reported as HTTP 503. Vercel logs identified `eth_getLogs` failing with `block range greater than 100 max`. The backend issued one log request spanning `lastIndexedBlock + 1` through the current head; X Layer Testnet RPC permits at most 100 inclusive blocks per request.
+
+The local fix chunks that inclusive range into windows of at most 100 blocks, merges decoded demand IDs across windows, and leaves the checkpoint and reorg-triggered rebuild rules intact. Regression coverage exercises a 100-block request, multi-window requests and merged IDs, empty ranges, a simulated 151-block index lag, and a changed indexed-block hash that must rebuild rather than query logs. The fix has not yet been deployed or verified against the production alias at the time of this entry. No payment test or chain transaction was run for this incident.
+
+The public deployment and API checks below describe the last verified state before this incident; they are not evidence that the current production `/v1/demands` endpoint is healthy.
 
 **Ready locally and publicly:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
 
