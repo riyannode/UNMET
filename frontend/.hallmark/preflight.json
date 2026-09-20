@@ -1,0 +1,12 @@
+{
+  "captured": "2026-09-21",
+  "beforeRedesign": {
+    "fontStack": "IBM Plex Sans, Segoe UI, system-ui",
+    "palette": "dark navy surfaces with cyan accent in frontend/app.css",
+    "motion": "no animation library installed",
+    "spacing": "no named spacing tokens",
+    "framework": "Vite + React 19"
+  },
+  "preserved": ["React + Vite", "contract interaction module", "existing transaction functions"],
+  "introduced": ["Figtree variable font", "anime.js 4", "paper and forest palette", "market ledger layout"]
+}
