@@ -11,7 +11,10 @@
   },
   "dependencies": {
     "@fontsource-variable/figtree": "^5.3.0",
+    "@reown/appkit": "^1.8.24",
+    "@reown/appkit-adapter-ethers": "^1.8.24",
     "animejs": "^4.5.0",
+    "ethers": "^6.17.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "viem": "2.56.7"

@@ -1,7 +1,8 @@
 import { animate, stagger } from "animejs";
 import "@fontsource-variable/figtree";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Address, Hash } from "viem";
+import { getAddress, isAddress, type Address, type Hash } from "viem";
+import type { AppKit } from "@reown/appkit/react";
 import {
   CHAIN_ID,
   DEMAND_CONTRACT,
@@ -22,11 +23,13 @@ import {
   statusName,
   submitService,
   supportDemand,
+  setWalletProvider,
   watchWallet,
   type DemandView,
   type SupportView,
 } from "./contract.ts";
 
+const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
 
 type Tab = "board" | "create" | "activity";
@@ -39,6 +42,7 @@ export default function App() {
   const [boardLoading, setBoardLoading] = useState(true);
   const [boardLoadError, setBoardLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
+  const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [account, setAccount] = useState<Address | null>(null);
   const [chainOk, setChainOk] = useState(true);
   const [support, setSupport] = useState<SupportView>(EMPTY_SUPPORT);
@@ -74,7 +78,16 @@ export default function App() {
     }
   }, []);
 
-  const syncWallet = useCallback(async () => {
+  const syncWallet = useCallback(async (kit: AppKit | null = walletKit) => {
+    if (kit) {
+      const wallet = kit.getAccount("eip155");
+      const address = wallet?.address;
+      setAccount(wallet?.isConnected && address && isAddress(address) ? getAddress(address) : null);
+      const chain = kit.getChainId();
+      setChainOk(chain === undefined || Number(chain) === CHAIN_ID);
+      setWalletProvider(kit.getWalletProvider());
+      return;
+    }
     try {
       const [wallet, chain] = await Promise.all([currentWallet(), currentChainId()]);
       setAccount(wallet);
@@ -83,13 +96,25 @@ export default function App() {
       setAccount(null);
       setChainOk(false);
     }
-  }, []);
+  }, [walletKit]);
 
   useEffect(() => {
     void refresh();
     void syncWallet();
+    const kit = walletKit;
+    if (kit) {
+      const stopAccount = kit.subscribeAccount(() => void syncWallet(), "eip155");
+      const stopNetwork = kit.subscribeNetwork(() => void syncWallet());
+      const stopProvider = kit.subscribeProviders(() => setWalletProvider(kit.getWalletProvider()));
+      return () => {
+        stopAccount();
+        stopNetwork();
+        stopProvider();
+        setWalletProvider(null);
+      };
+    }
     return watchWallet(() => void syncWallet());
-  }, [refresh, syncWallet]);
+  }, [refresh, syncWallet, walletKit]);
 
   useEffect(() => {
     const ambient = ambientRef.current;
@@ -178,6 +203,22 @@ export default function App() {
   }, [account, board, boardLoading]);
 
   async function connect() {
+    if (reownProjectId) {
+      setBusy(true);
+      setStatus("");
+      try {
+        const { appKit: kit } = await import("./reown.ts");
+        if (!kit) throw new Error("REOWN_NOT_CONFIGURED");
+        setWalletKit(kit);
+        await syncWallet(kit);
+        await kit.open({ view: kit.getAccount("eip155")?.isConnected ? "Account" : "Connect", namespace: "eip155" });
+      } catch (error) {
+        setStatus(errorMessage(error));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     setBusy(true);
     setStatus("");
     try {
@@ -244,9 +285,10 @@ export default function App() {
         </div>
         <div className="wallet-box">
           <span className="network">X Layer · {CHAIN_ID}</span>
-          {account && <strong>{short(account)}</strong>}
-          <button className="ghost" disabled={busy} onClick={() => void connect()}>
-            {account ? "Reconnect" : "Connect wallet"}
+          <button className="wallet-connect" disabled={busy} onClick={() => void connect()} aria-haspopup={reownProjectId ? "dialog" : undefined}>
+            <span className="wallet-connect-mark" aria-hidden="true" />
+            {account ? short(account) : "Connect wallet"}
+            {reownProjectId && <span className="wallet-connect-chevron" aria-hidden="true">⌄</span>}
           </button>
         </div>
       </header>

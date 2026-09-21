@@ -48,6 +48,11 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .wallet-box { display: flex; align-items: center; justify-content: flex-end; gap: 12px; font-size: 12px; }
 .wallet-box strong, code, .demand-id, .number, .detail dd { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .wallet-box strong { color: var(--ink); font-size: 12px; }
+.wallet-connect { display: inline-flex; min-height: 38px; align-items: center; gap: 9px; padding: 5px 13px 5px 7px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in oklch, var(--surface) 82%, transparent); color: var(--ink); cursor: pointer; font-size: 12px; font-weight: 620; transition: border-color 150ms ease, background-color 150ms ease; }
+.wallet-connect:hover:not(:disabled) { border-color: color-mix(in oklch, var(--accent) 48%, var(--line)); background: var(--surface); }
+.wallet-connect-mark { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 50%; background: var(--accent-soft); }
+.wallet-connect-mark::before { width: 12px; height: 9px; border: 1.5px solid var(--accent); border-radius: 3px; content: ""; }
+.wallet-connect-chevron { margin-left: 2px; color: var(--muted); font-size: 15px; line-height: 1; }
 .tabs { position: sticky; z-index: 10; top: 0; display: flex; align-items: stretch; gap: 4px; min-height: 52px; margin: 0 0 22px; background: color-mix(in oklch, var(--paper) 82%, transparent); backdrop-filter: blur(12px); }
 .tabs button { position: relative; padding: 0 15px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 580; white-space: nowrap; }
 .tabs button:hover { color: var(--ink); }
@@ -152,7 +157,8 @@ label textarea { min-height: 124px; }
   .brand-label { font-size: 10px; }
   .wallet-box { gap: 8px; }
   .network { display: none; }
-  .wallet-box .ghost { padding: 7px 9px; font-size: 11px; }
+  .wallet-connect { min-height: 35px; gap: 7px; padding: 4px 10px 4px 5px; font-size: 11px; }
+  .wallet-connect-mark { width: 24px; height: 24px; }
   .tabs { min-height: 48px; margin-bottom: 17px; gap: 0; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tabs button { padding: 0 10px; font-size: 11px; }
@@ -176,7 +182,7 @@ label textarea { min-height: 124px; }
   #root { padding-right: 14px; padding-left: 14px; }
   .brand-label { display: none; }
   .wordmark { font-size: 19px; }
-  .wallet-box .ghost { max-width: 112px; min-height: 34px; font-size: 10px; }
+  .wallet-connect { max-width: 136px; min-height: 34px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; }
   .tabs button { padding-right: 8px; padding-left: 8px; font-size: 10px; }
   .tabs .refresh { margin-left: auto; }
   .create-terms { grid-template-columns: minmax(0, 1fr); }

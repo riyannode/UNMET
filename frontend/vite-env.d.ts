@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_CHAIN_ID?: string;
   readonly VITE_DEMAND_CONTRACT?: string;
   readonly VITE_PAYMENT_TOKEN?: string;
+  readonly VITE_REOWN_PROJECT_ID?: string;
 }
 
 interface ImportMeta {

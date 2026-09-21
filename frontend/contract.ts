@@ -173,10 +173,6 @@ type EthereumProvider = {
   removeListener?(event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void): void;
 };
 
-declare global {
-  interface Window { ethereum?: EthereumProvider; }
-}
-
 function parseConfiguredAddress(value: string | undefined, name: string): Address | undefined {
   if (!value) return undefined;
   if (!isAddress(value)) throw new Error(`${name} is not a valid EVM address`);
@@ -188,9 +184,26 @@ function requireContract(): Address {
   return DEMAND_CONTRACT;
 }
 
+let configuredWalletProvider: EthereumProvider | null | undefined;
+
+function activeWalletProvider(): EthereumProvider | null {
+  if (configuredWalletProvider !== undefined) return configuredWalletProvider;
+  return isEthereumProvider(window.ethereum) ? window.ethereum : null;
+}
+
 function injected(): EthereumProvider {
-  if (!window.ethereum) throw new Error("WALLET_NOT_FOUND");
-  return window.ethereum;
+  const provider = activeWalletProvider();
+  if (!provider) throw new Error("WALLET_NOT_FOUND");
+  return provider;
+}
+
+function isEthereumProvider(provider: unknown): provider is EthereumProvider {
+  return typeof provider === "object" && provider !== null
+    && "request" in provider && typeof provider.request === "function";
+}
+
+export function setWalletProvider(provider: unknown): void {
+  configuredWalletProvider = isEthereumProvider(provider) ? provider : null;
 }
 
 export function getPublic(): PublicClient {
@@ -208,15 +221,17 @@ export async function connectWallet(): Promise<Address> {
 }
 
 export async function currentWallet(): Promise<Address | null> {
-  if (!window.ethereum) return null;
-  const accounts = await window.ethereum.request({ method: "eth_accounts" });
+  const provider = activeWalletProvider();
+  if (!provider) return null;
+  const accounts = await provider.request({ method: "eth_accounts" });
   if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) return null;
   return getAddress(accounts[0]);
 }
 
 export async function currentChainId(): Promise<number | null> {
-  if (!window.ethereum) return null;
-  const result = await window.ethereum.request({ method: "eth_chainId" });
+  const provider = activeWalletProvider();
+  if (!provider) return null;
+  const result = await provider.request({ method: "eth_chainId" });
   if (typeof result !== "string") return null;
   return Number.parseInt(result, 16);
 }
@@ -244,13 +259,14 @@ export async function ensureChain(): Promise<void> {
 }
 
 export function watchWallet(onChange: () => void): () => void {
-  if (!window.ethereum?.on) return () => {};
+  const provider = activeWalletProvider();
+  if (!provider?.on) return () => {};
   const listener = () => onChange();
-  window.ethereum.on("accountsChanged", listener);
-  window.ethereum.on("chainChanged", listener);
+  provider.on("accountsChanged", listener);
+  provider.on("chainChanged", listener);
   return () => {
-    window.ethereum?.removeListener?.("accountsChanged", listener);
-    window.ethereum?.removeListener?.("chainChanged", listener);
+    provider.removeListener?.("accountsChanged", listener);
+    provider.removeListener?.("chainChanged", listener);
   };
 }
 
