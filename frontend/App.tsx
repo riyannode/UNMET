@@ -1,6 +1,6 @@
 import { animate, stagger } from "animejs";
 import "@fontsource-variable/figtree";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getAddress, isAddress, type Address, type Hash } from "viem";
 import type { AppKit } from "@reown/appkit/react";
 import {
@@ -30,13 +30,13 @@ import {
 } from "./contract.ts";
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
+const NetworkBackground = lazy(() => import("./NetworkBackground.tsx"));
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
 
 type Tab = "board" | "create" | "activity";
 
 export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const ambientRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>("board");
   const [board, setBoard] = useState<DemandView[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
@@ -115,33 +115,6 @@ export default function App() {
     }
     return watchWallet(() => void syncWallet());
   }, [refresh, syncWallet, walletKit]);
-
-  useEffect(() => {
-    const ambient = ambientRef.current;
-    if (!ambient) return;
-    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let animation: ReturnType<typeof animate> | null = null;
-    const syncMotion = () => {
-      animation?.revert();
-      animation = null;
-      if (motionPreference.matches) return;
-      animation = animate(ambient, {
-        translateX: ["-1.2%", "1.2%"],
-        translateY: ["0%", "1.1%"],
-        opacity: [0.34, 0.62],
-        duration: 14_000,
-        alternate: true,
-        loop: true,
-        ease: "inOutSine",
-      });
-    };
-    syncMotion();
-    motionPreference.addEventListener("change", syncMotion);
-    return () => {
-      motionPreference.removeEventListener("change", syncMotion);
-      animation?.revert();
-    };
-  }, []);
 
   useEffect(() => {
     if (!account || selectedId === null) {
@@ -276,66 +249,95 @@ export default function App() {
 
   return (
     <>
-      <div className="ambient-background" ref={ambientRef} aria-hidden="true" />
+      <Suspense fallback={null}><NetworkBackground /></Suspense>
       <a className="skip-link" href="#workspace">Skip to market</a>
-      <header className="top">
-        <div className="brand">
-          <a className="wordmark" href="#workspace" onClick={() => setTab("board")}>UNMET<span className="brand-mark" aria-hidden="true" /></a>
-          <span className="brand-label">Agent demand market</span>
+      <div className="app-shell">
+        <aside className="nav-rail" aria-label="UNMET workspace">
+          <a className="rail-brand" href="#workspace" onClick={() => setTab("board")} aria-label="UNMET home">
+            <span className="brand-mark" aria-hidden="true" />
+            <span>UNMET</span>
+          </a>
+          <nav className="rail-nav" aria-label="Workspace">
+            <button aria-current={tab === "board" ? "page" : undefined} className={`nav-item ${tab === "board" ? "active" : ""}`} onClick={() => setTab("board")}>
+              <NavGlyph tab="board" /><span>Demand board</span>
+            </button>
+            <button aria-current={tab === "create" ? "page" : undefined} className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
+              <NavGlyph tab="create" /><span>Create demand</span>
+            </button>
+            <button aria-current={tab === "activity" ? "page" : undefined} className={`nav-item ${tab === "activity" ? "active" : ""}`} onClick={() => setTab("activity")}>
+              <NavGlyph tab="activity" /><span>My Activity</span>
+            </button>
+          </nav>
+          <div className="rail-note"><span className="signal-dot" />Demand market</div>
+        </aside>
+
+        <div className="app-main">
+          <header className="topbar">
+            <div className="network"><span className="signal-dot" />X Layer <strong>{CHAIN_ID}</strong></div>
+            <div className="topbar-actions">
+              <button className="refresh" aria-label={boardLoading ? "Updating demand data" : "Refresh demand data"} onClick={() => { if (account && selectedId !== null) setSupportState("loading"); void refresh(); }} disabled={busy || boardLoading}>{boardLoading ? "Updating" : "Refresh"}</button>
+              <div className="wallet-box">
+                <button className="wallet-connect" disabled={busy} onClick={() => void connect()} aria-haspopup={reownProjectId ? "dialog" : undefined}>
+                  <span className="wallet-connect-mark" aria-hidden="true" />
+                  {account ? short(account) : "Connect wallet"}
+                  {reownProjectId && <span className="wallet-connect-chevron" aria-hidden="true">⌄</span>}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="status-stack">
+            {!DEMAND_CONTRACT && <div className="status-line err">Contract not configured.</div>}
+            {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
+            {status && <div role="status" aria-live="polite" className={`status-line ${status.includes("success") ? "ok" : status.includes("pending") ? "" : "err"}`}>{status}</div>}
+            {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
+          </div>
+
+          <main id="workspace" ref={workspaceRef} className={`workspace ${selected && tab !== "create" ? "has-detail" : ""}`}>
+            <div className="market-main">
+              {tab === "board" && <DemandBoard board={board} loading={boardLoading} loadError={boardLoadError} selectedId={selectedId} onSelect={setSelectedId} />}
+              {tab === "create" && <CreatePanel busy={busy} run={run} />}
+              {tab === "activity" && (
+                <section className="panel activity-panel">
+                  <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} positions</span>}</div>
+                  {!account ? <div className="empty">Connect a wallet to see your activity.</div>
+                    : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
+                    : activityState === "error" ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
+                    : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
+                    : <ActivityLedger board={activity} account={account} selectedId={selectedId} onSelect={setSelectedId} />}
+                </section>
+              )}
+            </div>
+            {selected && tab !== "create" && (
+              <DemandDetail
+                demand={selected}
+                support={currentSupport}
+                supportState={currentSupportState}
+                account={account}
+                busy={busy}
+                close={closeDetail}
+                run={run}
+              />
+            )}
+          </main>
+
+          <footer className="app-footer">
+            <span>AgentDemand</span>
+            <code>{DEMAND_CONTRACT ? short(DEMAND_CONTRACT) : "not configured"}</code>
+          </footer>
         </div>
-        <div className="wallet-box">
-          <span className="network">X Layer · {CHAIN_ID}</span>
-          <button className="wallet-connect" disabled={busy} onClick={() => void connect()} aria-haspopup={reownProjectId ? "dialog" : undefined}>
-            <span className="wallet-connect-mark" aria-hidden="true" />
-            {account ? short(account) : "Connect wallet"}
-            {reownProjectId && <span className="wallet-connect-chevron" aria-hidden="true">⌄</span>}
-          </button>
-        </div>
-      </header>
-
-      <nav className="tabs" aria-label="Workspace">
-        <button aria-current={tab === "board" ? "page" : undefined} className={tab === "board" ? "active" : ""} onClick={() => setTab("board")}>Demand board</button>
-        <button aria-current={tab === "create" ? "page" : undefined} className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>Create demand</button>
-        <button aria-current={tab === "activity" ? "page" : undefined} className={tab === "activity" ? "active" : ""} onClick={() => setTab("activity")}>My Activity</button>
-        <button className="refresh" aria-label={boardLoading ? "Updating demand data" : "Refresh demand data"} onClick={() => { if (account && selectedId !== null) setSupportState("loading"); void refresh(); }} disabled={busy || boardLoading}>{boardLoading ? "Updating" : "Refresh"}</button>
-      </nav>
-
-      {!DEMAND_CONTRACT && <div className="status-line err">Contract not configured.</div>}
-      {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
-      {status && <div role="status" aria-live="polite" className={`status-line ${status.includes("success") ? "ok" : status.includes("pending") ? "" : "err"}`}>{status}</div>}
-      {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
-
-      <main id="workspace" ref={workspaceRef} className={`workspace ${selected && tab !== "create" ? "has-detail" : ""}`}>
-      <div className="market-main">
-      {tab === "board" && <DemandBoard board={board} loading={boardLoading} loadError={boardLoadError} selectedId={selectedId} onSelect={setSelectedId} />}
-      {tab === "create" && <CreatePanel busy={busy} run={run} />}
-      {tab === "activity" && (
-        <section className="panel activity-panel">
-          <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} positions</span>}</div>
-          {!account ? <div className="empty">Connect a wallet to see your activity.</div>
-            : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
-            : activityState === "error" ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
-            : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
-            : <ActivityLedger board={activity} account={account} selectedId={selectedId} onSelect={setSelectedId} />}
-        </section>
-      )}
-
       </div>
-      {selected && tab !== "create" && (
-        <DemandDetail
-          demand={selected}
-          support={currentSupport}
-          supportState={currentSupportState}
-          account={account}
-          busy={busy}
-          close={closeDetail}
-          run={run}
-        />
-      )}
-
-      </main>
     </>
   );
+}
+
+function NavGlyph({ tab }: { tab: Tab }) {
+  const paths: Record<Tab, ReactNode> = {
+    board: <><rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="7" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /><rect x="13.5" y="13.5" width="7" height="7" rx="1" /></>,
+    create: <><path d="M12 4v16M4 12h16" /></>,
+    activity: <><path d="M3 12h4l2.3-5 4.2 10 2.5-5H21" /></>,
+  };
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{paths[tab]}</svg>;
 }
 
 function DemandBoard({ board, loading, loadError, selectedId, onSelect }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; onSelect: (id: bigint) => void }) {

@@ -2,6 +2,16 @@
   {
     "date": "2026-09-21",
     "scope": "app",
+    "macrostructure": "Index-First (funded-demand market index)",
+    "nav": "N3 Side-rail (visible labels; tinted selected surface)",
+    "footer": "Ft4 Dense colophon (contract context)",
+    "theme": "Signal Field: near-black navy, blue-white network, restrained status colors",
+    "enrichment": "Three.js GLB-ready scene with deterministic node-network fallback; anime.js group drift",
+    "brief": "UNMET machine-demand market intelligence workspace redesign"
+  },
+  {
+    "date": "2026-09-21",
+    "scope": "app",
     "macrostructure": "Market Ledger (wide operational form)",
     "theme": "Warm canvas, diffuse green ambient wash, no connector rules",
     "enrichment": "anime.js ambient drift with reduced-motion support",
