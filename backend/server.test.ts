@@ -1,12 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { encodeEventTopics, type Address, type PublicClient } from "viem";
-import { isoFromUnix } from "./contract.ts";
-import { AGENT_DEMAND_ABI } from "./contract.ts";
-import { app, changedDemandIds, createApp, createDemandIndexState, refreshIndex, scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
+import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
+import { getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI } from "./contract.ts";
+import { app, changedDemandIds, createApp, createDemandIndexState, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
 
 const testContract = "0x0000000000000000000000000000000000000001" as Address;
+const demandContract = "0x7c51457235cFFBae862493D788137BFf1EF07e2E" as Address;
 const hashA = `0x${"a".repeat(64)}` as `0x${string}`;
 const hashB = `0x${"b".repeat(64)}` as `0x${string}`;
+
+function withEnv(values: Record<string, string>, run: () => void) {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(values)) {
+    previous.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  try {
+    run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 function closedLog(demandId: bigint) {
   return {
@@ -181,6 +198,67 @@ describe("Vercel Express entrypoint", () => {
         server.close((error) => error ? reject(error) : resolve());
       });
     }
+  });
+});
+
+describe("independent market and x402 networks", () => {
+  test("allows testnet demand state with mainnet x402 priced at $0.01", () => {
+    withEnv({
+      CHAIN_ID: "1952",
+      XLAYER_RPC_URL: "https://testrpc.xlayer.tech/terigon",
+      DEMAND_CONTRACT: demandContract,
+      PAYMENT_TOKEN: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
+      X402_CHAIN_ID: "196",
+      OPPORTUNITY_PRICE: "0.01",
+      NODE_ENV: "test",
+    }, () => {
+      const market = loadConfig();
+      const payment = resolveX402PaymentConfig(process.env, market.chainId);
+      expect(market.chainId).toBe(1952);
+      expect(market.contract).toBe(demandContract);
+      expect(payment.network).toBe("eip155:196");
+      expect(payment.price).toBe("$0.01");
+    });
+  });
+
+  test("changing X402_CHAIN_ID does not change the demand public client", () => {
+    withEnv({
+      CHAIN_ID: "1952",
+      XLAYER_RPC_URL: "https://testrpc.xlayer.tech/terigon",
+      DEMAND_CONTRACT: demandContract,
+      PAYMENT_TOKEN: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
+      X402_CHAIN_ID: "1952",
+      NODE_ENV: "test",
+    }, () => {
+      for (const x402ChainId of ["1952", "196"]) {
+        process.env.X402_CHAIN_ID = x402ChainId;
+        const market = loadConfig();
+        const client = getPublicClient();
+        expect(market.chainId).toBe(1952);
+        expect(market.contract).toBe(demandContract);
+        expect(client.chain?.id).toBe(1952);
+        expect(client.chain?.rpcUrls.default.http[0]).toBe("https://testrpc.xlayer.tech/terigon");
+      }
+    });
+  });
+
+  test("fails closed for unsupported x402 chains and non-mainnet production config", () => {
+    expect(resolveX402PaymentConfig({ NODE_ENV: "test" }, 1952).network).toBe("eip155:1952");
+    expect(() => resolveX402PaymentConfig({ NODE_ENV: "test", X402_CHAIN_ID: "1" }, 1952)).toThrow("X402_CHAIN_ID must be 1952 or 196");
+    expect(() => resolveX402PaymentConfig({ NODE_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
+    expect(() => resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "1952" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
+    expect(resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "196" }, 1952)).toEqual({
+      network: "eip155:196",
+      price: "$0.01",
+    });
+  });
+
+  test("official x402 scheme resolves network-specific stablecoin and amount", async () => {
+    const scheme = new ExactEvmScheme();
+    const mainnet = await scheme.parsePrice("$0.01", "eip155:196");
+    const testnet = await scheme.parsePrice("$0.01", "eip155:1952");
+    expect(mainnet).toMatchObject({ amount: "10000", asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736" });
+    expect(testnet).toMatchObject({ amount: "10000", asset: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c" });
   });
 });
 
