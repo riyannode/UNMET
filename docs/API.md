@@ -22,13 +22,17 @@ Free UI/discovery read. Returns up to 50 chain-derived demands sorted by committ
 
 ## POST /v1/opportunities
 
-Paid OKX.AI/A2MCP Demand Intelligence route. Default price: `$0.01`.
+Paid OKX.AI/A2MCP Demand Intelligence route. Price: `$0.01` per call.
+
+The returned opportunity data is read from the core market network (`CHAIN_ID=1952` in production). The payment network is configured independently with `X402_CHAIN_ID=196` in production; this does not change demand reads or escrow.
 
 ### x402
 
 The route uses the official `@okxweb3/x402-express` middleware with `OKXFacilitatorClient` and the EVM exact scheme.
 
 Without valid payment, the middleware returns HTTP `402` using the standard x402 v2 payment challenge (`PAYMENT-REQUIRED`). The buyer pays/signs according to the challenge and replays the same request with the standard `PAYMENT-SIGNATURE` header. Verification and settlement happen through the OKX facilitator before the protected route executes.
+
+Production currently advertises `eip155:196`, scheme `exact`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000` (6 decimals), and the configured treasury as `payTo`. In production `X402_CHAIN_ID` must be explicitly set to `196`; local/test environments may omit it and inherit `CHAIN_ID`.
 
 UNMET does not accept a locally invented payment ID as proof.
 

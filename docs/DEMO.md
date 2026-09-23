@@ -12,7 +12,7 @@ Before a public submission, have ready:
 - public frontend HTTPS URL
 - OKX.AI listing/integration URL
 
-The contract and local browser E2E passed on X Layer Testnet (`eip155:1952`). The public frontend and backend are live, and the public UNMET x402 route has completed one paid testnet request with a successful receipt. Receipts and balance deltas are in [STATUS.md](STATUS.md). The production paid response was empty because there were no open demands at the time. OKX.AI publication remains pending. The official Mock Merchant seller replay is a separate known failure; do not present it as the UNMET seller flow.
+The contract and local browser E2E passed on X Layer Testnet (`eip155:1952`). The public frontend and backend are live. The current unpaid x402 challenge uses X Layer Mainnet (`eip155:196`) to match A2MCP registration; one earlier paid production replay used the old Testnet challenge and is historical evidence only. No mainnet payment has been made. Receipts and current readback are in [STATUS.md](STATUS.md). OKX.AI listing/review remains pending.
 
 ## 1 — Problem
 
@@ -34,7 +34,7 @@ Show:
 - HTTP 402
 - standard x402 `PAYMENT-REQUIRED`
 
-Complete the actual OKX x402 payment and replay. Show:
+The current challenge is a mainnet payment request. Show its terms only; do not pay it during this demo without separate mainnet-payment authorization. The historical Testnet payment replay is documented in [STATUS.md](STATUS.md). For either authorized payment run, show:
 - successful paid request
 - chain-derived ranked opportunity
 - chain ID / contract / block
@@ -88,7 +88,8 @@ Briefly show an expired non-approved demand where each supporter can pull only i
 - [x] refund receipt
 - [x] browser E2E against the deployed testnet contract
 - [x] public frontend and backend URLs
-- [x] public unpaid 402 and one paid x402 replay with successful receipt
+- [x] current public unpaid mainnet 402 challenge; historical paid Testnet replay with successful receipt
+- [ ] paid mainnet x402 replay and receipt (not performed)
 - [x] public browser load, chain state, and no-console-error smoke check
 - [ ] production wallet-provider connection and write flow (headless browser had no injected provider)
 - [ ] OKX.AI listing/integration URL

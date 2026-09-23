@@ -12,7 +12,7 @@ Agent marketplaces are supply-first: builders publish a service and wait for buy
 
 Existing marketplaces answer **“What can agents buy?”** UNMET answers **“What are agents already willing to pay someone to build?”**
 
-The hackathon integration is **UNMET Demand Intelligence**, a paid OKX.AI/A2MCP endpoint protected by the official OKX x402 middleware.
+The hackathon integration is **UNMET Demand Intelligence**, a paid OKX.AI/A2MCP endpoint protected by the official OKX x402 middleware. The core demand market stays on X Layer Testnet (`1952`); only this endpoint's x402 billing rail uses X Layer Mainnet (`196`).
 
 ## Architecture
 
@@ -84,18 +84,18 @@ The deploy command waits for a successful receipt and reads immutable configurat
 
 ## Paid OKX.AI endpoint
 
-`POST /v1/opportunities` is protected with the official OKX x402 Express middleware. Missing payment must produce the standard HTTP 402 payment challenge; valid payment is verified/settled by the OKX facilitator before the endpoint result is returned.
+`POST /v1/opportunities` is protected with the official OKX x402 Express middleware. In production, `X402_CHAIN_ID=196` selects mainnet USD₮0 for the `$0.01` challenge. `CHAIN_ID=1952`, its testnet RPC, contract, and escrow token remain the independent demand-market configuration. Missing payment returns the standard HTTP 402 challenge; the OKX facilitator verifies/settles valid payment before the endpoint result is returned.
 
 There is no test bypass and no arbitrary `x-payment-id` acceptance path.
 
 See `docs/API.md` and `docs/RUNBOOK.md`.
 
-## Public X Layer Testnet deployment
+## Public deployment
 
-- Frontend: [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app), Vercel project `frontend`, deployment `dpl_B6dHSuUcdB6V4EMUY2rELjB3N4qC`.
-- Backend: [https://unmet-api.vercel.app](https://unmet-api.vercel.app), Vercel project `backend`, deployment `dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx`.
-- Both deployments use GitHub `main` commit `de77198aef994feae84059e1ae7413852a99326e`; frontend is Vite and backend runs Express on Vercel Node.js 24.
-- Public `/health` and `/v1/demands` return live chain `1952` state. The unpaid opportunities request returns x402 v2 HTTP 402. One paid production replay returned HTTP 200 and a successful testnet settlement; see [docs/STATUS.md](docs/STATUS.md).
+- Frontend: [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app), Vercel project `frontend`.
+- Backend: [https://unmet-api.vercel.app](https://unmet-api.vercel.app), Vercel project `backend`, deployment `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n`.
+- Frontend remains the existing Vite deployment; backend runs Express on Vercel Node.js 24. The backend deployment used branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, now pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2).
+- `/health` and `/v1/demands` return the live demand market on chain `1952`. The current unpaid opportunities request returns x402 v2 HTTP 402 for exact mainnet USD₮0 on `eip155:196`, amount `10000`, to the configured treasury. No paid mainnet request was sent. The earlier paid production replay used the former testnet challenge and is historical evidence; see [docs/STATUS.md](docs/STATUS.md).
 
 The paid production response contained an empty opportunity list because no open demands were available at that time. The production browser loaded live demand data without console errors or localhost requests. Its headless browser had no injected wallet provider, so no production wallet transaction was submitted. The browser transaction E2E on the same frontend source is recorded in [docs/STATUS.md](docs/STATUS.md).
 
@@ -110,21 +110,23 @@ The paid production response contained an empty opportunity list because no open
 | Browser finalize | `0x8fa5b789c5e4aebcb688cafc9d42f210c03f5ad75cbb56c6436b2348ab476663` (successful receipt, block `41372377`) |
 | Separate refund | `0xd70d104b2b3248b676e030356414301fe1686c9e8b3eff58df4d8513344bc244` (successful receipt, block `41374315`) |
 | UNMET x402 payment | `0x0cefbdfbc8bade0442629fe3ba0531babb7ca10b441baef985cff8c323b079a9` (successful receipt, block `41376569`) |
-| Public production x402 payment | `0xb03a645fe2fecae7703a88e0ce6f8dd56ccad5b3bb432473d7bb0c4ede323bf2` (successful receipt, block `41462370`; 0.01 USD₮0) |
+| Historical production x402 payment before network split | `0xb03a645fe2fecae7703a88e0ce6f8dd56ccad5b3bb432473d7bb0c4ede323bf2` (successful receipt on Testnet, block `41462370`; 0.01 USD₮0) |
+| Current production x402 challenge | Mainnet `eip155:196`, USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`; unpaid 402 verified, no payment sent |
+| OKX.AI registration | ASP `13853`, Service `40842`; listing and review pending |
 | Browser finalize balance deltas | Builder `+0.0196 USD₮0`; treasury `+0.0004`; escrow `−0.02` |
-| Public backend / frontend | [unmet-api.vercel.app](https://unmet-api.vercel.app) / [unmet-ai.vercel.app](https://unmet-ai.vercel.app) |
+| Public backend / frontend | [unmet-api.vercel.app](https://unmet-api.vercel.app) / [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app) |
 | OKX.AI listing | Not published |
 
 See [docs/STATUS.md](docs/STATUS.md) for constructor readback, full create/support/approve/finalize/refund receipts, token balance deltas, x402 replay evidence, and the separate Mock Merchant failure.
 
 ## Readiness
 
-**Ready locally and publicly:** verified X Layer Testnet contract flows, local browser E2E against the deployed contract, public frontend/API smoke checks, and one production unpaid 402 → official SDK payment → replay 200 flow.
+**Verified:** X Layer Testnet demand-contract flows, local browser E2E, public frontend/API smoke checks, the current mainnet x402 challenge, and a historical paid Testnet x402 replay.
 
-**Remaining:** production wallet-provider connection/write verification and OKX.AI listing/publication. The official Mock Merchant seller replay remains a separate external issue; it does not invalidate UNMET's successful production seller flow. The contract is not independently audited. This project is not production-ready.
+**Remaining:** no paid mainnet x402 replay was performed; production wallet-provider write verification and OKX.AI listing/review are pending. The contract is not independently audited. This project is not production-ready.
 
 ## Security status
 
-The smart contract has **not been independently audited**. Do not describe it as audited or guaranteed secure. Mainnet is outside the verified scope and requires a separate release review.
+The smart contract has **not been independently audited**. Do not describe it as audited or guaranteed secure. Only unpaid x402 challenge generation has been checked on mainnet; demand-market mainnet deployment and paid mainnet settlement remain unverified and require separate authorization/review.
 
 Wallet count is not identity count. UNMET reports supporting wallets, not unique humans.

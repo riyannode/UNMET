@@ -383,6 +383,28 @@ export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix 
 function compareBigDesc(a: bigint, b: bigint): number { return b > a ? 1 : b < a ? -1 : 0; }
 function compareIdDesc(a: string, b: string): number { return compareBigDesc(BigInt(a), BigInt(b)); }
 
+type X402PaymentEnv = {
+  NODE_ENV?: string;
+  VERCEL_ENV?: string;
+  X402_CHAIN_ID?: string;
+  OPPORTUNITY_PRICE?: string;
+};
+
+export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, coreChainId = cfg.chainId) {
+  const isProduction = env.VERCEL_ENV === "production" || (env.VERCEL_ENV !== "preview" && env.NODE_ENV === "production");
+  if (isProduction && env.X402_CHAIN_ID !== "196") {
+    throw new Error("X402_CHAIN_ID must be explicitly set to 196 in production");
+  }
+  const x402ChainId = env.X402_CHAIN_ID ?? String(coreChainId);
+  if (x402ChainId !== "1952" && x402ChainId !== "196") throw new Error("X402_CHAIN_ID must be 1952 or 196");
+  const priceRaw = env.OPPORTUNITY_PRICE || "0.01";
+  if (!/^\d+(\.\d{1,6})?$/.test(priceRaw)) throw new Error("OPPORTUNITY_PRICE must be a decimal amount with <=6 decimals");
+  return {
+    network: `eip155:${x402ChainId}` as `eip155:${number}`,
+    price: `$${priceRaw}`,
+  };
+}
+
 function requirePaymentEnv() {
   const apiKey = process.env.OKX_API_KEY;
   const secretKey = process.env.OKX_SECRET_KEY;
@@ -391,15 +413,13 @@ function requirePaymentEnv() {
   if (!apiKey || !secretKey || !passphrase || !payToRaw) {
     throw new Error("OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE and OKX_PAY_TO are required");
   }
-  const priceRaw = process.env.OPPORTUNITY_PRICE || "0.01";
-  if (!/^\d+(\.\d{1,6})?$/.test(priceRaw)) throw new Error("OPPORTUNITY_PRICE must be a decimal amount with <=6 decimals");
+  const payment = resolveX402PaymentConfig();
   return {
     apiKey,
     secretKey,
     passphrase,
     payTo: getAddress(payToRaw),
-    price: `$${priceRaw}`,
-    network: `eip155:${cfg.chainId}` as `eip155:${number}`,
+    ...payment,
   };
 }
 

@@ -138,6 +138,7 @@ OKX_SECRET_KEY=...
 OKX_PASSPHRASE=...
 OKX_PAY_TO=0x...
 OPPORTUNITY_PRICE=0.01
+X402_CHAIN_ID=1952 # optional locally; otherwise inherits CHAIN_ID
 ```
 
 `OKX_PAY_TO` is canonical. `PAY_TO_ADDRESS` remains a legacy fallback for existing local configuration; use `OKX_PAY_TO` for new setup.
@@ -167,6 +168,10 @@ Second request must produce the official x402 HTTP 402 challenge. Complete a rea
 
 There is no demo-payment bypass. If facilitator credentials are unavailable, payment verification is **incomplete**, not passed.
 
+Network separation: `CHAIN_ID=1952` and `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c` keep the UNMET demand market on X Layer Testnet. Only `POST /v1/opportunities` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The official exact-scheme SDK selects mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736` from that network and converts `$0.01` to `10000` atomic units. Never change `CHAIN_ID` to move the billing rail.
+
+Do not sign or replay the current production mainnet challenge as part of smoke verification. Unpaid `402` verification does not spend funds. A paid mainnet replay needs separate authorization and a receipt-based check.
+
 ## 7. Frontend
 
 Production build:
@@ -192,7 +197,15 @@ Browser verification:
 
 ## 8. Public deployment
 
-### Verified production state
+### Current network split (2026-09-23)
+
+Backend-only production deployment `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n` is on Express / Node.js 24 and serves [https://unmet-api.vercel.app](https://unmet-api.vercel.app). It was deployed from branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, now pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2). The production `X402_CHAIN_ID=196` variable is set; `CHAIN_ID=1952` was left unchanged.
+
+The current public frontend URL is [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app).
+
+Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200 with chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, and 3 live demands. Unpaid `POST /v1/opportunities` returned x402 v2 HTTP 402, scheme `exact`, network `eip155:196`, asset `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No payment or chain transaction was made. ASP `13853` / Service `40842` remain unlisted; review is pending.
+
+### Earlier production state (before network split)
 
 The public X Layer Testnet deployment is live from GitHub commit `de77198aef994feae84059e1ae7413852a99326e`:
 
@@ -219,12 +232,12 @@ Frontend:
 - static HTTPS deployment
 - correct main/testnet build-time variables
 
-## 9. Mainnet gate
+## 9. Mainnet demand-market gate
 
-Mainnet is chain `196`; current configured USD₮0 default:
+Mainnet is chain `196`; its USD₮0 address is:
 `0x779ded0c9e1022225f8e0630b35a9b54be713736`.
 
-Only after every Testnet + x402 + browser check above passes:
+The A2MCP x402 rail already uses this network, but that does **not** move the demand market or authorize a mainnet contract deployment. Keep core `CHAIN_ID=1952`, `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, the existing contract, and frontend chain on Testnet. A future demand-market migration requires its own explicit scope, authorization, and full verification. Only for that separate release, after every Testnet + x402 + browser check above passes:
 
 ```bash
 export ALLOW_MAINNET_DEPLOY=1
