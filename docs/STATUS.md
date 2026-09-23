@@ -17,7 +17,7 @@ Backend-only Vercel deployment:
 | Project / runtime | `backend`, Express on Vercel Node.js 24 |
 | Deployment | `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n`, READY, Production |
 | Production endpoint | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) |
-| Source | local branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`; not pushed to GitHub |
+| Source | branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2) |
 | `GET /health` | HTTP 200; chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
 | `GET /v1/demands` | HTTP 200; chain `1952`, same contract, 3 live demands; latest sampled block `41717352` |
 | Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:196`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |

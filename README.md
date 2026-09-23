@@ -92,9 +92,9 @@ See `docs/API.md` and `docs/RUNBOOK.md`.
 
 ## Public deployment
 
-- Frontend: [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app), Vercel project `frontend`, deployment `dpl_B6dHSuUcdB6V4EMUY2rELjB3N4qC`.
+- Frontend: [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app), Vercel project `frontend`.
 - Backend: [https://unmet-api.vercel.app](https://unmet-api.vercel.app), Vercel project `backend`, deployment `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n`.
-- Frontend remains the existing Vite deployment; backend runs Express on Vercel Node.js 24. The backend deployment used local branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`; it has not been pushed to GitHub.
+- Frontend remains the existing Vite deployment; backend runs Express on Vercel Node.js 24. The backend deployment used branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, now pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2).
 - `/health` and `/v1/demands` return the live demand market on chain `1952`. The current unpaid opportunities request returns x402 v2 HTTP 402 for exact mainnet USD₮0 on `eip155:196`, amount `10000`, to the configured treasury. No paid mainnet request was sent. The earlier paid production replay used the former testnet challenge and is historical evidence; see [docs/STATUS.md](docs/STATUS.md).
 
 The paid production response contained an empty opportunity list because no open demands were available at that time. The production browser loaded live demand data without console errors or localhost requests. Its headless browser had no injected wallet provider, so no production wallet transaction was submitted. The browser transaction E2E on the same frontend source is recorded in [docs/STATUS.md](docs/STATUS.md).
@@ -114,7 +114,7 @@ The paid production response contained an empty opportunity list because no open
 | Current production x402 challenge | Mainnet `eip155:196`, USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`; unpaid 402 verified, no payment sent |
 | OKX.AI registration | ASP `13853`, Service `40842`; listing and review pending |
 | Browser finalize balance deltas | Builder `+0.0196 USD₮0`; treasury `+0.0004`; escrow `−0.02` |
-| Public backend / frontend | [unmet-api.vercel.app](https://unmet-api.vercel.app) / [unmet-ai.vercel.app](https://unmet-ai.vercel.app) |
+| Public backend / frontend | [unmet-api.vercel.app](https://unmet-api.vercel.app) / [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app) |
 | OKX.AI listing | Not published |
 
 See [docs/STATUS.md](docs/STATUS.md) for constructor readback, full create/support/approve/finalize/refund receipts, token balance deltas, x402 replay evidence, and the separate Mock Merchant failure.
