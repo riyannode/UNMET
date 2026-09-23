@@ -18,6 +18,12 @@ Bun + Express API      React frontend
 OKX.AI / A2MCP buyer
 ```
 
+## Independent network contexts
+
+The demand market is configured by `CHAIN_ID` and remains on X Layer Testnet (`1952`): contract reads, indexing, frontend writes, escrow, and health/readback reporting use this network. `PAYMENT_TOKEN` is the Testnet escrow token.
+
+Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`), matching the registered A2MCP fee token and yielding the mainnet USD₮0 challenge. This payment setting is never used by `backend/contract.ts` or demand-market clients. Local/test environments can omit it to inherit `CHAIN_ID`.
+
 `AgentDemand.sol` is the only canonical application state. No Supabase, PostgreSQL, Redis, Firebase or hidden persistence is used.
 
 ## Contract state

@@ -1,8 +1,33 @@
 # Verification Status
 
-Date: 2026-09-21
+Date: 2026-09-23
 
-Status: **PARTIAL — THE PUBLIC DEMAND-READ REGRESSION IS FIXED AND VERIFIED ON X LAYER TESTNET; WALLET-PROVIDER E2E AND OKX.AI PUBLICATION REMAIN. No paid x402 test was repeated.**
+Status: **PARTIAL — THE DEMAND MARKET REMAINS ON X LAYER TESTNET; THE A2MCP x402 RAIL NOW ADVERTISES X LAYER MAINNET AND PASSES UNPAID CHALLENGE VERIFICATION. No mainnet payment was made. Wallet-provider E2E, paid-mainnet verification, and OKX.AI listing/review remain.**
+
+## Production network split deployment (2026-09-23)
+
+The core market remains on X Layer Testnet (`CHAIN_ID=1952`): AgentDemand reads/indexing, frontend writes, escrow token, and demand health/readback. Only `POST /v1/opportunities` uses `X402_CHAIN_ID=196` for A2MCP billing. Production explicitly sets `X402_CHAIN_ID=196`; `CHAIN_ID`, `XLAYER_RPC_URL`, `DEMAND_CONTRACT`, `DEMAND_DEPLOY_BLOCK`, and `PAYMENT_TOKEN` were not changed. The official OKX exact-scheme SDK selects the mainnet token by network; application code does not hardcode a billing-token override.
+
+The local deployer signer was checked offline: its derived address matches payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No private key was displayed, written to Vercel, or used to sign a transaction.
+
+Backend-only Vercel deployment:
+
+| Item | Result |
+| --- | --- |
+| Project / runtime | `backend`, Express on Vercel Node.js 24 |
+| Deployment | `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n`, READY, Production |
+| Production endpoint | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) |
+| Source | local branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`; not pushed to GitHub |
+| `GET /health` | HTTP 200; chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
+| `GET /v1/demands` | HTTP 200; chain `1952`, same contract, 3 live demands; latest sampled block `41717352` |
+| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:196`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
+| Mainnet readback | RPC chain ID `196`; fee-token bytecode present, symbol `USD₮0`, decimals `6`; payTo is an EOA and its address matches the locally derived deployer signer |
+| Repeated checks | Three rounds returned the same health, demand, and challenge results |
+| Vercel runtime errors | No error records in the last 30 minutes for the new deployment; no `block range greater than 100 max` match |
+| Payment / chain transaction | None in this migration; paid mainnet x402 was not tested |
+| ASP / service | ASP `13853`, Service `40842`; not listed, review not submitted |
+
+The first CLI upload from `backend/` failed because the Vercel project root is the repository's `backend/` directory; deploying from the repository root fixed the source layout. The pre-existing `unmet-api.vercel.app` alias was still pointed at the old Testnet-payment deployment, so it was retargeted to the new backend production deployment and then verified at the public alias. The failed upload did not change the production alias.
 
 ## Production incident: demand indexing RPC range (2026-09-20)
 
@@ -23,13 +48,13 @@ Production recovery evidence on `https://unmet-api.vercel.app`:
 
 No chain transaction or paid x402 request was performed while fixing or verifying this incident. Earlier contract and payment evidence below remains historical and was not repeated.
 
-The deployment and API checks below describe earlier releases; the incident recovery and current public API checks are recorded above.
+The API checks above record the current network split. The deployment and x402 checks below describe earlier releases; their `eip155:1952` payment challenges are historical and are not the active production billing configuration.
 
 **Ready locally and publicly:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
 
-**Remaining:** automated production wallet connection/write verification and OKX.AI publication. The production paid request returned an empty opportunities array because there were no open demands. This repository is not production-ready. The official Mock Merchant seller replay failure is separate from the passing UNMET production seller endpoint.
+**Remaining:** a paid mainnet x402 replay has not been performed; automated production wallet connection/write verification, OKX.AI listing/review, and an independent contract audit remain. Earlier paid Testnet replay evidence below does not verify mainnet settlement. This repository is not production-ready.
 
-All chain writes in this run used X Layer Testnet (`eip155:1952`). Mainnet (`196`) and real assets were not used. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
+In the earlier contract/payment E2E run recorded below, all chain writes used X Layer Testnet (`eip155:1952`); mainnet (`196`) and real assets were not used. The current network-split migration made no chain writes or payments. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
 
 ## Previous public Vercel deployment and smoke verification
 
@@ -52,9 +77,9 @@ The backend deployment is configured without `DEPLOYER_PRIVATE_KEY`.
 
 The production browser loaded [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app), rendered the live testnet demand board, showed chain `1952` and the configured contract/token, and reported no console errors or localhost requests. The headless browser had no `window.ethereum`/wallet provider; clicking Connect reported `WALLET_NOT_FOUND`. No public frontend transaction was submitted. The previously recorded browser E2E used the same application source against the same deployed contract; this release changed Vercel configuration and backend entrypoint only.
 
-## Public production x402 payment
+## Historical public production x402 payment on Testnet (before 2026-09-23 network split)
 
-The public backend was first checked with an unpaid request, then exactly one paid replay was sent using `@okxweb3/x402-core` and `@okxweb3/x402-evm`. The SDK produced `PAYMENT-SIGNATURE`; no custom payment header was constructed. The challenge was verified against the on-chain EIP-712 domain through `eip712Domain()` (name `USD₮0`, version `1`, chain ID `1952`, verifying contract equal to the token). The challenge amount was exactly 10,000 raw units (0.01 USD₮0).
+Under the previous production configuration, the public backend was checked with an unpaid request and then exactly one paid replay was sent using `@okxweb3/x402-core` and `@okxweb3/x402-evm`. This is historical Testnet evidence and does not verify the current Mainnet billing rail. The SDK produced `PAYMENT-SIGNATURE`; no custom payment header was constructed. The challenge was verified against the on-chain EIP-712 domain through `eip712Domain()` (name `USD₮0`, version `1`, chain ID `1952`, verifying contract equal to the token). The challenge amount was exactly 10,000 raw units (0.01 USD₮0).
 
 | Evidence | Result |
 | --- | --- |
