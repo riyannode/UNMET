@@ -246,6 +246,7 @@ describe("independent market and x402 networks", () => {
     expect(resolveX402PaymentConfig({ NODE_ENV: "test" }, 1952).network).toBe("eip155:1952");
     expect(resolveX402PaymentConfig({ NODE_ENV: "production", VERCEL_ENV: "preview" }, 1952).network).toBe("eip155:1952");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "test", X402_CHAIN_ID: "1" }, 1952)).toThrow("X402_CHAIN_ID must be 1952 or 196");
+    expect(() => resolveX402PaymentConfig({ VERCEL_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "1952" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "196" }, 1952)).toEqual({
