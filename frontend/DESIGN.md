@@ -37,7 +37,7 @@ Blue is reserved for current selection and primary actions. Green, amber, and re
 
 The desktop shell is a left-anchored two-column grid: a 184px workspace rail and a flexible market workspace. The shell fills the viewport width up to an 1880px left-aligned safety cap; it is never centered with auto margins. At 1440px, content begins within 24px of the left edge and uses the remaining workspace for the market table or the selected Demand view.
 
-Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the demand board as a wide comparison table. Selecting a demand from Demand Board or My Activity opens a dedicated Demand view in the workspace, with Overview, Fund, and Build & Review tabs. Keep all demand-specific actions in that view and retain a back action to the originating page. Create Demand is an operational split form. My Activity is an event ledger, not a card gallery.
+Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the market-request board as a wide comparison table. Selecting a market request from Market Requests or My Activity opens a dedicated Demand view in the workspace, with Request Details, Escrow & Support, and Builder Proposal tabs. Keep all demand-specific actions in that view and retain a back action to the originating page. Post a Request is an operational split form. My Activity is an event ledger, not a card gallery.
 
 ## 4. Typography
 
@@ -47,7 +47,7 @@ Use Figtree Variable for interface text. Use the system monospace stack only for
 
 - **Workspace navigation:** visible labels, consistent icons, clear selected, hover, focus, and disabled states.
 - **Demand board:** capability, committed amount, expected calls, wallets, max price, and status remain comparable in aligned columns. Mobile rows expose the same values with visible labels.
-- **Demand view:** Overview contains request and market information; Fund contains escrow, the connected wallet's commitment, and funding/refund controls; Build & Review contains proposal information, vote progress, and eligible lifecycle actions.
+- **Demand view:** Request Details contains request and market information; Escrow & Support contains escrow, the connected wallet's commitment, and support/refund controls; Builder Proposal contains proposal information, vote progress, and eligible lifecycle actions.
 - **Create form:** persistent labels, native input behavior, bounded text lengths, visible focus, and clear submit state.
 - **Activity ledger:** role, demand, escrow, and effective status remain scannable as a chronological-style record.
 - **Wallet and network:** Reown AppKit remains the configured wallet UI; X Layer chain ID remains visible.

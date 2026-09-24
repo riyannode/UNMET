@@ -186,9 +186,10 @@ Browser verification:
 - connect wallet
 - detect wrong chain
 - show loading/error states distinctly from an empty demand board
-- select a demand from Demand Board and confirm it opens the dedicated Demand view
-- navigate Overview, Fund, and Build & Review; return to the originating view with Back
-- Create Demand uses Request, Economics, and Initial Escrow and waits for the create receipt
+- select a market request from Market Requests and confirm it opens the dedicated Demand view
+- navigate Request Details, Escrow & Support, and Builder Proposal; return to the originating view with Back
+- Post a Request uses Request, Economics, and Initial Escrow and shows the Post Request & Commit Escrow action
+- confirm Support This Request and Submit Service Proposal are visible only when their existing lifecycle conditions allow them
 - My Activity opens the selected position in the same Demand view
 - support from a second wallet; read back the board and position
 - submit an HTTPS service URL and evidence

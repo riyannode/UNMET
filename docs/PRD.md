@@ -200,11 +200,11 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- Global navigation: Demand Board, Create Demand, My Activity.
-- Selecting a demand from Demand Board or My Activity opens its dedicated Demand view; the back action returns to the originating view.
-- Demand view tabs: **Overview** (request and market state), **Fund** (escrow, wallet commitment, commit inputs and eligible refund), and **Build & Review** (builder proposal, weighted review progress, and currently eligible settlement actions).
-- Create Demand sections: Request, Economics, and Initial Escrow; final action label is **Create Demand & Commit Escrow**.
-- User-facing action labels: **Commit to Escrow**, **Submit Proposal**, **Approve Proposal**, **Reject Proposal**, and **Finalize Payout**. Contract function names remain unchanged.
+- Global navigation: **Market Requests**, **Post a Request**, and **My Activity**.
+- Selecting a market request from **Market Requests** or **My Activity** opens its dedicated Demand view; the back action returns to the originating view.
+- Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).
+- **Post a Request** groups inputs into Request, Economics, and Initial Escrow; its final action is **Post Request & Commit Escrow**.
+- User-facing action labels: **Support This Request**, **Submit Service Proposal**, **Approve Proposal**, **Reject Proposal**, and **Finalize Payout**. Contract function names remain unchanged.
 - **Refund** and **Reopen Demand** remain in the selected demand context and appear only when their current contract conditions allow them.
 - Keep the demand board, wallet flow, chain/network state, transaction status/readback, explorer links, and eligible lifecycle actions.
 - Refund only when `isRefundable()` says true; show finalize, refund, and reopen actions only when their contract eligibility conditions hold.

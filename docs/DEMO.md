@@ -8,12 +8,12 @@ The unpaid `POST /v1/opportunities` request currently returns an x402 v2 challen
 
 ## Judge path through the frontend
 
-1. **Demand Board** — compare capability, escrow, expected calls, supporting wallets, max price, and status.
-2. **Open a demand** — select a row. It opens a dedicated Demand view and keeps the source page available through its back action.
-3. **Overview** — show the request details and current market state.
-4. **Fund** — show current escrow, the connected wallet's commitment, and the amount/call inputs. The **Commit to Escrow** and eligible refund actions stay with this demand.
-5. **Build & Review** — show the builder, service URL, evidence, proposal controls, commitment-weighted approval/rejection progress, and settlement actions only when eligible.
-6. **Create Demand** — show the Request, Economics, and Initial Escrow sections and the **Create Demand & Commit Escrow** action.
+1. **Market Requests** — compare capability, escrow, expected calls, supporting wallets, max price, and status.
+2. **Open a market request** — select a row. It opens a dedicated Demand view and keeps the source page available through its back action.
+3. **Request Details** — show the request details and current market state.
+4. **Escrow & Support** — show current escrow, the connected wallet's commitment, and the amount/call inputs. The **Support This Request** and eligible refund actions stay with this demand.
+5. **Builder Proposal** — show the builder, service URL, evidence, proposal controls, commitment-weighted approval/rejection progress, and settlement actions only when eligible. When open, the **Submit Service Proposal** action is available here.
+6. **Post a Request** — show the Request, Economics, and Initial Escrow sections and the **Post Request & Commit Escrow** action.
 7. **My Activity** — select a position to open its Demand view; use the back action to return to My Activity.
 
 ## Optional Testnet lifecycle walkthrough
@@ -22,7 +22,7 @@ Use pre-funded test wallets and Testnet USD₮0 only. Production wallet transact
 
 1. Wallet A creates a demand with a capability, price ceiling, expected calls, deadline, and initial commitment.
 2. Wallet B commits additional funds to the same demand.
-3. Wallet C submits a service URL and evidence hash from **Build & Review**.
+3. Wallet C submits a service URL and evidence hash from **Builder Proposal**.
 4. Supporters review the candidate. Approval weight comes from commitments made before submission; one wallet is not one vote.
 5. After the fixed approval quorum is reached, any account can finalize. Read back that only explicit approver funds settle: the builder receives the approved amount less the fee, and the treasury receives the fee.
 6. Show non-approver refunds when eligible. For an unsuccessful candidate, reopen is available only when the contract's rejection/review and deadline conditions allow it.

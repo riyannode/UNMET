@@ -46,12 +46,12 @@ The demand-market contract and escrow are deployed on **X Layer Testnet** (`eip1
 
 ## Demo path
 
-1. Open **Demand Board**.
-2. Select a demand to open its dedicated Demand view.
-3. Read **Overview** for the request and market state.
-4. Open **Fund** to inspect escrow and the connected wallet's commitment.
-5. Open **Build & Review** for a proposal, supporter review, and any currently eligible settlement actions.
-6. Open **Create Demand** to see the Request, Economics, and Initial Escrow sections.
+1. Open **Market Requests**.
+2. Select a market request to open its dedicated Demand view.
+3. Read **Request Details** for the request and market state.
+4. Open **Escrow & Support** to inspect escrow and the connected wallet's commitment; use **Support This Request** when eligible.
+5. Open **Builder Proposal** for a proposal, supporter review, and any currently eligible settlement actions; **Submit Service Proposal** is available while the demand is open.
+6. Open **Post a Request** to see the Request, Economics, and Initial Escrow sections and **Post Request & Commit Escrow**.
 7. Open **My Activity** and select a position to return to its Demand view.
 
 The current frontend is available at [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app). Further demo notes and transaction evidence are in [DEMO](DEMO.md) and [STATUS](STATUS.md).
