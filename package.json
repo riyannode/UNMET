@@ -11,7 +11,8 @@
     "test:backend": "bun run --cwd backend test",
     "build": "bun run typecheck && bun run --cwd frontend build",
     "build:frontend": "bun run --cwd frontend build",
-    "check": "bun run typecheck && bun run test:backend && bun run test:contract && bun run build:frontend",
+    "check": "bun run typecheck && bun run test:frontend && bun run test:backend && bun run test:contract && bun run build:frontend",
+    "test:frontend": "bun test frontend/tests/capability.test.ts",
     "dev:backend": "bun run --cwd backend dev",
     "dev:frontend": "bun run --cwd frontend dev"
   }

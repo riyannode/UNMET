@@ -553,5 +553,6 @@ function short(value: string): string { return `${value.slice(0, 6)}…${value.s
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "INTERNAL_ERROR";
   const known = error.message.match(/(WALLET_[A-Z_]+|CHAIN_[A-Z_]+|DEMAND_[A-Z_]+|SUPPORT_[A-Z_]+|SUBMISSION_[A-Z_]+)/)?.[1];
+  if (known === "DEMAND_INVALID_CAPABILITY") return "Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max).";
   return known ?? error.message.slice(0, 180);
 }
