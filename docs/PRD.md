@@ -291,3 +291,82 @@ missing capability
 ```
 
 Evidence is transaction receipt + state readback, not transaction submission alone.
+
+## Future implementation
+
+These are post-MVP directions and are not implemented in the current hackathon submission.
+
+### Demand-to-Supply Protocol
+
+The long-term thesis is to evolve UNMET from a funded unmet-demand market into a closed-loop system that turns structured unmet demand into purchasable agent services:
+
+```text
+Need -> Specify -> Fund -> Discover -> Build -> Verify -> Approve
+-> Publish -> Buy -> Measure -> Feed usage and outcomes back into Demand Intelligence
+```
+
+### Machine-Readable RFQ
+
+Future demand records could extend the current demand object into agent-native requests for quotation (RFQs), with fields such as capability, input and output schemas, maximum latency, maximum unit price, expected calls, deadline, verification rule, and settlement condition. These fields would extend the demand record; they would not replace escrow, supporter commitments, commitment-weighted review, selective settlement, or refunds.
+
+### Paid Demand Intelligence
+
+The existing paid `POST /v1/opportunities` route could grow into a broader paid intelligence layer, with x402 remaining the likely paid-access mechanism. Potential future signals include fastest-growing unmet capabilities, funded demand by capability, capital velocity, expected call volume, repeated failed requests, reopened proposals, budget distributions, demand clusters, demand-to-service conversion rate, fulfillment time, and post-fulfillment usage. These expanded analytics are not available in the current MVP.
+
+### Demand → x402 Service Conversion
+
+A fulfilled demand could produce a machine-readable service record linked to its origin demand. Future metadata could include service ID, origin demand ID, capability, builder/provider, endpoint, input and output schemas, price, x402 payment network, scheme, asset, verification status, and availability state. Its conceptual lifecycle is:
+
+```text
+UNMET -> FUNDED -> BUILDING -> VERIFIED -> AVAILABLE
+```
+
+This would close the future loop: Need → Fund → Build → Approve → Buy. A service registry and this conversion flow are not implemented today.
+
+### Unified system model
+
+```text
+Machine-Readable RFQ
+        ↓
+Funded Demand Market
+        ↓
+Paid Demand Intelligence
+        ↓
+Builder Proposal
+        ↓
+Verification / Approval
+        ↓
+x402 Service Conversion
+        ↓
+Actual Purchases / Usage
+        ↓
+Outcome + Usage Data
+        └──────────────→ Demand Intelligence
+```
+
+### Future product surfaces
+
+These are conceptual surfaces, not current product claims:
+
+- **UNMET Market** — funded unmet demand.
+- **UNMET Intelligence** — paid demand analytics.
+- **UNMET Services** — services created from fulfilled demand.
+
+### Implementation order
+
+1. **Phase 1 — Machine-Readable RFQ**
+2. **Phase 2 — Fulfilled Demand Service Registry**
+3. **Phase 3 — x402 Service Conversion**
+4. **Phase 4 — Demand Intelligence Expansion**
+5. **Phase 5 — Automatic Capability Resolver**
+
+### Future non-goals
+
+Keep the roadmap focused. Future work excludes:
+
+- token, NFT, or DAO
+- social feed or generic chat
+- generic agent marketplace
+- speculative reputation scoring or unsupported demand prediction
+- cross-chain complexity without a concrete requirement
+- hidden economic state
