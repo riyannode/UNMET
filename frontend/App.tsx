@@ -1,6 +1,6 @@
 import { animate, stagger } from "animejs";
 import "@fontsource-variable/figtree";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { getAddress, isAddress, type Address, type Hash } from "viem";
 import type { AppKit } from "@reown/appkit/react";
 import {
@@ -42,6 +42,7 @@ export default function App() {
   const [boardLoading, setBoardLoading] = useState(true);
   const [boardLoadError, setBoardLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
+  const [demandOpen, setDemandOpen] = useState(false);
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [account, setAccount] = useState<Address | null>(null);
   const [chainOk, setChainOk] = useState(true);
@@ -237,8 +238,20 @@ export default function App() {
 
   function closeDetail() {
     const trigger = document.querySelector<HTMLButtonElement>(".selected .capability button, .selected .activity-demand");
+    setDemandOpen(false);
     setSelectedId(null);
     requestAnimationFrame(() => trigger?.focus());
+  }
+
+  function openDemand(id: bigint) {
+    setSelectedId(id);
+    setDemandOpen(true);
+  }
+
+  function navigate(next: Tab) {
+    setDemandOpen(false);
+    setSelectedId(null);
+    setTab(next);
   }
 
   const activity = account
@@ -253,18 +266,18 @@ export default function App() {
       <a className="skip-link" href="#workspace">Skip to market</a>
       <div className="app-shell">
         <aside className="nav-rail" aria-label="UNMET workspace">
-          <a className="rail-brand" href="#workspace" onClick={() => setTab("board")} aria-label="UNMET home">
+          <a className="rail-brand" href="#workspace" onClick={() => navigate("board")} aria-label="UNMET home">
             <span className="brand-mark" aria-hidden="true" />
             <span>UNMET</span>
           </a>
           <nav className="rail-nav" aria-label="Workspace">
-            <button aria-current={tab === "board" ? "page" : undefined} className={`nav-item ${tab === "board" ? "active" : ""}`} onClick={() => setTab("board")}>
+            <button aria-current={tab === "board" ? "page" : undefined} className={`nav-item ${tab === "board" ? "active" : ""}`} onClick={() => navigate("board")}>
               <NavGlyph tab="board" /><span>Demand board</span>
             </button>
-            <button aria-current={tab === "create" ? "page" : undefined} className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
+            <button aria-current={tab === "create" ? "page" : undefined} className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => navigate("create")}>
               <NavGlyph tab="create" /><span>Create demand</span>
             </button>
-            <button aria-current={tab === "activity" ? "page" : undefined} className={`nav-item ${tab === "activity" ? "active" : ""}`} onClick={() => setTab("activity")}>
+            <button aria-current={tab === "activity" ? "page" : undefined} className={`nav-item ${tab === "activity" ? "active" : ""}`} onClick={() => navigate("activity")}>
               <NavGlyph tab="activity" /><span>My Activity</span>
             </button>
           </nav>
@@ -293,9 +306,9 @@ export default function App() {
             {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
           </div>
 
-          <main id="workspace" ref={workspaceRef} className={`workspace ${selected && tab !== "create" ? "has-detail" : ""}`}>
-            <div className="market-main">
-              {tab === "board" && <DemandBoard board={board} loading={boardLoading} loadError={boardLoadError} selectedId={selectedId} onSelect={setSelectedId} />}
+          <main id="workspace" ref={workspaceRef} className="workspace">
+            <div className="market-main" hidden={demandOpen}>
+              {tab === "board" && <DemandBoard board={board} loading={boardLoading} loadError={boardLoadError} selectedId={selectedId} onSelect={openDemand} />}
               {tab === "create" && <CreatePanel busy={busy} run={run} />}
               {tab === "activity" && (
                 <section className="panel activity-panel">
@@ -304,11 +317,11 @@ export default function App() {
                     : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
                     : activityState === "error" ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
                     : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
-                    : <ActivityLedger board={activity} account={account} selectedId={selectedId} onSelect={setSelectedId} />}
+                    : <ActivityLedger board={activity} account={account} selectedId={selectedId} onSelect={openDemand} />}
                 </section>
               )}
             </div>
-            {selected && tab !== "create" && (
+            {demandOpen && selected && (
               <DemandDetail
                 demand={selected}
                 support={currentSupport}
@@ -316,8 +329,15 @@ export default function App() {
                 account={account}
                 busy={busy}
                 close={closeDetail}
+                closeLabel={tab === "activity" ? "Back to My Activity" : "Back to Demand board"}
                 run={run}
               />
+            )}
+            {demandOpen && !selected && (
+              <section className="panel detail demand-page" aria-label="Demand detail">
+                <div className="detail-title"><h2>Demand unavailable</h2><button className="ghost" onClick={closeDetail}>Back to {tab === "activity" ? "My Activity" : "Demand board"}</button></div>
+                <p className="empty">This demand is no longer in the current chain view. Refresh to try again.</p>
+              </section>
             )}
           </main>
 
@@ -392,7 +412,7 @@ function DemandCard({ demand, selected, onSelect }: { demand: DemandView; select
 }
 
 function DemandDetail({
-  demand, support, supportState, account, busy, close, run,
+  demand, support, supportState, account, busy, close, closeLabel, run,
 }: {
   demand: DemandView;
   support: SupportView;
@@ -400,13 +420,21 @@ function DemandDetail({
   account: Address | null;
   busy: boolean;
   close: () => void;
+  closeLabel: string;
   run: (label: string, fn: () => Promise<Hash>) => Promise<void>;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [activeView, setActiveView] = useState<"overview" | "fund" | "build-review">("overview");
   const [supportAmount, setSupportAmount] = useState("0.05");
   const [supportCalls, setSupportCalls] = useState("1000");
   const [serviceUrl, setServiceUrl] = useState("");
   const [evidence, setEvidence] = useState("");
+  const views = [
+    { id: "overview", label: "Overview" },
+    { id: "fund", label: "Fund" },
+    { id: "build-review", label: "Build & Review" },
+  ] as const;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("keydown", onKeyDown);
@@ -425,76 +453,139 @@ function DemandDetail({
   const canReopen = (reviewExpired || demand.candidateRejected) && !demand.quorumReached && demand.deadline > now;
   const safeUrl = safeHttpsUrl(demand.serviceUrl);
   const percent = demand.approvalRequired === 0n ? 0 : Math.min(100, Number((demand.approvalWeight * 10_000n) / demand.approvalRequired) / 100);
+  const rejectionPercent = demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number((demand.rejectionWeight * 10_000n) / demand.rejectionThreshold) / 100);
+
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const nextIndex = (index + (event.key === "ArrowRight" ? 1 : views.length - 1)) % views.length;
+    setActiveView(views[nextIndex].id);
+    tabRefs.current[nextIndex]?.focus();
+  }
 
   return (
-    <section ref={panelRef} className="panel detail" aria-label="Demand detail">
+    <section ref={panelRef} className="panel detail demand-page" aria-label="Demand detail">
       <div className="detail-title">
         <h2 tabIndex={-1}><span className="demand-id">Demand #{demand.demandId.toString()}</span>{demand.capability}</h2>
-        <button className="ghost" onClick={close}>Close</button>
+        <button className="ghost" onClick={close}>{closeLabel}</button>
       </div>
-      <dl>
-        <dt>Status</dt><dd>{state}</dd>
-        <dt>Specification</dt><dd>{demand.specification}</dd>
-        <dt>Creator</dt><dd>{demand.creator}</dd>
-        <dt>Builder</dt><dd>{demand.builder}</dd>
-        <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
-        <dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} USD₮0</dd>
-        <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
-        <dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd>
-        <dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} USD₮0</dd>
-        <dt>Deadline</dt><dd>{iso(demand.deadline)}</dd>
-        <dt>Review ends</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
-        <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl || "—"}</dd>
-        <dt>Evidence hash</dt><dd>{demand.evidenceHash}</dd>
-        <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
-        {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
-        {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
-        <dt>Approval</dt>
-        <dd>
-          {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0
-          <div className="progress"><span style={{ width: `${percent}%` }} /></div>
-          <span className="muted">Only approver funds settle.</span>
-        </dd>
-        <dt>Rejection</dt>
-        <dd>{formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} USD₮0<div className="progress rejection"><span style={{ width: `${demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number(demand.rejectionWeight * 10_000n / demand.rejectionThreshold) / 100)}%` }} /></div></dd>
-      </dl>
-
-      <div className="actions actions-column">
-        {state === "OPEN" && (
-          <div className="action-block">
-            <h3>Support demand</h3>
-            <input aria-label="Support amount" value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} placeholder="USD₮0" />
-            <input aria-label="Expected calls" value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} placeholder="Expected calls" />
-            <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Support</button>
-          </div>
-        )}
-
-        {state === "OPEN" && (
-          <div className="action-block">
-            <h3>Submit service</h3>
-            <input aria-label="Service URL" value={serviceUrl} onChange={(e) => setServiceUrl(e.target.value)} placeholder="https://service.example/api" />
-            <textarea aria-label="Evidence" value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Evidence JSON/text or 0x bytes32 hash" />
-            <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit</button>
-          </div>
-        )}
-
-        {demand.status === 1 && !reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
-          <>
-            <button className="primary" disabled={busy || !account} onClick={() => void run("approve", () => approveService(demand.demandId))}>Approve candidate</button>
-            <button className="danger" disabled={busy || !account} onClick={() => void run("reject", () => rejectService(demand.demandId))}>Reject candidate</button>
-          </>
-        )}
-        {demand.status === 1 && supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
-        {demand.status === 1 && supportState === "ready" && support.rejected && <span className="status-line err">Candidate rejected.</span>}
-        {demand.status === 1 && demand.quorumReached && (
-          <button className="primary" disabled={busy} onClick={() => void run("finalize", () => finalizeDemand(demand.demandId))}>Finalize payout</button>
-        )}
-        {canReopen && (
-          <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", () => reopenDemand(demand.demandId))}>Reopen demand</button>
-        )}
-        {supportState === "ready" && support.refundable && (
-          <button className="danger" disabled={busy || !account} onClick={() => void run("refund", () => refundDemand(demand.demandId))}>Refund {formatUsd0(support.commitment)} USD₮0</button>
-        )}
+      <div className="detail-tabs" role="tablist" aria-label="Demand views">
+        {views.map((view, index) => (
+          <button
+            key={view.id}
+            ref={(element) => { tabRefs.current[index] = element; }}
+            id={`demand-tab-${view.id}`}
+            className={`nav-item ${activeView === view.id ? "active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeView === view.id}
+            aria-controls={`demand-panel-${view.id}`}
+            tabIndex={activeView === view.id ? 0 : -1}
+            onClick={() => setActiveView(view.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >{view.label}</button>
+        ))}
+      </div>
+      <div className="demand-tab-panels">
+        <div id="demand-panel-overview" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-overview" tabIndex={0} hidden={activeView !== "overview"}>
+          <dl><dt>Status</dt><dd>{state}</dd></dl>
+          <section className="action-block" aria-labelledby="request-heading">
+            <h3 id="request-heading">Request</h3>
+            <dl>
+              <dt>Capability</dt><dd>{demand.capability}</dd>
+              <dt>Specification</dt><dd>{demand.specification}</dd>
+              <dt>Creator</dt><dd>{demand.creator}</dd>
+              <dt>Deadline</dt><dd>{iso(demand.deadline)}</dd>
+            </dl>
+          </section>
+          <section className="action-block" aria-labelledby="market-heading">
+            <h3 id="market-heading">Market</h3>
+            <dl>
+              <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
+              <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
+              <dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd>
+              <dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} USD₮0</dd>
+            </dl>
+          </section>
+        </div>
+        <div id="demand-panel-fund" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-fund" tabIndex={0} hidden={activeView !== "fund"}>
+          <section className="action-block" aria-labelledby="escrow-heading">
+            <h3 id="escrow-heading">Escrow</h3>
+            <dl>
+              <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
+              <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
+              {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
+              {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
+            </dl>
+            {state === "OPEN" && (
+              <div className="action-block">
+                <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} placeholder="USD₮0" /></label>
+                <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} placeholder="Expected calls" /></label>
+                <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Commit to Escrow</button>
+              </div>
+            )}
+            {supportState === "ready" && support.refundable && (
+              <div className="actions"><button className="danger" disabled={busy || !account} onClick={() => void run("refund", () => refundDemand(demand.demandId))}>Refund {formatUsd0(support.commitment)} USD₮0</button></div>
+            )}
+          </section>
+        </div>
+        <div id="demand-panel-build-review" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-build-review" tabIndex={0} hidden={activeView !== "build-review"}>
+          <section className="action-block" aria-labelledby="proposal-heading">
+            <h3 id="proposal-heading">Proposal</h3>
+            <dl>
+              <dt>Builder</dt><dd>{demand.builder}</dd>
+              <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl || "—"}</dd>
+              <dt>Evidence</dt><dd>{demand.evidenceHash}</dd>
+            </dl>
+            {state === "OPEN" && (
+              <div className="action-block">
+                <label>Service URL<input value={serviceUrl} onChange={(e) => setServiceUrl(e.target.value)} placeholder="https://service.example/api" /></label>
+                <label>Evidence<textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Evidence JSON/text or 0x bytes32 hash" /></label>
+                <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit Proposal</button>
+              </div>
+            )}
+          </section>
+          {demand.status === 1 && (
+            <section className="action-block" aria-labelledby="review-heading">
+              <h3 id="review-heading">Review</h3>
+              <dl>
+                <dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} USD₮0</dd>
+                <dt>Review ends</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
+                <dt>Approval progress</dt>
+                <dd>
+                  {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0
+                  <div className="progress"><span style={{ width: `${percent}%` }} /></div>
+                  <span className="muted">Only approver funds settle.</span>
+                </dd>
+                <dt>Rejection progress</dt>
+                <dd>{formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} USD₮0<div className="progress rejection"><span style={{ width: `${rejectionPercent}%` }} /></div></dd>
+              </dl>
+              <div className="actions actions-column">
+                {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
+                  <>
+                    <button className="primary" disabled={busy || !account} onClick={() => void run("approve", () => approveService(demand.demandId))}>Approve Proposal</button>
+                    <button className="danger" disabled={busy || !account} onClick={() => void run("reject", () => rejectService(demand.demandId))}>Reject Proposal</button>
+                  </>
+                )}
+                {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
+                {supportState === "ready" && support.rejected && <span className="status-line err">Proposal rejected.</span>}
+              </div>
+            </section>
+          )}
+          {(demand.status === 1 && demand.quorumReached || canReopen) && (
+            <section className="action-block" aria-labelledby="settlement-heading">
+              <h3 id="settlement-heading">Settlement</h3>
+              <div className="actions actions-column">
+                {demand.status === 1 && demand.quorumReached && (
+                  <button className="primary" disabled={busy} onClick={() => void run("finalize", () => finalizeDemand(demand.demandId))}>Finalize Payout</button>
+                )}
+                {canReopen && (
+                  <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", () => reopenDemand(demand.demandId))}>Reopen Demand</button>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -518,17 +609,24 @@ function CreatePanel({ busy, run }: {
         event.preventDefault();
         void run("create", () => createDemand({ capability, specification, maxPrice, expectedCalls, deadlineDays, commitment }));
       }}>
-        <div className="create-core">
+        <section className="create-core" aria-labelledby="create-request-heading">
+          <h2 id="create-request-heading" className="form-section-heading">Request</h2>
           <label>Capability<input value={capability} onChange={(e) => setCapability(e.target.value)} maxLength={64} required /></label>
           <label>Specification<textarea value={specification} onChange={(e) => setSpecification(e.target.value)} maxLength={2048} required /></label>
-        </div>
-        <div className="create-terms">
-          <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
-          <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
           <label>Deadline (days from now)<input inputMode="decimal" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} required /></label>
-          <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
+        </section>
+        <div className="create-core">
+          <section className="create-terms" aria-labelledby="create-economics-heading">
+            <h2 id="create-economics-heading" className="form-section-heading">Economics</h2>
+            <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
+            <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
+          </section>
+          <section className="create-core" aria-labelledby="create-escrow-heading">
+            <h2 id="create-escrow-heading" className="form-section-heading">Initial Escrow</h2>
+            <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
+          </section>
         </div>
-        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Create demand</button></div>
+        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Create Demand &amp; Commit Escrow</button></div>
       </form>
     </section>
   );

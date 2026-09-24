@@ -86,7 +86,6 @@ code, .number, .demand-id, .detail dd, .wallet-box strong, .app-footer { font-fa
 .status-line code { font-size: 10px; }
 
 .workspace { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 22px; padding-top: 13px; }
-.workspace.has-detail { grid-template-columns: minmax(0, 1fr) minmax(360px, 32%); gap: 24px; }
 .market-main, .panel { min-width: 0; }
 .panel { padding: 0; border: 0; background: transparent; }
 .board-title, .activity-head { display: flex; min-height: 44px; align-items: baseline; justify-content: space-between; gap: 14px; padding: 0 0 14px; }
@@ -120,7 +119,10 @@ code, .number, .demand-id, .detail dd, .wallet-box strong, .app-footer { font-fa
 .empty { padding: 27px 12px; color: var(--text-secondary); font-size: 13px; }
 .empty.error { color: var(--signal-danger); }
 
-.detail { position: sticky; top: 84px; max-height: calc(100vh - 104px); overflow: auto; padding: 18px 18px 20px; border: 1px solid var(--border-default); border-radius: 10px; background: rgb(12 19 29 / 95%); scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+.detail { position: static; max-height: none; overflow: visible; padding: 18px 18px 20px; border: 1px solid var(--border-default); border-radius: 10px; background: rgb(12 19 29 / 95%); scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+.detail-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.detail-tabs .nav-item { display: inline-flex; min-height: 40px; flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); }
+.demand-tab-panel { min-width: 0; }
 .detail-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 0 14px; }
 .detail-title h2 { display: grid; min-width: 0; gap: 5px; margin: 0; color: var(--text-primary); font-size: 17px; font-weight: 640; line-height: 1.24; letter-spacing: -.018em; overflow-wrap: anywhere; }
 .detail-title h2 .demand-id { color: var(--text-muted); font-size: 10px; font-weight: 500; letter-spacing: 0; }
@@ -136,7 +138,7 @@ code, .number, .demand-id, .detail dd, .wallet-box strong, .app-footer { font-fa
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
 .actions-column { align-items: stretch; }
 .action-block { display: grid; flex: 1 1 100%; gap: 8px; margin-top: 4px; padding: 12px 0; }
-.action-block h3 { margin: 0 0 2px; color: var(--text-secondary); font-size: 12px; font-weight: 620; }
+.action-block h3, .form-section-heading { margin: 0 0 2px; color: var(--text-secondary); font-size: 12px; font-weight: 620; }
 
 button.ghost, button.primary, button.danger { min-height: 40px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 6px; white-space: nowrap; font-size: 12px; font-weight: 630; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
 button.ghost { background: transparent; color: var(--text-primary); }
@@ -155,6 +157,9 @@ textarea { min-height: 76px; resize: vertical; }
 .create-form { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(330px, .9fr); align-items: start; gap: 24px clamp(28px, 4vw, 64px); padding-top: 4px; }
 .create-core { display: grid; gap: 17px; }
 .create-terms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 15px 18px; padding-top: 1px; }
+.form-section-heading { grid-column: 1 / -1; }
+.workflow-summary { margin: 0 0 13px; color: var(--text-muted); font-size: 11px; }
+.detail label textarea { min-height: 76px; }
 .create-submit { grid-column: 1 / -1; padding-top: 2px; }
 label { display: grid; align-content: start; gap: 7px; color: var(--text-secondary); font-size: 11px; font-weight: 560; }
 label textarea { min-height: 128px; }
@@ -172,8 +177,6 @@ label textarea { min-height: 128px; }
 .app-footer code { color: var(--text-secondary); font-size: 10px; }
 
 @media (max-width: 1240px) {
-  .workspace.has-detail { grid-template-columns: minmax(0, 1fr); }
-  .detail { position: static; max-height: none; }
   .create-form { grid-template-columns: minmax(0, 1fr); gap: 22px; }
   .create-submit { grid-column: auto; }
 }
