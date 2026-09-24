@@ -8,6 +8,12 @@ UNMET
 
 A funded onchain demand market for AI-agent capabilities.
 
+## Final demo video
+
+[Watch the 3:25 UNMET demo on YouTube](https://youtu.be/6eCRf7iAbFo)
+
+The video demonstrates the live market-request workflow, builder proposal flow, commitment-weighted review, X Layer Testnet evidence, and the separate OKX x402 integration.
+
 ## Problem
 
 Agent marketplaces are supply-first and do not reveal capabilities agents already want but cannot buy. Builders see listed services, but lack a shared, credible signal for what should be built next.
@@ -55,6 +61,11 @@ The demand-market contract and escrow are deployed on **X Layer Testnet** (`eip1
 7. Open **My Activity** and select a position to return to its Demand view.
 
 The current frontend is available at [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app). Further demo notes and transaction evidence are in [DEMO](DEMO.md) and [STATUS](STATUS.md).
+
+## Submission status
+
+- OKX Dev Day 2026 project submission form: response recorded on 2026-09-24.
+- Demo video: [https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
 
 ## Verified evidence
 

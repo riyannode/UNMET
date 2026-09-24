@@ -1,5 +1,10 @@
 # UNMET demo (2–4 minutes)
 
+Final submission video:
+[https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
+
+This is the final edited judge-facing demo; the reproducible walkthrough below remains the technical demo guide.
+
 ## Current status
 
 The demand contract and funded lifecycle evidence are on X Layer Testnet (`eip155:1952`). The live frontend is [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app); the public API is [unmet-api.vercel.app](https://unmet-api.vercel.app). Current deployment readbacks are in [STATUS](STATUS.md).

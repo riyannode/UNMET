@@ -35,9 +35,15 @@ The demand market and `AgentDemand` deployment run on **X Layer Testnet** (`eip1
 
 The current public endpoint's unpaid challenge was read on 2026-09-24 and returned HTTP 402 for mainnet USD₮0. This verifies challenge generation only. No paid Mainnet replay is documented. A paid Testnet replay is historical evidence and is recorded in [STATUS](docs/STATUS.md). The latest repository evidence for OKX.AI ASP `13853` / Service `40842` is dated 2026-09-23 and records the service as unlisted with review not submitted; no newer approval evidence was found for this update.
 
-## Live demo and API
+## Demo
 
-- Frontend: [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app)
+- Live app: [https://frontend-omega-beige-33.vercel.app/](https://frontend-omega-beige-33.vercel.app/)
+- Demo video: [https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
+- Judge-facing submission: [docs/SUBMISSION.md](docs/SUBMISSION.md)
+- Verification / evidence: [docs/STATUS.md](docs/STATUS.md)
+
+## API
+
 - Backend health: [`/health`](https://unmet-api.vercel.app/health)
 - Public demands: [`/v1/demands`](https://unmet-api.vercel.app/v1/demands)
 - Paid opportunity endpoint: `POST https://unmet-api.vercel.app/v1/opportunities`
