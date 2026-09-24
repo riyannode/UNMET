@@ -35,9 +35,9 @@ Blue is reserved for current selection and primary actions. Green, amber, and re
 
 ## 3. Layout system
 
-The desktop shell is a left-anchored two-column grid: a 184px workspace rail and a flexible market workspace. The shell fills the viewport width up to an 1880px left-aligned safety cap; it is never centered with auto margins. At 1440px, content begins within 24px of the left edge and uses the remaining workspace for the market table and optional right-side demand inspector.
+The desktop shell is a left-anchored two-column grid: a 184px workspace rail and a flexible market workspace. The shell fills the viewport width up to an 1880px left-aligned safety cap; it is never centered with auto margins. At 1440px, content begins within 24px of the left edge and uses the remaining workspace for the market table or the selected Demand view.
 
-Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the demand board as a wide comparison table. The selected demand opens a contextual inspector on the right at wide desktop widths; it flows beneath the table on narrower screens. Create Demand is an operational split form. My Activity is an event ledger, not a card gallery.
+Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the demand board as a wide comparison table. Selecting a demand from Demand Board or My Activity opens a dedicated Demand view in the workspace, with Overview, Fund, and Build & Review tabs. Keep all demand-specific actions in that view and retain a back action to the originating page. Create Demand is an operational split form. My Activity is an event ledger, not a card gallery.
 
 ## 4. Typography
 
@@ -47,7 +47,7 @@ Use Figtree Variable for interface text. Use the system monospace stack only for
 
 - **Workspace navigation:** visible labels, consistent icons, clear selected, hover, focus, and disabled states.
 - **Demand board:** capability, committed amount, expected calls, wallets, max price, and status remain comparable in aligned columns. Mobile rows expose the same values with visible labels.
-- **Demand inspector:** specification, parties, escrow and review snapshots, supporters, calls, deadline, service evidence, approval/rejection progress, and eligible actions remain available.
+- **Demand view:** Overview contains request and market information; Fund contains escrow, the connected wallet's commitment, and funding/refund controls; Build & Review contains proposal information, vote progress, and eligible lifecycle actions.
 - **Create form:** persistent labels, native input behavior, bounded text lengths, visible focus, and clear submit state.
 - **Activity ledger:** role, demand, escrow, and effective status remain scannable as a chronological-style record.
 - **Wallet and network:** Reown AppKit remains the configured wallet UI; X Layer chain ID remains visible.
@@ -56,7 +56,7 @@ Use Figtree Variable for interface text. Use the system monospace stack only for
 
 ## 6. Interaction and motion
 
-Use anime.js for orchestration only: a restrained ambient camera/group drift and short row or inspector transitions. Three.js is the renderer. Keep transitions around 150–250ms and never delay task controls.
+Use anime.js for orchestration only: a restrained ambient camera/group drift and short row or demand-view transitions. Three.js is the renderer. Keep transitions around 150–250ms and never delay task controls.
 
 The background is an `aria-hidden`, pointer-transparent canvas. It loads an optional Blender-exported GLB from `VITE_NETWORK_SCENE_URL`; until one is provided, a deterministic procedural node-and-edge field renders as the fallback. If WebGL or the optional GLB is unavailable, keep the product usable and retain the fallback or plain canvas. Do not fetch a model when the URL is unset.
 
@@ -64,9 +64,9 @@ Respect `prefers-reduced-motion`: stop the animation loop and anime.js drift, re
 
 ## 7. Responsive rules
 
-- **Wide desktop:** left rail, flexible board, optional right inspector; retain the left anchor at 1440px and 1920px.
-- **Tablet:** keep the rail while space allows, move the inspector below the board, and simplify the create form to one main column.
-- **Mobile:** move navigation above the workspace, stack form fields, render demand entries as labeled rows, and stack inspector fields. Preserve every action and explorer link. Maintain 44px minimum targets for the main navigation and mobile actions.
+- **Wide desktop:** left rail and flexible board or selected Demand view; retain the left anchor at 1440px and 1920px.
+- **Tablet:** keep the rail while space allows and simplify the create form to one main column.
+- **Mobile:** move navigation above the workspace, stack form fields, and render demand entries as labeled rows. Keep all Demand view tabs, actions, and explorer links reachable. Maintain 44px minimum targets for the main navigation and mobile actions.
 - Avoid horizontal page overflow at 320px. Long strings wrap within their own cells.
 
 ## 8. Accessibility acceptance

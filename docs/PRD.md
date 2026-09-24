@@ -200,17 +200,14 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- demand board
-- create demand
-- demand detail
-- support
-- submit service
-- commitment-weighted approval
-- `rejectService` with rejection progress
-- finalize
-- reopen failed review
-- refund only when `isRefundable()` says true
-- My Activity
+- Global navigation: Demand Board, Create Demand, My Activity.
+- Selecting a demand from Demand Board or My Activity opens its dedicated Demand view; the back action returns to the originating view.
+- Demand view tabs: **Overview** (request and market state), **Fund** (escrow, wallet commitment, commit inputs and eligible refund), and **Build & Review** (builder proposal, weighted review progress, and currently eligible settlement actions).
+- Create Demand sections: Request, Economics, and Initial Escrow; final action label is **Create Demand & Commit Escrow**.
+- User-facing action labels: **Commit to Escrow**, **Submit Proposal**, **Approve Proposal**, **Reject Proposal**, and **Finalize Payout**. Contract function names remain unchanged.
+- **Refund** and **Reopen Demand** remain in the selected demand context and appear only when their current contract conditions allow them.
+- Keep the demand board, wallet flow, chain/network state, transaction status/readback, explorer links, and eligible lifecycle actions.
+- Refund only when `isRefundable()` says true; show finalize, refund, and reopen actions only when their contract eligibility conditions hold.
 
 Wallet behavior:
 - injected EIP-1193 wallet

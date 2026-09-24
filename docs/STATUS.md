@@ -1,8 +1,23 @@
 # Verification Status
 
-Date: 2026-09-23
+Date: 2026-09-24
 
-Status: **PARTIAL — THE DEMAND MARKET REMAINS ON X LAYER TESTNET; THE A2MCP x402 RAIL NOW ADVERTISES X LAYER MAINNET AND PASSES UNPAID CHALLENGE VERIFICATION. No mainnet payment was made. Wallet-provider E2E, paid-mainnet verification, and OKX.AI listing/review remain.**
+Status: **PARTIAL — THE DEMAND MARKET REMAINS ON X LAYER TESTNET; THE A2MCP x402 RAIL ADVERTISES X LAYER MAINNET. An unpaid Mainnet challenge was rechecked on 2026-09-24; paid-Mainnet replay and settlement remain unverified. The latest recorded OKX.AI listing/review status is from 2026-09-23. Wallet-provider E2E and an independent contract audit remain outstanding.**
+
+## Read-only public recheck (2026-09-24)
+
+These checks were made while updating the documentation. No wallet transaction or paid x402 replay was sent.
+
+| Check | Result |
+| --- | --- |
+| Frontend | [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app) returned HTTP 200 |
+| Deployed frontend asset | Loaded JavaScript includes the Overview / Fund / Build & Review tab labels and current create, escrow, and reopen action labels. |
+| `GET /health` | HTTP 200; chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
+| `GET /v1/demands` | HTTP 200; chain `1952`, same contract; sampled at `2026-09-24T03:41:05Z`, block `41762426`; 4 demand records |
+| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:196`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
+| Paid Mainnet replay | Not performed in this check. No paid-Mainnet replay evidence is recorded in this repository; the challenge check alone does not establish settlement. |
+| Frontend-origin CORS | Requests with origin `https://frontend-omega-beige-33.vercel.app` returned no `Access-Control-Allow-Origin` header for `/health`, `/v1/demands`, or the `/v1/demands` preflight. Browser cross-origin access from the deployed frontend is therefore not verified. |
+| OKX.AI listing/review | Latest repository evidence is the 2026-09-23 check below: ASP `13853` / Service `40842` was unlisted and review had not been submitted. No newer approval evidence was found for this update. |
 
 ## Production network split deployment (2026-09-23)
 
@@ -50,9 +65,9 @@ No chain transaction or paid x402 request was performed while fixing or verifyin
 
 The API checks above record the current network split. The deployment and x402 checks below describe earlier releases; their `eip155:1952` payment challenges are historical and are not the active production billing configuration.
 
-**Ready locally and publicly:** deployed X Layer Testnet contract configuration and funded flows have successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
+**At the 2026-09-23 network-split verification:** deployed X Layer Testnet contract configuration and funded flows had successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
 
-**Remaining:** a paid mainnet x402 replay has not been performed; automated production wallet connection/write verification, OKX.AI listing/review, and an independent contract audit remain. Earlier paid Testnet replay evidence below does not verify mainnet settlement. This repository is not production-ready.
+**Unresolved at that check:** a paid mainnet x402 replay had not been performed; automated production wallet connection/write verification, OKX.AI listing/review, and an independent contract audit remained. Earlier paid Testnet replay evidence below does not verify mainnet settlement. This repository is not production-ready. See the dated read-only recheck above for the latest public endpoint state.
 
 In the earlier contract/payment E2E run recorded below, all chain writes used X Layer Testnet (`eip155:1952`); mainnet (`196`) and real assets were not used. The current network-split migration made no chain writes or payments. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
 
