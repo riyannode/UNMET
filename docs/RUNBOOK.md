@@ -207,7 +207,7 @@ The current public frontend URL is [https://frontend-omega-beige-33.vercel.app](
 
 The current read-only public checks and their date, including the Mainnet x402 challenge and the unverified frontend-origin CORS result, are recorded in [STATUS.md](STATUS.md). The three-demand and Testnet-payment results below are the 2026-09-23 deployment snapshot, not a current Mainnet payment check.
 
-Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200 with chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, and 3 live demands. Unpaid `POST /v1/opportunities` returned x402 v2 HTTP 402, scheme `exact`, network `eip155:196`, asset `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No payment or chain transaction was made. ASP `13853` / Service `40842` remain unlisted; review is pending.
+Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200 with chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, and 3 live demands. Unpaid `POST /v1/opportunities` returned x402 v2 HTTP 402, scheme `exact`, network `eip155:196`, asset `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No payment or chain transaction was made. ASP `13853` / Service `40842` remain unlisted; review has not been submitted.
 
 ### Earlier production state (before network split)
 
