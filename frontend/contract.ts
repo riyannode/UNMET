@@ -15,6 +15,7 @@ import {
   type Hash,
   type PublicClient,
 } from "viem";
+import { normalizeCapability } from "./capability";
 
 export const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || "1952");
 if (CHAIN_ID !== 1952 && CHAIN_ID !== 196) throw new Error("VITE_CHAIN_ID must be 1952 or 196");
@@ -402,8 +403,7 @@ export async function createDemand(input: {
   commitment: string;
 }): Promise<Hash> {
   const account = await requireAccount();
-  const capability = input.capability.trim().toLowerCase();
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(capability) || capability.length > 64) throw new Error("DEMAND_INVALID_CAPABILITY");
+  const capability = normalizeCapability(input.capability);
   const specification = input.specification.trim();
   if (!specification || new TextEncoder().encode(specification).length > 2048) throw new Error("DEMAND_INVALID_SPEC");
   const commitment = parseUsd0(input.commitment);
