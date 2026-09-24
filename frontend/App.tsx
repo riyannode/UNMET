@@ -263,7 +263,7 @@ export default function App() {
   return (
     <>
       <Suspense fallback={null}><NetworkBackground /></Suspense>
-      <a className="skip-link" href="#workspace">Skip to market</a>
+      <a className="skip-link" href="#workspace">Skip to Market Requests</a>
       <div className="app-shell">
         <aside className="nav-rail" aria-label="UNMET workspace">
           <a className="rail-brand" href="#workspace" onClick={() => navigate("board")} aria-label="UNMET home">
@@ -272,10 +272,10 @@ export default function App() {
           </a>
           <nav className="rail-nav" aria-label="Workspace">
             <button aria-current={tab === "board" ? "page" : undefined} className={`nav-item ${tab === "board" ? "active" : ""}`} onClick={() => navigate("board")}>
-              <NavGlyph tab="board" /><span>Demand board</span>
+              <NavGlyph tab="board" /><span>Market Requests</span>
             </button>
             <button aria-current={tab === "create" ? "page" : undefined} className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => navigate("create")}>
-              <NavGlyph tab="create" /><span>Create demand</span>
+              <NavGlyph tab="create" /><span>Post a Request</span>
             </button>
             <button aria-current={tab === "activity" ? "page" : undefined} className={`nav-item ${tab === "activity" ? "active" : ""}`} onClick={() => navigate("activity")}>
               <NavGlyph tab="activity" /><span>My Activity</span>
@@ -312,7 +312,7 @@ export default function App() {
               {tab === "create" && <CreatePanel busy={busy} run={run} />}
               {tab === "activity" && (
                 <section className="panel activity-panel">
-                  <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} positions</span>}</div>
+                  <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} requests</span>}</div>
                   {!account ? <div className="empty">Connect a wallet to see your activity.</div>
                     : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
                     : activityState === "error" ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
@@ -329,14 +329,14 @@ export default function App() {
                 account={account}
                 busy={busy}
                 close={closeDetail}
-                closeLabel={tab === "activity" ? "Back to My Activity" : "Back to Demand board"}
+                closeLabel={tab === "activity" ? "Back to My Activity" : "Back to Market Requests"}
                 run={run}
               />
             )}
             {demandOpen && !selected && (
-              <section className="panel detail demand-page" aria-label="Demand detail">
-                <div className="detail-title"><h2>Demand unavailable</h2><button className="ghost" onClick={closeDetail}>Back to {tab === "activity" ? "My Activity" : "Demand board"}</button></div>
-                <p className="empty">This demand is no longer in the current chain view. Refresh to try again.</p>
+              <section className="panel detail demand-page" aria-label="Market Request details">
+                <div className="detail-title"><h2>Market request unavailable</h2><button className="ghost" onClick={closeDetail}>Back to {tab === "activity" ? "My Activity" : "Market Requests"}</button></div>
+                <p className="empty">This market request is no longer in view. Refresh to try again.</p>
               </section>
             )}
           </main>
@@ -363,10 +363,10 @@ function NavGlyph({ tab }: { tab: Tab }) {
 function DemandBoard({ board, loading, loadError, selectedId, onSelect }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; onSelect: (id: bigint) => void }) {
   return (
     <section className="panel">
-      <div className="board-title"><h1>Funded demand<span className="count">{loading || loadError ? "—" : board.length}</span></h1><span className="unit">USD₮0</span></div>
-      {loading ? <div className="empty" role="status">Reading demand market…</div>
-        : loadError ? <div className="empty error" role="alert">Demand read failed. Refresh chain to retry.</div>
-        : board.length === 0 ? <div className="empty">No funded demand yet.</div>
+      <div className="board-title"><div><h1>What the market needs<span className="count">{loading || loadError ? "—" : board.length}</span></h1><p className="workflow-summary">Requests backed by real escrow.</p></div><span className="unit">USD₮0</span></div>
+      {loading ? <div className="empty" role="status">Loading market requests…</div>
+        : loadError ? <div className="empty error" role="alert">Could not load market requests. Refresh to try again.</div>
+        : board.length === 0 ? <div className="empty">No funded market requests yet.</div>
         : <DemandTable board={board} selectedId={selectedId} onSelect={onSelect} />}
     </section>
   );
@@ -374,7 +374,7 @@ function DemandBoard({ board, loading, loadError, selectedId, onSelect }: { boar
 
 function DemandTable({ board, selectedId, onSelect }: { board: DemandView[]; selectedId: bigint | null; onSelect: (id: bigint) => void }) {
   return <table className="demand-table">
-    <thead><tr><th>Capability</th><th>Committed</th><th>Expected calls</th><th>Wallets</th><th>Max / call</th><th>Status</th></tr></thead>
+    <thead><tr><th>Capability</th><th>Escrow</th><th>Expected calls</th><th>Wallets</th><th>Max / call</th><th>Status</th></tr></thead>
     <tbody>{board.map((demand) => <DemandCard key={demand.demandId.toString()} demand={demand} selected={selectedId === demand.demandId} onSelect={onSelect} />)}</tbody>
   </table>;
 }
@@ -402,7 +402,7 @@ function DemandCard({ demand, selected, onSelect }: { demand: DemandView; select
   return (
     <tr className={`demand-row ${selected ? "selected" : ""}`}>
       <td className="capability"><button aria-expanded={selected} onClick={() => onSelect(demand.demandId)}><span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span><strong>{demand.capability}</strong><span className="row-open" aria-hidden="true">View</span></button></td>
-      <td data-label="Committed" className="number">{formatUsd0(demand.committed)}</td>
+      <td data-label="Escrow" className="number">{formatUsd0(demand.committed)}</td>
       <td data-label="Expected calls" className="number">{demand.expectedCalls.toLocaleString("en-US")}</td>
       <td data-label="Wallets" className="number">{demand.supporterCount}</td>
       <td data-label="Max / call" className="number">{formatUsd0(demand.maxUnitPrice)}</td>
@@ -431,9 +431,9 @@ function DemandDetail({
   const [serviceUrl, setServiceUrl] = useState("");
   const [evidence, setEvidence] = useState("");
   const views = [
-    { id: "overview", label: "Overview" },
-    { id: "fund", label: "Fund" },
-    { id: "build-review", label: "Build & Review" },
+    { id: "overview", label: "Request Details" },
+    { id: "fund", label: "Escrow & Support" },
+    { id: "build-review", label: "Builder Proposal" },
   ] as const;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
@@ -452,6 +452,7 @@ function DemandDetail({
   const reviewExpired = demand.status === 1 && demand.reviewEndsAt <= now;
   const canReopen = (reviewExpired || demand.candidateRejected) && !demand.quorumReached && demand.deadline > now;
   const safeUrl = safeHttpsUrl(demand.serviceUrl);
+  const hasProposal = demand.serviceUrl.length > 0;
   const percent = demand.approvalRequired === 0n ? 0 : Math.min(100, Number((demand.approvalWeight * 10_000n) / demand.approvalRequired) / 100);
   const rejectionPercent = demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number((demand.rejectionWeight * 10_000n) / demand.rejectionThreshold) / 100);
 
@@ -464,12 +465,15 @@ function DemandDetail({
   }
 
   return (
-    <section ref={panelRef} className="panel detail demand-page" aria-label="Demand detail">
+    <section ref={panelRef} className="panel detail demand-page" aria-label="Market Request details">
       <div className="detail-title">
-        <h2 tabIndex={-1}><span className="demand-id">Demand #{demand.demandId.toString()}</span>{demand.capability}</h2>
+        <div>
+          <h2 tabIndex={-1}><span className="demand-id">Market Request #{demand.demandId.toString()}</span>{demand.capability}</h2>
+          <p className="workflow-summary">A market need backed by real escrow.</p>
+        </div>
         <button className="ghost" onClick={close}>{closeLabel}</button>
       </div>
-      <div className="detail-tabs" role="tablist" aria-label="Demand views">
+      <div className="detail-tabs" role="tablist" aria-label="Market Request sections">
         {views.map((view, index) => (
           <button
             key={view.id}
@@ -488,9 +492,8 @@ function DemandDetail({
       </div>
       <div className="demand-tab-panels">
         <div id="demand-panel-overview" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-overview" tabIndex={0} hidden={activeView !== "overview"}>
-          <dl><dt>Status</dt><dd>{state}</dd></dl>
           <section className="action-block" aria-labelledby="request-heading">
-            <h3 id="request-heading">Request</h3>
+            <h3 id="request-heading">What is needed</h3>
             <dl>
               <dt>Capability</dt><dd>{demand.capability}</dd>
               <dt>Specification</dt><dd>{demand.specification}</dd>
@@ -505,23 +508,26 @@ function DemandDetail({
               <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
               <dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd>
               <dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} USD₮0</dd>
+              <dt>Status</dt><dd>{state}</dd>
             </dl>
           </section>
         </div>
         <div id="demand-panel-fund" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-fund" tabIndex={0} hidden={activeView !== "fund"}>
           <section className="action-block" aria-labelledby="escrow-heading">
-            <h3 id="escrow-heading">Escrow</h3>
+            <h3 id="escrow-heading">Market backing</h3>
             <dl>
               <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
+              <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
               <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
               {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
               {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
             </dl>
             {state === "OPEN" && (
               <div className="action-block">
-                <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} placeholder="USD₮0" /></label>
-                <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} placeholder="Expected calls" /></label>
-                <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Commit to Escrow</button>
+                <h3>Support this request</h3>
+                <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} /></label>
+                <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} /></label>
+                <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Support This Request</button>
               </div>
             )}
             {supportState === "ready" && support.refundable && (
@@ -530,27 +536,37 @@ function DemandDetail({
           </section>
         </div>
         <div id="demand-panel-build-review" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-build-review" tabIndex={0} hidden={activeView !== "build-review"}>
-          <section className="action-block" aria-labelledby="proposal-heading">
-            <h3 id="proposal-heading">Proposal</h3>
-            <dl>
-              <dt>Builder</dt><dd>{demand.builder}</dd>
-              <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl || "—"}</dd>
-              <dt>Evidence</dt><dd>{demand.evidenceHash}</dd>
-            </dl>
-            {state === "OPEN" && (
+          <section className="action-block" aria-labelledby="builder-proposal-heading">
+            <h3 id="builder-proposal-heading">Builder Proposal</h3>
+            {!hasProposal && state === "OPEN" && <p className="workflow-summary">Built a solution? Submit the service here.</p>}
+          </section>
+          {hasProposal ? (
+            <section className="action-block" aria-labelledby="proposal-heading">
+              <h3 id="proposal-heading">Current proposal</h3>
+              <dl>
+                <dt>Builder</dt><dd>{demand.builder}</dd>
+                <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl}</dd>
+                <dt>Evidence</dt><dd>{demand.evidenceHash}</dd>
+              </dl>
+            </section>
+          ) : state === "OPEN" ? (
+            <section className="action-block" aria-labelledby="submit-service-heading">
+              <h3 id="submit-service-heading">Submit a service</h3>
               <div className="action-block">
                 <label>Service URL<input value={serviceUrl} onChange={(e) => setServiceUrl(e.target.value)} placeholder="https://service.example/api" /></label>
-                <label>Evidence<textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Evidence JSON/text or 0x bytes32 hash" /></label>
-                <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit Proposal</button>
+                <label htmlFor="proposal-evidence">Evidence</label>
+                <textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(e) => setEvidence(e.target.value)} />
+                <p className="workflow-summary" id="proposal-evidence-help">Proof that the service fulfills this request.</p>
+                <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit Service Proposal</button>
               </div>
-            )}
-          </section>
+            </section>
+          ) : null}
           {demand.status === 1 && (
             <section className="action-block" aria-labelledby="review-heading">
               <h3 id="review-heading">Review</h3>
               <dl>
                 <dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} USD₮0</dd>
-                <dt>Review ends</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
+                <dt>Review end</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
                 <dt>Approval progress</dt>
                 <dd>
                   {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0
@@ -604,7 +620,8 @@ function CreatePanel({ busy, run }: {
 
   return (
     <section className="panel create-panel">
-      <h1>Create demand</h1>
+      <h1>Post a Market Request</h1>
+      <p className="workflow-summary">Describe what the market needs and back it with escrow.</p>
       <form className="create-form" onSubmit={(event) => {
         event.preventDefault();
         void run("create", () => createDemand({ capability, specification, maxPrice, expectedCalls, deadlineDays, commitment }));
@@ -626,7 +643,7 @@ function CreatePanel({ busy, run }: {
             <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
           </section>
         </div>
-        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Create Demand &amp; Commit Escrow</button></div>
+        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Post Request &amp; Commit Escrow</button></div>
       </form>
     </section>
   );

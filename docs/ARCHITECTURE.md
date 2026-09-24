@@ -153,3 +153,29 @@ Remaining assumptions:
 - `supporterCount` and aggregate `expectedCalls` are historical demand signals and are not decremented by later refunds.
 
 This prevents a majority from seizing minority deposits while preserving the original demand signal.
+
+## Why the core escrow is not ERC-8183
+
+[ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) is currently a **Draft** standard. This comparison describes the core abstractions in the current specification; it does not claim incompatibility or superiority. ERC-8183 solves a neighboring problem at a different abstraction layer.
+
+At a high level, ERC-8183 models a job:
+
+**Client → fund one job budget → Provider submits → one Evaluator completes or rejects → release or refund the job escrow**
+
+Its evaluator may be the client or a contract, and the specification includes optional hooks. The core escrow unit is still the budget for one job.
+
+UNMET models funded market demand:
+
+**Many supporters → independently commit to one demand → one builder submits a candidate → supporters vote with commitment weight → quorum uses the review escrow snapshot → only explicit approver funds settle; eligible non-approver funds remain individually refundable**
+
+| Dimension | UNMET | ERC-8183 core job |
+| --- | --- | --- |
+| Funding | Multiple wallets make independent commitments to one demand. | A client funds one job budget. |
+| Evaluation authority | Supporters vote with commitment weight; the contract checks approval quorum against the snapshot taken at submission. | One evaluator address decides whether a submitted job completes or is rejected. The evaluator may be the client or a contract. |
+| Settlement | Only explicit approver commitments are eligible for builder payout and treasury fee. Eligible non-approver commitments do not automatically pay the builder and remain individually refundable. | The job escrow is the settlement unit: completion releases it to the provider (less an optional fee); rejection or expiry refunds it to the client. |
+| Market discovery | The demand can be funded and discovered before a builder is selected. | The primitive coordinates execution after the job's client, provider, evaluator, and budget are established. A provider may be assigned after creation, but must be set before funding. |
+| Re-proposal | An unsuccessful candidate can be cleared and the demand reopened while its deadline remains active, preserving the underlying demand. | Rejected and expired jobs are terminal in the specified state machine, so another attempt would use a new job. |
+
+These differences explain why `AgentDemand` uses a demand-level escrow and commitment ledger as its core. They do not imply that ERC-8183 cannot be extended or composed for a particular application.
+
+One possible future composition would match a funded UNMET demand to a provider, then use an ERC-8183-compatible job escrow downstream for that provider's execution. `AgentDemand` could remain the demand-aggregation and commitment-consensus layer. UNMET does not implement this integration today.

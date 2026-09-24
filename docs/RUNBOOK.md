@@ -186,13 +186,16 @@ Browser verification:
 - connect wallet
 - detect wrong chain
 - show loading/error states distinctly from an empty demand board
-- create demand and wait receipt
-- board readback
-- support from second wallet
-- submit HTTPS service + evidence
-- approve
-- finalize
-- refund fixture
+- select a market request from Market Requests and confirm it opens the dedicated Demand view
+- navigate Request Details, Escrow & Support, and Builder Proposal; return to the originating view with Back
+- Post a Request uses Request, Economics, and Initial Escrow and shows the Post Request & Commit Escrow action
+- confirm Support This Request and Submit Service Proposal are visible only when their existing lifecycle conditions allow them
+- My Activity opens the selected position in the same Demand view
+- support from a second wallet; read back the board and position
+- submit an HTTPS service URL and evidence
+- approve or reject and verify commitment-weighted progress
+- finalize only after quorum; verify only approver funds settle
+- verify Refund and Reopen Demand appear only when eligible
 - explorer links open correctly
 
 ## 8. Public deployment
@@ -203,7 +206,9 @@ Backend-only production deployment `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n` is on Expr
 
 The current public frontend URL is [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app).
 
-Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200 with chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, and 3 live demands. Unpaid `POST /v1/opportunities` returned x402 v2 HTTP 402, scheme `exact`, network `eip155:196`, asset `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No payment or chain transaction was made. ASP `13853` / Service `40842` remain unlisted; review is pending.
+The current read-only public checks and their date, including the Mainnet x402 challenge and the unverified frontend-origin CORS result, are recorded in [STATUS.md](STATUS.md). The three-demand and Testnet-payment results below are the 2026-09-23 deployment snapshot, not a current Mainnet payment check.
+
+Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200 with chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, and 3 live demands. Unpaid `POST /v1/opportunities` returned x402 v2 HTTP 402, scheme `exact`, network `eip155:196`, asset `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No payment or chain transaction was made. ASP `13853` / Service `40842` remain unlisted; review has not been submitted.
 
 ### Earlier production state (before network split)
 

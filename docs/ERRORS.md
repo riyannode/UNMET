@@ -8,7 +8,7 @@ Source keeps errors short. This file is the recovery reference.
 | --- | --- | --- |
 | `CHAIN_CONTRACT_UNCONFIGURED` | `DEMAND_CONTRACT` is unset | deploy/configure contract |
 | `CHAIN_RPC_UNAVAILABLE` | RPC or configured contract unavailable | verify RPC, chain ID, address and bytecode |
-| `CHAIN_WRONG_NETWORK` | wallet is not on configured X Layer network | switch/add chain 1952 or 196 |
+| `CHAIN_WRONG_NETWORK` | wallet is not on the configured demand-market network | switch/add X Layer Testnet chain `1952`; the x402 API billing rail's Mainnet `196` does not change the wallet network for demand-market actions |
 | `CHAIN_RECEIPT_FAILED` | mined write failed | inspect revert and transaction |
 | `CHAIN_STATE_READBACK_FAILED` | transaction receipt succeeded but the follow-up demand read failed | inspect the transaction, then refresh the chain view |
 | `WALLET_NOT_FOUND` | injected EIP-1193 wallet unavailable | install/unlock wallet |
