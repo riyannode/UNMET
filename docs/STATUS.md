@@ -4,6 +4,13 @@ Date: 2026-09-24
 
 Status: **PARTIAL — THE DEMAND MARKET REMAINS ON X LAYER TESTNET; THE A2MCP x402 RAIL ADVERTISES X LAYER MAINNET. An unpaid Mainnet challenge was rechecked on 2026-09-24; paid-Mainnet replay and settlement remain unverified. The latest recorded OKX.AI listing/review status is from 2026-09-23. Wallet-provider E2E and an independent contract audit remain outstanding.**
 
+## Submission artifacts — 2026-09-24
+
+- OKX Dev Day 2026 project submission form: response recorded.
+- Final demo video: [https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
+- Live frontend: [https://frontend-omega-beige-33.vercel.app/](https://frontend-omega-beige-33.vercel.app/)
+- Repository: [https://github.com/riyannode/UNMET](https://github.com/riyannode/UNMET)
+
 ## Read-only public recheck (2026-09-24)
 
 These checks were made while updating the documentation. No wallet transaction or paid x402 replay was sent.
@@ -11,7 +18,7 @@ These checks were made while updating the documentation. No wallet transaction o
 | Check | Result |
 | --- | --- |
 | Frontend | [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app) returned HTTP 200 |
-| Deployed frontend asset | Loaded JavaScript includes the Overview / Fund / Build & Review tab labels and current create, escrow, and reopen action labels. |
+| Deployed frontend asset | Current bundle includes Market Requests, Post a Request, Request Details, Escrow & Support, Builder Proposal, Support This Request, Submit Service Proposal, and Post Request & Commit Escrow. |
 | `GET /health` | HTTP 200; chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
 | `GET /v1/demands` | HTTP 200; chain `1952`, same contract; sampled at `2026-09-24T03:41:05Z`, block `41762426`; 4 demand records |
 | Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:196`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
