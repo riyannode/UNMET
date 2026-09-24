@@ -432,70 +432,96 @@ function DemandDetail({
         <h2 tabIndex={-1}><span className="demand-id">Demand #{demand.demandId.toString()}</span>{demand.capability}</h2>
         <button className="ghost" onClick={close}>Close</button>
       </div>
-      <dl>
-        <dt>Status</dt><dd>{state}</dd>
-        <dt>Specification</dt><dd>{demand.specification}</dd>
-        <dt>Creator</dt><dd>{demand.creator}</dd>
-        <dt>Builder</dt><dd>{demand.builder}</dd>
-        <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
-        <dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} USD₮0</dd>
-        <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
-        <dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd>
-        <dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} USD₮0</dd>
-        <dt>Deadline</dt><dd>{iso(demand.deadline)}</dd>
-        <dt>Review ends</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
-        <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl || "—"}</dd>
-        <dt>Evidence hash</dt><dd>{demand.evidenceHash}</dd>
-        <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
-        {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
-        {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
-        <dt>Approval</dt>
-        <dd>
-          {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0
-          <div className="progress"><span style={{ width: `${percent}%` }} /></div>
-          <span className="muted">Only approver funds settle.</span>
-        </dd>
-        <dt>Rejection</dt>
-        <dd>{formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} USD₮0<div className="progress rejection"><span style={{ width: `${demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number(demand.rejectionWeight * 10_000n / demand.rejectionThreshold) / 100)}%` }} /></div></dd>
-      </dl>
-
-      <div className="actions actions-column">
+      <p className="workflow-summary">Demand → Escrow → Proposal → Review → Settlement</p>
+      <dl><dt>Status</dt><dd>{state}</dd></dl>
+      <section className="action-block" aria-labelledby="request-heading">
+        <h3 id="request-heading">Request</h3>
+        <dl>
+          <dt>Capability</dt><dd>{demand.capability}</dd>
+          <dt>Specification</dt><dd>{demand.specification}</dd>
+          <dt>Creator</dt><dd>{demand.creator}</dd>
+          <dt>Deadline</dt><dd>{iso(demand.deadline)}</dd>
+        </dl>
+      </section>
+      <section className="action-block" aria-labelledby="market-heading">
+        <h3 id="market-heading">Market</h3>
+        <dl>
+          <dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd>
+          <dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} USD₮0</dd>
+          <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
+        </dl>
+      </section>
+      <section className="action-block" aria-labelledby="escrow-heading">
+        <h3 id="escrow-heading">Escrow</h3>
+        <dl>
+          <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
+          <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
+          {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
+          {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
+        </dl>
         {state === "OPEN" && (
           <div className="action-block">
-            <h3>Support demand</h3>
-            <input aria-label="Support amount" value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} placeholder="USD₮0" />
-            <input aria-label="Expected calls" value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} placeholder="Expected calls" />
-            <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Support</button>
+            <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} placeholder="USD₮0" /></label>
+            <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} placeholder="Expected calls" /></label>
+            <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Commit to Escrow</button>
           </div>
         )}
-
+      </section>
+      <section className="action-block" aria-labelledby="proposal-heading">
+        <h3 id="proposal-heading">Proposal</h3>
+        <dl>
+          <dt>Builder</dt><dd>{demand.builder}</dd>
+          <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl || "—"}</dd>
+          <dt>Evidence hash</dt><dd>{demand.evidenceHash}</dd>
+        </dl>
         {state === "OPEN" && (
           <div className="action-block">
-            <h3>Submit service</h3>
-            <input aria-label="Service URL" value={serviceUrl} onChange={(e) => setServiceUrl(e.target.value)} placeholder="https://service.example/api" />
-            <textarea aria-label="Evidence" value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Evidence JSON/text or 0x bytes32 hash" />
-            <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit</button>
+            <label>Service URL<input value={serviceUrl} onChange={(e) => setServiceUrl(e.target.value)} placeholder="https://service.example/api" /></label>
+            <label>Evidence<textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Evidence JSON/text or 0x bytes32 hash" /></label>
+            <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit Proposal</button>
           </div>
         )}
-
-        {demand.status === 1 && !reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
-          <>
-            <button className="primary" disabled={busy || !account} onClick={() => void run("approve", () => approveService(demand.demandId))}>Approve candidate</button>
-            <button className="danger" disabled={busy || !account} onClick={() => void run("reject", () => rejectService(demand.demandId))}>Reject candidate</button>
-          </>
-        )}
-        {demand.status === 1 && supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
-        {demand.status === 1 && supportState === "ready" && support.rejected && <span className="status-line err">Candidate rejected.</span>}
-        {demand.status === 1 && demand.quorumReached && (
-          <button className="primary" disabled={busy} onClick={() => void run("finalize", () => finalizeDemand(demand.demandId))}>Finalize payout</button>
-        )}
-        {canReopen && (
-          <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", () => reopenDemand(demand.demandId))}>Reopen demand</button>
-        )}
-        {supportState === "ready" && support.refundable && (
-          <button className="danger" disabled={busy || !account} onClick={() => void run("refund", () => refundDemand(demand.demandId))}>Refund {formatUsd0(support.commitment)} USD₮0</button>
-        )}
-      </div>
+      </section>
+      <section className="action-block" aria-labelledby="review-heading">
+        <h3 id="review-heading">Review</h3>
+        <dl>
+          <dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} USD₮0</dd>
+          <dt>Review ends</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
+          <dt>Approval progress</dt>
+          <dd>
+            {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0
+            <div className="progress"><span style={{ width: `${percent}%` }} /></div>
+            <span className="muted">Only approver funds settle.</span>
+          </dd>
+          <dt>Rejection progress</dt>
+          <dd>{formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} USD₮0<div className="progress rejection"><span style={{ width: `${demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number(demand.rejectionWeight * 10_000n / demand.rejectionThreshold) / 100)}%` }} /></div></dd>
+        </dl>
+        <div className="actions actions-column">
+          {demand.status === 1 && !reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
+            <>
+              <button className="primary" disabled={busy || !account} onClick={() => void run("approve", () => approveService(demand.demandId))}>Approve Proposal</button>
+              <button className="danger" disabled={busy || !account} onClick={() => void run("reject", () => rejectService(demand.demandId))}>Reject Proposal</button>
+            </>
+          )}
+          {demand.status === 1 && supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
+          {demand.status === 1 && supportState === "ready" && support.rejected && <span className="status-line err">Proposal rejected.</span>}
+        </div>
+      </section>
+      <section className="action-block" aria-labelledby="settlement-heading">
+        <h3 id="settlement-heading">Settlement</h3>
+        <p className="workflow-summary">Eligible payouts, refunds, and reopening appear here.</p>
+        <div className="actions actions-column">
+          {demand.status === 1 && demand.quorumReached && (
+            <button className="primary" disabled={busy} onClick={() => void run("finalize", () => finalizeDemand(demand.demandId))}>Finalize Payout</button>
+          )}
+          {canReopen && (
+            <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", () => reopenDemand(demand.demandId))}>Reopen demand</button>
+          )}
+          {supportState === "ready" && support.refundable && (
+            <button className="danger" disabled={busy || !account} onClick={() => void run("refund", () => refundDemand(demand.demandId))}>Refund {formatUsd0(support.commitment)} USD₮0</button>
+          )}
+        </div>
+      </section>
     </section>
   );
 }
@@ -518,17 +544,24 @@ function CreatePanel({ busy, run }: {
         event.preventDefault();
         void run("create", () => createDemand({ capability, specification, maxPrice, expectedCalls, deadlineDays, commitment }));
       }}>
-        <div className="create-core">
+        <section className="create-core" aria-labelledby="create-request-heading">
+          <h2 id="create-request-heading" className="form-section-heading">Request</h2>
           <label>Capability<input value={capability} onChange={(e) => setCapability(e.target.value)} maxLength={64} required /></label>
           <label>Specification<textarea value={specification} onChange={(e) => setSpecification(e.target.value)} maxLength={2048} required /></label>
-        </div>
-        <div className="create-terms">
-          <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
-          <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
           <label>Deadline (days from now)<input inputMode="decimal" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} required /></label>
-          <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
+        </section>
+        <div className="create-core">
+          <section className="create-terms" aria-labelledby="create-economics-heading">
+            <h2 id="create-economics-heading" className="form-section-heading">Economics</h2>
+            <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
+            <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
+          </section>
+          <section className="create-core" aria-labelledby="create-escrow-heading">
+            <h2 id="create-escrow-heading" className="form-section-heading">Initial Escrow</h2>
+            <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
+          </section>
         </div>
-        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Create demand</button></div>
+        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Create Demand &amp; Commit Escrow</button></div>
       </form>
     </section>
   );

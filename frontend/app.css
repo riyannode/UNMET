@@ -136,7 +136,7 @@ code, .number, .demand-id, .detail dd, .wallet-box strong, .app-footer { font-fa
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
 .actions-column { align-items: stretch; }
 .action-block { display: grid; flex: 1 1 100%; gap: 8px; margin-top: 4px; padding: 12px 0; }
-.action-block h3 { margin: 0 0 2px; color: var(--text-secondary); font-size: 12px; font-weight: 620; }
+.action-block h3, .form-section-heading { margin: 0 0 2px; color: var(--text-secondary); font-size: 12px; font-weight: 620; }
 
 button.ghost, button.primary, button.danger { min-height: 40px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 6px; white-space: nowrap; font-size: 12px; font-weight: 630; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
 button.ghost { background: transparent; color: var(--text-primary); }
@@ -155,6 +155,9 @@ textarea { min-height: 76px; resize: vertical; }
 .create-form { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(330px, .9fr); align-items: start; gap: 24px clamp(28px, 4vw, 64px); padding-top: 4px; }
 .create-core { display: grid; gap: 17px; }
 .create-terms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 15px 18px; padding-top: 1px; }
+.form-section-heading { grid-column: 1 / -1; }
+.workflow-summary { margin: 0 0 13px; color: var(--text-muted); font-size: 11px; }
+.detail label textarea { min-height: 76px; }
 .create-submit { grid-column: 1 / -1; padding-top: 2px; }
 label { display: grid; align-content: start; gap: 7px; color: var(--text-secondary); font-size: 11px; font-weight: 560; }
 label textarea { min-height: 128px; }
