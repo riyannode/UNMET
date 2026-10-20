@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type FormEvent,
 } from "react";
+import MagicRings from "./MagicRings.tsx";
 import "./unmet-landing.css";
 
 type ModelKey = "chatgpt" | "claude" | "google" | "gemini";
@@ -185,13 +186,7 @@ function HeadlineLine({
 function BrandChip() {
   return (
     <a className="unmet-brand-chip" href="#unmet-landing" aria-label="UNMET">
-      <svg viewBox="186 81 108 108" aria-hidden="true">
-        <circle cx="240" cy="135" r="54" fill="#192800" />
-        <path
-          d="M240 102C244 121 251 128 270 132C251 136 244 143 240 162C236 143 229 136 210 132C229 128 236 121 240 102Z"
-          fill="white"
-        />
-      </svg>
+      <img src="/logos/unmet.png" alt="" width="32" height="32" />
     </a>
   );
 }
@@ -267,7 +262,21 @@ export default function UnmetLanding() {
   return (
     <section id="unmet-landing" className="unmet-landing">
       <div className="unmet-background" aria-hidden="true">
-        <img src="/unmet-landing-bg.jpg" alt="" />
+        <MagicRings
+          color="#5B8C32"
+          colorTwo="#A3C96A"
+          theme="light"
+          motion="pulse"
+          ringCount={6}
+          speed={1}
+          lineThickness={2}
+          glow={1}
+          baseRadius={0.52}
+          clickBurst={false}
+          hoverScale={1}
+          hoverIntensity={0}
+          parallax={0}
+        />
       </div>
 
       <div className="unmet-content">
@@ -279,7 +288,9 @@ export default function UnmetLanding() {
               {navItems.map((item) => (
                 <a
                   className="unmet-nav-link"
-                  href={item.href}
+                  href={item.href === "/market" ? undefined : item.href}
+                  role={item.href === "/market" ? "link" : undefined}
+                  aria-disabled={item.href === "/market" ? true : undefined}
                   key={item.label}
                   onClick={() => setMenuOpen(false)}
                   rel={item.href.startsWith("http") ? "noreferrer" : undefined}
@@ -290,8 +301,8 @@ export default function UnmetLanding() {
               ))}
             </nav>
 
-            <a className="unmet-book" href="/market">
-              <RollText text="Explore Demand" variant="dark" />
+            <a className="unmet-book" role="link" aria-disabled="true">
+              <RollText text="Soon" variant="dark" />
               <MiniBars />
             </a>
 
@@ -317,7 +328,9 @@ export default function UnmetLanding() {
           <div className="unmet-mobile-menu">
             {navItems.map((item) => (
               <a
-                href={item.href}
+                href={item.href === "/market" ? undefined : item.href}
+                role={item.href === "/market" ? "link" : undefined}
+                aria-disabled={item.href === "/market" ? true : undefined}
                 key={item.label}
                 onClick={() => setMenuOpen(false)}
                 rel={item.href.startsWith("http") ? "noreferrer" : undefined}
@@ -326,8 +339,8 @@ export default function UnmetLanding() {
                 {item.label}
               </a>
             ))}
-            <a className="unmet-mobile-cta" href="/market" onClick={() => setMenuOpen(false)}>
-              Explore Demand
+            <a className="unmet-mobile-cta" role="link" aria-disabled="true">
+              Soon
             </a>
           </div>
         )}
@@ -352,8 +365,8 @@ export default function UnmetLanding() {
               ))}
             </p>
 
-            <a className="unmet-primary-cta" href="/market">
-              <RollText text="Explore Demand" variant="dark" />
+            <a className="unmet-primary-cta" role="link" aria-disabled="true">
+              <RollText text="Coming Soon" variant="dark" />
               <MiniBars />
             </a>
 
@@ -416,7 +429,6 @@ export default function UnmetLanding() {
                     >
                       <div className="unmet-ai-meta">
                         <strong>{model.name}</strong>
-                        <span>· UNMET Market Demo</span>
                       </div>
                       <div className="unmet-ai-bubble">{message.text}</div>
                     </div>

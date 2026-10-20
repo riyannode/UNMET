@@ -16,7 +16,9 @@
 }
 
 .jr-animate-marquee { animation: marquee 15s linear infinite; }
-.jr-animate-marquee:hover { animation-play-state: paused; }
+@media (hover: hover) and (pointer: fine) {
+  .unmet-marquee:hover .jr-animate-marquee { animation-play-state: paused; }
+}
 
 .jr-animate-bubble {
   opacity: 0;
@@ -71,12 +73,6 @@
   pointer-events: none;
 }
 
-.unmet-background img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 
 .unmet-content {
   position: relative;
@@ -117,13 +113,20 @@
   transform: scale(1.05);
 }
 
-.unmet-brand-chip svg {
-  width: 27px;
-  height: 27px;
+.unmet-brand-chip,
+.unmet-brand-chip:hover {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.unmet-brand-chip img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
   transition: transform 250ms cubic-bezier(0.2, 1, 0.2, 1);
 }
 
-.unmet-brand-chip:hover svg {
+.unmet-brand-chip:hover img {
   transform: scale(1.1);
 }
 
