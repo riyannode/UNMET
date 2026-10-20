@@ -4,8 +4,8 @@
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
   "installCommand": "bun install --frozen-lockfile",
-  "rewrites": [
-    { "source": "/market", "destination": "/" },
-    { "source": "/market/", "destination": "/" }
+  "redirects": [
+    { "source": "/market", "destination": "/", "permanent": false },
+    { "source": "/market/", "destination": "/", "permanent": false }
   ]
 }
