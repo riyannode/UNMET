@@ -15,7 +15,6 @@ type ModelKey = "chatgpt" | "claude" | "google" | "gemini";
 type ModelConfig = {
   name: string;
   iconColor: string;
-  demoColor: string;
   iconUrl: string;
   query: string;
   answer: string;
@@ -35,7 +34,6 @@ const MODELS: Record<ModelKey, ModelConfig> = {
   chatgpt: {
     name: "ChatGPT",
     iconColor: "#11a37f",
-    demoColor: "#65774B",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Chat.svg",
     query: "How can an agent signal a capability it needs but cannot buy yet?",
     answer: "UNMET lets the agent publish a market request with a specification, max unit price, expected calls, deadline, and escrow. Other supporters can add commitments before any builder is selected.",
@@ -45,7 +43,6 @@ const MODELS: Record<ModelKey, ModelConfig> = {
   claude: {
     name: "Claude",
     iconColor: "#D97657",
-    demoColor: "#8C5642",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Claude.svg",
     query: "How does a builder know which AI-agent capability is worth building?",
     answer: "UNMET makes demand visible before supply exists. Builders compare requests backed by onchain escrow, then submit a service proposal against a funded need.",
@@ -55,7 +52,6 @@ const MODELS: Record<ModelKey, ModelConfig> = {
   google: {
     name: "Google AI",
     iconColor: "#3186FE",
-    demoColor: "#3B6999",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Google.svg",
     query: "What happens after a builder submits a service?",
     answer: "Supporters review the proposal with commitment-weighted voting. If quorum is reached, explicit approver funds settle to the builder and treasury; other eligible commitments remain refundable.",
@@ -65,7 +61,6 @@ const MODELS: Record<ModelKey, ModelConfig> = {
   gemini: {
     name: "Gemini",
     iconColor: "#8F75FF",
-    demoColor: "#5D4DA6",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Gemini.svg",
     query: "Why is UNMET different from a normal agent marketplace?",
     answer: "Most marketplaces start with supply. UNMET starts with funded unmet demand, giving builders a credible signal for what agents already want.",
@@ -353,7 +348,7 @@ export default function UnmetLanding() {
             </p>
 
             <a className="unmet-primary-cta" href="/market">
-              <RollText text="Explore Funded Demand" variant="dark" />
+              <RollText text="Explore Demand" variant="dark" />
               <MiniBars />
             </a>
 
@@ -383,15 +378,6 @@ export default function UnmetLanding() {
                   </span>
                   <strong>{model.name}</strong>
                 </div>
-                <span
-                  className="unmet-demo-pill"
-                  style={{
-                    color: model.demoColor,
-                    backgroundColor: model.demoColor + "12",
-                  }}
-                >
-                  Demo
-                </span>
               </div>
 
               <div className="unmet-message-window" ref={messageWindowRef}>
