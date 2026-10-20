@@ -202,7 +202,7 @@ export default function UnmetLanding() {
   const replyTimerRef = useRef<number | null>(null);
 
   const model = MODELS[activeModel];
-  const heroWords = "UNMET turns unmet AI-agent needs into funded onchain market requests, so builders can see credible demand before they build.".split(" ");
+  const heroWords = "Users funded what agents need. Builders see what’s worth building".split(" ");
 
   useEffect(() => {
     const timer = window.setTimeout(() => setLoaded(true), 50);
@@ -253,10 +253,10 @@ export default function UnmetLanding() {
   }
 
   const navItems = [
-    { label: "Market", href: "/market" },
-    { label: "How It Works", href: "https://github.com/riyannode/UNMET#how-it-works" },
-    { label: "Builders", href: "https://github.com/riyannode/UNMET/blob/main/docs/SUBMISSION.md" },
-    { label: "Docs", href: "https://github.com/riyannode/UNMET/tree/main/docs" },
+    { label: "Market" },
+    { label: "How It Works" },
+    { label: "Builders" },
+    { label: "Docs" },
   ];
 
   return (
@@ -288,13 +288,9 @@ export default function UnmetLanding() {
               {navItems.map((item) => (
                 <a
                   className="unmet-nav-link"
-                  href={item.href === "/market" ? undefined : item.href}
-                  role={item.href === "/market" ? "link" : undefined}
-                  aria-disabled={item.href === "/market" ? true : undefined}
+                  role="link"
+                  aria-disabled="true"
                   key={item.label}
-                  onClick={() => setMenuOpen(false)}
-                  rel={item.href.startsWith("http") ? "noreferrer" : undefined}
-                  target={item.href.startsWith("http") ? "_blank" : undefined}
                 >
                   <RollText text={item.label} />
                 </a>
@@ -328,13 +324,9 @@ export default function UnmetLanding() {
           <div className="unmet-mobile-menu">
             {navItems.map((item) => (
               <a
-                href={item.href === "/market" ? undefined : item.href}
-                role={item.href === "/market" ? "link" : undefined}
-                aria-disabled={item.href === "/market" ? true : undefined}
+                role="link"
+                aria-disabled="true"
                 key={item.label}
-                onClick={() => setMenuOpen(false)}
-                rel={item.href.startsWith("http") ? "noreferrer" : undefined}
-                target={item.href.startsWith("http") ? "_blank" : undefined}
               >
                 {item.label}
               </a>
@@ -347,17 +339,16 @@ export default function UnmetLanding() {
 
         <div className="unmet-hero">
           <div className="unmet-left">
-            <h1 aria-label="Fund what agents need before it exists">
-              <HeadlineLine text="Fund what" loaded={loaded} offset={0} />{" "}
-              <HeadlineLine text="agents need" loaded={loaded} offset={9} />{" "}
-              <HeadlineLine text="before it exists" loaded={loaded} offset={21} />
+            <h1 aria-label="Build what agents need.">
+              <HeadlineLine text="Build what" loaded={loaded} offset={0} />{" "}
+              <HeadlineLine text="agents need." loaded={loaded} offset={11} />
             </h1>
 
             <p className="unmet-hero-copy" aria-label={heroWords.join(" ")}>
               {heroWords.map((word, index) => (
                 <span
                   key={word + "-" + index}
-                  className={loaded ? "is-loaded" : ""}
+                  className={"unmet-hero-copy-word " + (loaded ? "is-loaded" : "")}
                   style={{ transitionDelay: String(800 + index * 40) + "ms" }}
                 >
                   {word}

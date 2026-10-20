@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter+Tight:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400&display=swap");
 
 @keyframes marquee {
   0% { transform: translateX(0); }
@@ -330,10 +330,11 @@
   display: block;
   margin: 0;
   color: #192800;
-  font-family: "Fraunces", Georgia, serif;
+  font-family: "Newsreader", Georgia, serif;
+  font-optical-sizing: auto;
   font-size: 40px;
   font-weight: 400;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.015em;
   line-height: 1.1;
 }
 
@@ -343,6 +344,8 @@
 
 .unmet-headline-char-wrap {
   display: inline-block;
+  padding: 0.18em;
+  margin: -0.18em;
   overflow: hidden;
   vertical-align: bottom;
 }
@@ -362,14 +365,14 @@
   display: flex;
   max-width: 550px;
   flex-wrap: wrap;
-  gap: 4px 4px;
+  gap: 4px;
   margin: 26px 0 0;
   color: #626362;
   font-size: 16px;
   line-height: 24px;
 }
 
-.unmet-hero-copy span {
+.unmet-hero-copy-word {
   opacity: 0;
   transform: translateY(16px);
   transition:
@@ -377,7 +380,7 @@
     opacity 800ms cubic-bezier(0.2, 1, 0.2, 1);
 }
 
-.unmet-hero-copy span.is-loaded {
+.unmet-hero-copy-word.is-loaded {
   opacity: 1;
   transform: translateY(0);
 }
@@ -835,7 +838,7 @@
 
   .unmet-left h1 {
     font-size: 96px;
-    line-height: 90px;
+    line-height: 1.08;
   }
 }
 
