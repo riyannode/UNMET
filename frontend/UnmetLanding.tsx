@@ -69,7 +69,12 @@ const MODELS: Record<ModelKey, ModelConfig> = {
   },
 };
 
-const MARQUEE_ITEMS = ["X Layer", "OKX", "USD₮0", "x402"];
+const MARQUEE_ITEMS = [
+  { id: "x-layer", label: "X Layer", logo: null },
+  { id: "okx", label: "OKX", logo: "/logos/okx.png" },
+  { id: "usdt0", label: "USD₮0", logo: "/logos/usdt0.png" },
+  { id: "x402", label: "x402", logo: null },
+];
 
 function seedMessages(key: ModelKey): Message[] {
   const model = MODELS[key];
@@ -286,7 +291,7 @@ export default function UnmetLanding() {
             </nav>
 
             <a className="unmet-book" href="/market">
-              <RollText text="Explore Market" variant="dark" />
+              <RollText text="Explore Demand" variant="dark" />
               <MiniBars />
             </a>
 
@@ -322,7 +327,7 @@ export default function UnmetLanding() {
               </a>
             ))}
             <a className="unmet-mobile-cta" href="/market" onClick={() => setMenuOpen(false)}>
-              Explore Market
+              Explore Demand
             </a>
           </div>
         )}
@@ -355,12 +360,20 @@ export default function UnmetLanding() {
             <div className="unmet-marquee" aria-label="UNMET ecosystem">
               <div className="unmet-marquee-track jr-animate-marquee">
                 {MARQUEE_ITEMS.map((item) => (
-                  <span className="unmet-ecosystem-mark" key={"a-" + item}>{item}</span>
+                  <span className="unmet-ecosystem-mark" key={"a-" + item.id}>
+                    {item.logo ? (
+                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt={item.label} />
+                    ) : item.label}
+                  </span>
                 ))}
               </div>
               <div className="unmet-marquee-track jr-animate-marquee" aria-hidden="true">
                 {MARQUEE_ITEMS.map((item) => (
-                  <span className="unmet-ecosystem-mark" key={"b-" + item}>{item}</span>
+                  <span className="unmet-ecosystem-mark" key={"b-" + item.id}>
+                    {item.logo ? (
+                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt={item.label} />
+                    ) : item.label}
+                  </span>
                 ))}
               </div>
             </div>

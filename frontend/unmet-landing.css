@@ -424,6 +424,9 @@
 }
 
 .unmet-ecosystem-mark {
+  display: flex;
+  height: 32px;
+  align-items: center;
   flex: 0 0 auto;
   color: #192800;
   font-size: 18px;
@@ -867,4 +870,16 @@
 .unmet-primary-cta .unmet-roll-text,
 .unmet-primary-cta .unmet-bars {
   flex-shrink: 0;
+}
+
+.unmet-ecosystem-logo {
+  display: block;
+  width: 96px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.unmet-logo-usdt0 {
+  width: 122px;
+  object-fit: cover;
 }
