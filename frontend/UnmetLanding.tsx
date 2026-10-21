@@ -11,6 +11,7 @@ import {
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import MagicRings from "./MagicRings.tsx";
 import UnmetHowItWorks from "./UnmetHowItWorks.tsx";
+import UnmetFooter from "./UnmetFooter.tsx";
 import "./unmet-landing.css";
 
 type ModelKey = "chatgpt" | "claude" | "google" | "gemini";
@@ -305,7 +306,7 @@ function ProblemSection() {
   }, []);
 
   return (
-    <section className="unmet-problem" ref={sectionRef}>
+    <section id="problem" className="unmet-problem" ref={sectionRef}>
       <div className="unmet-problem-glows" aria-hidden="true">
         <span className="unmet-problem-glow unmet-problem-glow-one" />
         <span className="unmet-problem-glow unmet-problem-glow-two" />
@@ -748,6 +749,7 @@ export default function UnmetLanding() {
       <img src="/images/unmet-market-infrastructure.png" alt="" />
     </div>
     <UnmetHowItWorks />
+    <UnmetFooter />
     </>
   );
 }

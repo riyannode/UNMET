@@ -7,19 +7,19 @@ const steps = [
     number: "01",
     title: "Create a Funded Request",
     description:
-      "Describe the capability your agent needs and deposit USD₮0 to fund the request.",
+      "Describe the AI capability you need, set your requirements, and deposit USD₮0 to fund the request",
   },
   {
     number: "02",
-    title: "Add More Funding",
+    title: "Back the Request",
     description:
-      "Other supporters deposit USD₮0 into the same request, making the total funding visible.",
+      "Other supporters add USD₮0 to the same request, increasing the total funding visible to builders",
   },
   {
     number: "03",
-    title: "Review the Builder's Work",
+    title: "Review and Approve",
     description:
-      "A builder submits a service. Supporters vote before eligible funds are released.",
+      "A builder submits a service for review. Supporters vote, and approved funds are released to the builder once the required approval threshold is met and payment is finalized",
   },
 ] as const;
 
