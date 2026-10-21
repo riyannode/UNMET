@@ -1,0 +1,335 @@
+.unmet-how {
+  width: 100vw;
+  margin-left: -24px;
+  overflow: hidden;
+  padding: 80px 0;
+  background: #fff;
+  color: #192800;
+  font-family: "Inter Tight", sans-serif;
+}
+
+.unmet-how-container {
+  width: 100%;
+  max-width: 1570px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.unmet-how-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.unmet-how-intro {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  align-self: flex-start;
+  margin-bottom: 64px;
+}
+
+.unmet-how-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f5f8f0;
+  color: #59674b;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.unmet-how-eyebrow-mark {
+  display: flex;
+  gap: 2px;
+}
+
+.unmet-how-eyebrow-mark span {
+  width: 4px;
+  height: 8px;
+  border-radius: 999px;
+  background: #5b8c32;
+}
+
+.unmet-how-eyebrow-mark span + span {
+  opacity: 0.4;
+}
+
+.unmet-how-title {
+  margin: 0 0 16px;
+  color: #192800;
+  font-size: 48px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.unmet-how-description {
+  margin: 0 0 24px;
+  color: #59674b;
+  font-size: 18px;
+  line-height: 28px;
+}
+
+.unmet-how-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 32px;
+  color: #5b8c32;
+  cursor: default;
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: opacity 150ms ease;
+}
+
+.unmet-how-cta:hover {
+  opacity: 0.8;
+}
+
+.unmet-how-cta svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.unmet-how-social-proof {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #889480;
+  font-size: 14px;
+}
+
+.unmet-how-social-proof strong {
+  color: #192800;
+  font-weight: 500;
+}
+
+.unmet-how-avatars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.unmet-how-avatar {
+  position: relative;
+  z-index: 0;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #f3f4f6;
+  transition: all 300ms ease;
+}
+
+.unmet-how-avatar + .unmet-how-avatar {
+  margin-left: 0;
+}
+
+.unmet-how-avatar:hover {
+  z-index: 10;
+  transform: scale(1.1);
+}
+
+.unmet-how-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.8;
+  filter: grayscale(1);
+}
+
+.unmet-how-avatar img:hover {
+  opacity: 1;
+  filter: grayscale(0);
+}
+
+.unmet-how-avatar--brand {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.unmet-how-avatar--brand img {
+  object-fit: contain;
+  opacity: 1;
+  filter: none;
+}
+
+.unmet-how-avatar--brand:nth-child(2) img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+}
+
+.unmet-how-avatar--brand:nth-child(4) img {
+  transform: translateY(-2px);
+}
+
+.unmet-how-divider {
+  width: 1px;
+  height: 16px;
+  flex: 0 0 auto;
+  background: #e0e8d5;
+}
+
+.unmet-how-steps {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-top: 0;
+}
+
+.unmet-how-step {
+  position: relative;
+  display: flex;
+  gap: 32px;
+}
+
+.unmet-how-connector {
+  position: absolute;
+  top: 70px;
+  bottom: -20px;
+  left: 34px;
+  display: none;
+  width: 2px;
+  background: #e0e8d5;
+}
+
+.unmet-how-connector-fill {
+  width: 100%;
+  background: #5b8c32;
+}
+
+.unmet-how-step-number {
+  display: flex;
+  width: 70px;
+  height: 70px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #e0e8d5;
+  border-radius: 50%;
+  background: #fff;
+  color: #b3c1a5;
+  cursor: pointer;
+  font-size: 24px;
+  font-weight: 500;
+  transition: all 300ms ease;
+}
+
+.unmet-how-step-number.is-active {
+  border-color: #5b8c32;
+  color: #5b8c32;
+  box-shadow: 0 0 0 4px #e8f5d4;
+}
+
+.unmet-how-step-number:not(.is-active):hover {
+  border-color: #a1b092;
+  color: #87947a;
+}
+
+.unmet-how-step-copy-motion {
+  max-width: 28rem;
+  padding-top: 8px;
+}
+
+.unmet-how-step-copy-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.unmet-how-step-copy-button h3 {
+  margin: 0 0 8px;
+  color: #192800;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.333333;
+  transition: color 300ms ease;
+}
+
+.unmet-how-step-copy-button p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #96a18b;
+  font-size: 16px;
+  line-height: 26px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  transition: color 300ms ease;
+}
+
+.unmet-how-step-copy-button p.is-active {
+  color: #59674b;
+}
+
+@media (min-width: 768px) {
+  .unmet-how {
+    padding-top: 128px;
+    padding-bottom: 128px;
+  }
+
+  .unmet-how-connector {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .unmet-how-layout {
+    flex-direction: row;
+    gap: 60px;
+  }
+
+  .unmet-how-intro {
+    position: sticky;
+    top: 32px;
+    width: 50%;
+    height: 376px;
+    margin-bottom: 0;
+  }
+
+  .unmet-how-title {
+    font-size: 56px;
+  }
+
+  .unmet-how-steps {
+    width: 50%;
+    height: 376px;
+  }
+}
+
+@media (max-width: 760px) {
+  .unmet-how {
+    margin-left: -18px;
+  }
+}
+
+@media (max-width: 430px) {
+  .unmet-how {
+    margin-left: -13px;
+  }
+}

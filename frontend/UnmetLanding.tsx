@@ -8,7 +8,9 @@ import {
   type CSSProperties,
   type FormEvent,
 } from "react";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import MagicRings from "./MagicRings.tsx";
+import UnmetHowItWorks from "./UnmetHowItWorks.tsx";
 import "./unmet-landing.css";
 
 type ModelKey = "chatgpt" | "claude" | "google" | "gemini";
@@ -26,7 +28,17 @@ type ModelConfig = {
 type Message = {
   role: "user" | "ai";
   text: string;
-  seed?: boolean;
+};
+
+type ChatPhase = "typing" | "thinking" | "reading" | "fading";
+
+type ChatState = {
+  messages: Message[];
+  mode: "demo" | "interactive";
+  phase: ChatPhase;
+  demoIndex: number;
+  characters: number;
+  activeAssistantIndex: number | null;
 };
 
 const MODEL_ORDER: ModelKey[] = ["chatgpt", "claude", "google", "gemini"];
@@ -80,9 +92,20 @@ const MARQUEE_ITEMS = [
 function seedMessages(key: ModelKey): Message[] {
   const model = MODELS[key];
   return [
-    { role: "user", text: model.query, seed: true },
-    { role: "ai", text: model.answer, seed: true },
+    { role: "user", text: model.query },
+    { role: "ai", text: model.answer },
   ];
+}
+
+function initialChatState(key: ModelKey): ChatState {
+  return {
+    messages: seedMessages(key),
+    mode: "demo",
+    phase: "typing",
+    demoIndex: 0,
+    characters: 0,
+    activeAssistantIndex: null,
+  };
 }
 
 function replyFor(modelName: string, value: string): string {
@@ -185,9 +208,149 @@ function HeadlineLine({
 
 function BrandChip() {
   return (
-    <a className="unmet-brand-chip" href="#unmet-landing" aria-label="UNMET">
+    <a className="unmet-brand-chip" href="/" aria-label="UNMET Home">
       <img src="/logos/unmet.png" alt="" width="32" height="32" />
     </a>
+  );
+}
+
+type ProblemIconName = "git-merge" | "hand-coins" | "circle-help" | "store";
+type ProblemAnimationName = "shield-check" | "eye-off" | "wallet" | "globe";
+
+const PROBLEM_ITEMS: Array<{ icon: ProblemIconName; animation: ProblemAnimationName; title: string; description: string }> = [
+  {
+    icon: "git-merge",
+    animation: "shield-check",
+    title: "Requests Aren't Connected",
+    description: "Agents need the same things, but their requests stay separate.",
+  },
+  {
+    icon: "hand-coins",
+    animation: "eye-off",
+    title: "Interest isn't funding",
+    description: "A request doesn't prove someone is willing to pay.",
+  },
+  {
+    icon: "circle-help",
+    animation: "wallet",
+    title: "Builders are guessing",
+    description: "Without demand signals, builders don't know what to build.",
+  },
+  {
+    icon: "store",
+    animation: "globe",
+    title: "Marketplaces to many Supply",
+    description: "They show what's available, not what AI agents still need.",
+  },
+];
+
+function ProblemIcon({ name }: { name: ProblemIconName }) {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {name === "hand-coins" && (
+        <>
+          <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
+          <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
+          <path d="m2 16 6 6" />
+          <circle cx="16" cy="9" r="2.9" />
+          <circle cx="6" cy="5" r="3" />
+        </>
+      )}
+      {name === "circle-help" && (
+        <>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          <path d="M12 17h.01" />
+        </>
+      )}
+      {name === "git-merge" && (
+        <>
+          <circle cx="18" cy="18" r="3" />
+          <circle cx="6" cy="6" r="3" />
+          <path d="M6 21V9a9 9 0 0 0 9 9" />
+        </>
+      )}
+      {name === "store" && (
+        <>
+          <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+          <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+          <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function ProblemSection() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const headerVisible = useInView(headerRef, { margin: "80px 0px", amount: 0.01 });
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const cells = section.querySelectorAll<HTMLElement>("[data-problem-cell]");
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-visible");
+        observer.unobserve(entry.target);
+      }
+    }, { threshold: 0 });
+
+    cells.forEach((cell) => observer.observe(cell));
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <section className="unmet-problem" ref={sectionRef}>
+      <div className="unmet-problem-glows" aria-hidden="true">
+        <span className="unmet-problem-glow unmet-problem-glow-one" />
+        <span className="unmet-problem-glow unmet-problem-glow-two" />
+      </div>
+      <div className="unmet-problem-content">
+        <motion.header
+          ref={headerRef}
+          className="unmet-problem-header"
+          initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+          animate={reducedMotion || headerVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 14 }}
+          transition={{
+            duration: reducedMotion ? 0 : 0.4,
+            ease: [0.25, 0.1, 0.25, 1],
+          }}
+        >
+          <div className="unmet-problem-eyebrow">
+            <span>Problem</span>
+          </div>
+          <h2>What Do AI Agents Need?</h2>
+        </motion.header>
+        <div className="unmet-problem-grid">
+          {PROBLEM_ITEMS.map((item, index) => (
+            <article
+              className="unmet-problem-cell"
+              data-problem-cell
+              key={item.icon}
+              style={{ "--problem-enter-delay": String(index * 0.1) + "s" } as CSSProperties}
+            >
+              <div className="unmet-problem-icon-tile">
+                <span className="unmet-problem-icon">
+                  <span className={"unmet-problem-icon-motion unmet-problem-icon-" + item.animation}>
+                    <ProblemIcon name={item.icon} />
+                  </span>
+                </span>
+              </div>
+              <div className="unmet-problem-copy">
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
+              </div>
+              <span className="unmet-problem-accent" aria-hidden="true" />
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -195,14 +358,27 @@ export default function UnmetLanding() {
   const [loaded, setLoaded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeModel, setActiveModel] = useState<ModelKey>("chatgpt");
-  const [messages, setMessages] = useState<Message[]>(seedMessages("chatgpt"));
+  const [chatByModel, setChatByModel] = useState<Record<ModelKey, ChatState>>(() => ({
+    chatgpt: initialChatState("chatgpt"),
+    claude: initialChatState("claude"),
+    google: initialChatState("google"),
+    gemini: initialChatState("gemini"),
+  }));
   const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
+  const [pageHidden, setPageHidden] = useState(() => document.hidden);
+  const chatCardRef = useRef<HTMLDivElement>(null);
   const messageWindowRef = useRef<HTMLDivElement>(null);
-  const replyTimerRef = useRef<number | null>(null);
+  const chatVisible = useInView(chatCardRef, { amount: 0.2 });
+  const reducedMotion = useReducedMotion();
 
   const model = MODELS[activeModel];
+  const chat = chatByModel[activeModel];
   const heroWords = "Users funded what agents need. Builders see what’s worth building".split(" ");
+  const replyPending = chat.mode === "interactive" && (chat.phase === "thinking" || chat.phase === "typing");
+  const animationRunning = !pageHidden && chatVisible && !reducedMotion;
+  const displayedMessages = chat.mode === "demo" && !reducedMotion
+    ? chat.messages.slice(0, chat.demoIndex + 1)
+    : chat.messages;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setLoaded(true), 50);
@@ -210,46 +386,103 @@ export default function UnmetLanding() {
   }, []);
 
   useEffect(() => {
-    const el = messageWindowRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages, typing]);
-
-  useEffect(() => {
-    return () => {
-      if (replyTimerRef.current !== null) window.clearTimeout(replyTimerRef.current);
-    };
+    const onVisibilityChange = () => setPageHidden(document.hidden);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
+  useEffect(() => {
+    const el = messageWindowRef.current;
+    if (!el || !animationRunning || (chat.mode === "demo" && chat.phase === "fading")) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [activeModel, animationRunning, chat]);
+
+  useEffect(() => {
+    if (!animationRunning) return;
+    if (chat.mode === "interactive" && chat.phase === "reading") return;
+
+    const messageIndex = chat.mode === "demo" ? chat.demoIndex : chat.activeAssistantIndex;
+    if (messageIndex === null) return;
+    const message = chat.messages[messageIndex];
+    if (!message) return;
+
+    const delay = chat.phase === "typing"
+      ? 32
+      : chat.phase === "thinking"
+        ? 1100
+        : chat.phase === "fading"
+          ? 240
+          : chat.mode === "demo" && chat.demoIndex === chat.messages.length - 1
+            ? 4000
+            : 1800;
+
+    const timer = window.setTimeout(() => {
+      setChatByModel((current) => {
+        const activeChat = current[activeModel];
+        if (activeChat !== chat) return current;
+
+        let nextChat: ChatState;
+        if (chat.phase === "typing") {
+          nextChat = chat.characters < message.text.length
+            ? { ...chat, characters: chat.characters + 1 }
+            : { ...chat, phase: "reading" };
+        } else if (chat.phase === "thinking") {
+          nextChat = { ...chat, phase: "typing", characters: 0 };
+        } else if (chat.phase === "fading") {
+          nextChat = initialChatState(activeModel);
+        } else if (chat.demoIndex < chat.messages.length - 1) {
+          const demoIndex = chat.demoIndex + 1;
+          nextChat = {
+            ...chat,
+            demoIndex,
+            characters: 0,
+            phase: chat.messages[demoIndex].role === "ai" ? "thinking" : "typing",
+          };
+        } else {
+          nextChat = { ...chat, phase: "fading" };
+        }
+
+        return { ...current, [activeModel]: nextChat };
+      });
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [activeModel, animationRunning, chat]);
+
   function switchModel(key: ModelKey) {
-    if (replyTimerRef.current !== null) {
-      window.clearTimeout(replyTimerRef.current);
-      replyTimerRef.current = null;
-    }
+    if (key === activeModel) return;
+    setChatByModel((current) => current[key].mode === "demo"
+      ? { ...current, [key]: initialChatState(key) }
+      : current);
     setActiveModel(key);
-    setMessages(seedMessages(key));
     setInput("");
-    setTyping(false);
   }
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
     const value = input.trim();
-    if (!value || typing) return;
+    if (!value || replyPending) return;
 
-    setMessages((current) => current.concat({ role: "user", text: value }));
+    setChatByModel((current) => {
+      const activeChat = current[activeModel];
+      const assistantIndex = activeChat.messages.length + 1;
+      const answer = replyFor(model.name, value);
+      return {
+        ...current,
+        [activeModel]: {
+          ...activeChat,
+          messages: activeChat.messages.concat(
+            { role: "user", text: value },
+            { role: "ai", text: answer },
+          ),
+          mode: "interactive",
+          phase: reducedMotion ? "reading" : "thinking",
+          characters: 0,
+          activeAssistantIndex: assistantIndex,
+        },
+      };
+    });
     setInput("");
-    setTyping(true);
-
-    if (replyTimerRef.current !== null) window.clearTimeout(replyTimerRef.current);
-    replyTimerRef.current = window.setTimeout(() => {
-      setMessages((current) => current.concat({
-        role: "ai",
-        text: replyFor(model.name, value),
-      }));
-      setTyping(false);
-      replyTimerRef.current = null;
-    }, 1000);
   }
 
   const navItems = [
@@ -260,6 +493,7 @@ export default function UnmetLanding() {
   ];
 
   return (
+    <>
     <section id="unmet-landing" className="unmet-landing">
       <div className="unmet-background" aria-hidden="true">
         <MagicRings
@@ -339,9 +573,8 @@ export default function UnmetLanding() {
 
         <div className="unmet-hero">
           <div className="unmet-left">
-            <h1 aria-label="Build what agents need.">
-              <HeadlineLine text="Build what" loaded={loaded} offset={0} />{" "}
-              <HeadlineLine text="agents need." loaded={loaded} offset={11} />
+            <h1 aria-label="Agent Demand Market">
+              <HeadlineLine text="Agent Demand Market" loaded={loaded} offset={0} />
             </h1>
 
             <p className="unmet-hero-copy" aria-label={heroWords.join(" ")}>
@@ -384,7 +617,7 @@ export default function UnmetLanding() {
           </div>
 
           <div className="unmet-right">
-            <div className={"unmet-chat-card " + (loaded ? "is-loaded" : "")}>
+            <div className={"unmet-chat-card " + (loaded ? "is-loaded" : "")} ref={chatCardRef}>
               <div className="unmet-chat-header">
                 <div className="unmet-model-title">
                   <span
@@ -397,45 +630,71 @@ export default function UnmetLanding() {
                 </div>
               </div>
 
-              <div className="unmet-message-window" ref={messageWindowRef}>
-                {messages.map((message, index) => {
-                  const delay = message.seed ? index * 200 + 400 : 50;
+              <div
+                className="unmet-message-window"
+                data-fading={chat.mode === "demo" && chat.phase === "fading" && !reducedMotion}
+                data-paused={!animationRunning}
+                ref={messageWindowRef}
+              >
+                {displayedMessages.map((message, index) => {
+                  const isDemoTyping = chat.mode === "demo"
+                    && !reducedMotion
+                    && chat.phase === "typing"
+                    && index === chat.demoIndex;
+                  const isInteractiveTyping = chat.mode === "interactive"
+                    && !reducedMotion
+                    && chat.phase === "typing"
+                    && index === chat.activeAssistantIndex;
+                  const isThinking = !reducedMotion
+                    && chat.phase === "thinking"
+                    && index === (chat.mode === "demo" ? chat.demoIndex : chat.activeAssistantIndex);
+
                   if (message.role === "user") {
+                    const text = isDemoTyping ? message.text.slice(0, chat.characters) : message.text;
                     return (
                       <div
-                        className="unmet-message-row unmet-message-user jr-animate-bubble"
+                        className="unmet-message-row unmet-message-user"
                         key={message.role + "-" + index + "-" + message.text}
-                        style={{ animationDelay: String(delay) + "ms" }}
                       >
-                        <div className="unmet-user-bubble">{message.text}</div>
+                        <div className="unmet-user-bubble">
+                          {text}
+                          {isDemoTyping && <span className="unmet-chat-caret" aria-hidden="true" />}
+                        </div>
                       </div>
                     );
                   }
 
+                  const text = isDemoTyping || isInteractiveTyping
+                    ? message.text.slice(0, chat.characters)
+                    : message.text;
+
                   return (
                     <div
-                      className="unmet-message-row unmet-message-ai jr-animate-bubble"
+                      className="unmet-message-row unmet-message-ai"
                       key={message.role + "-" + index + "-" + message.text}
-                      style={{ animationDelay: String(delay) + "ms" }}
                     >
                       <div className="unmet-ai-meta">
                         <strong>{model.name}</strong>
                       </div>
-                      <div className="unmet-ai-bubble">{message.text}</div>
+                      <div className="unmet-ai-bubble">
+                        {isThinking ? (
+                          <span className="unmet-typing-indicator" role="status" aria-label={model.name + " is typing"}>
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                        ) : (
+                          <>
+                            {text}
+                            {(isDemoTyping || isInteractiveTyping) && (
+                              <span className="unmet-chat-caret" aria-hidden="true" />
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
-
-                {typing && (
-                  <div className="unmet-typing-block">
-                    <div className="unmet-typing-label">{model.name + " is reading the market..."}</div>
-                    <div className="unmet-typing-pill" aria-label={model.name + " is typing"}>
-                      <span style={{ animationDelay: "0ms" }} />
-                      <span style={{ animationDelay: "150ms" }} />
-                      <span style={{ animationDelay: "300ms" }} />
-                    </div>
-                  </div>
-                )}
               </div>
 
               <form className="unmet-input-wrap" onSubmit={submit}>
@@ -445,7 +704,7 @@ export default function UnmetLanding() {
                   placeholder={model.placeholder}
                   aria-label={"Message " + model.name}
                 />
-                <button type="submit" aria-label="Send message" disabled={typing || input.trim().length === 0}>
+                <button type="submit" aria-label="Send message" disabled={replyPending || input.trim().length === 0}>
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 18V6M7 11l5-5 5 5" />
                   </svg>
@@ -484,5 +743,11 @@ export default function UnmetLanding() {
         </div>
       </div>
     </section>
+    <ProblemSection />
+    <div className="unmet-market-infrastructure" aria-hidden="true">
+      <img src="/images/unmet-market-infrastructure.png" alt="" />
+    </div>
+    <UnmetHowItWorks />
+    </>
   );
 }
