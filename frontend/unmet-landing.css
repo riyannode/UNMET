@@ -1,3 +1,4 @@
+@import url("https://api.fontshare.com/v2/css?f[]=satoshi@700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter+Tight:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400&display=swap");
 
 @keyframes marquee {
@@ -119,6 +120,21 @@
   box-shadow: none;
   backdrop-filter: none;
 }
+.unmet-brand-chip {
+  display: flex;
+  width: auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.unmet-wordmark {
+  font-family: "Satoshi", sans-serif;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
 .unmet-brand-chip img {
   width: 32px;
   height: 32px;

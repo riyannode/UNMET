@@ -211,6 +211,7 @@ function BrandChip() {
   return (
     <a className="unmet-brand-chip" href="/" aria-label="UNMET Home">
       <img src="/logos/unmet.png" alt="" width="32" height="32" />
+      <span className="unmet-wordmark">unmet</span>
     </a>
   );
 }
