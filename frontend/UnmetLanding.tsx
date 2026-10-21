@@ -325,7 +325,7 @@ function ProblemSection() {
           <div className="unmet-problem-eyebrow">
             <span>Problem</span>
           </div>
-          <h2>What Do AI Agents Need?</h2>
+          <h2>What AI Agents Need?</h2>
         </motion.header>
         <div className="unmet-problem-grid">
           {PROBLEM_ITEMS.map((item, index) => (
