@@ -109,7 +109,7 @@ function initialChatState(key: ModelKey): ChatState {
   };
 }
 
-function replyFor(modelName: string, value: string): string {
+function replyFor(value: string): string {
   const input = value.toLowerCase();
 
   if (
@@ -118,7 +118,7 @@ function replyFor(modelName: string, value: string): string {
     || input.includes("need")
     || input.includes("request")
   ) {
-    return modelName + " demo: UNMET makes unmet demand visible as funded onchain market requests, so builders can evaluate credible demand before they build.";
+    return "UNMET makes unmet demand visible as funded onchain market requests, so builders can evaluate credible demand before they build.";
   }
 
   if (
@@ -127,10 +127,10 @@ function replyFor(modelName: string, value: string): string {
     || input.includes("commit")
     || input.includes("support")
   ) {
-    return modelName + " demo: supporters back a request with independent commitments. The aggregate escrow makes the demand signal credible before a builder is selected.";
+    return "Supporters back a request with independent commitments. The aggregate escrow makes the demand signal credible before a builder is selected.";
   }
 
-  return modelName + " demo: builders can inspect funded requests, submit a service proposal, and move through commitment-weighted supporter review before eligible settlement.";
+  return "Builders can inspect funded requests, submit a service proposal, and move through commitment-weighted supporter review before eligible settlement.";
 }
 
 function RollText({
@@ -468,7 +468,7 @@ export default function UnmetLanding() {
     setChatByModel((current) => {
       const activeChat = current[activeModel];
       const assistantIndex = activeChat.messages.length + 1;
-      const answer = replyFor(model.name, value);
+      const answer = replyFor(value);
       return {
         ...current,
         [activeModel]: {
