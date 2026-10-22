@@ -1,7 +1,7 @@
 // Adapted from ReUI registry component @reui/c-sidebar-1 (base-nova).
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { ChartPie, CompassIcon, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
+import { ChartPie, CompassIcon, LogOut, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
 import { reownButtonLabel, type ReownStatus } from "@/reown-status";
 
 import {
@@ -41,8 +41,10 @@ type ReuiAppShellProps = {
   account: string | null;
   walletStatus: ReownStatus;
   busy: boolean;
+  disconnecting: boolean;
   boardLoading: boolean;
   onConnect: () => void;
+  onDisconnect: () => void;
   onRefresh: () => void;
 };
 
@@ -116,26 +118,46 @@ function WalletControl({
   account,
   walletStatus,
   busy,
+  disconnecting,
   onConnect,
-}: Pick<ReuiAppShellProps, "account" | "walletStatus" | "busy" | "onConnect">) {
+  onDisconnect,
+}: Pick<ReuiAppShellProps, "account" | "walletStatus" | "busy" | "disconnecting" | "onConnect" | "onDisconnect">) {
   const walletReady = walletStatus === "ready";
-  const walletLabel = reownButtonLabel(walletStatus, account ? short(account) : undefined);
+  const walletLabel = account && disconnecting
+    ? "Disconnecting…"
+    : reownButtonLabel(walletStatus, account ? short(account) : undefined);
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem>
+      <SidebarMenuItem className="flex items-center gap-1">
         <SidebarMenuButton
           size="lg"
+          className="min-w-0 flex-1"
           onClick={walletReady && !busy ? onConnect : undefined}
           disabled={busy || !walletReady}
           tooltip={walletReady ? walletLabel : undefined}
           aria-label={walletLabel}
+          aria-busy={Boolean(account && disconnecting)}
         >
           <WalletIcon aria-hidden="true" />
           <span className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
             <span className="truncate text-sm font-medium">{walletLabel}</span>
           </span>
         </SidebarMenuButton>
+        {account && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="group-data-[collapsible=icon]:hidden"
+            onClick={onDisconnect}
+            disabled={busy || disconnecting}
+            aria-label="Disconnect wallet"
+            title="Disconnect wallet"
+          >
+            <LogOut aria-hidden="true" />
+          </Button>
+        )}
       </SidebarMenuItem>
     </SidebarMenu>
   );
@@ -168,7 +190,7 @@ function Workbench({
         <Button
           type="button"
           variant="outline"
-          size="icon-sm"
+          size="icon-lg"
           className="ml-auto"
           onClick={onRefresh}
           disabled={busy || boardLoading}
@@ -177,7 +199,7 @@ function Workbench({
           title="Refresh data"
         >
           <RefreshCw
-            className={boardLoading ? "animate-spin" : ""}
+            className={boardLoading ? "size-6 animate-spin" : "size-6"}
             aria-hidden="true"
           />
         </Button>
@@ -189,7 +211,7 @@ function Workbench({
 }
 
 export function ReuiAppShell(props: ReuiAppShellProps) {
-  const { children, activeRoute, account, walletStatus, busy, boardLoading, onConnect, onRefresh } = props;
+  const { children, activeRoute, account, walletStatus, busy, disconnecting, boardLoading, onConnect, onDisconnect, onRefresh } = props;
 
   return (
     <TooltipProvider>
@@ -209,7 +231,9 @@ export function ReuiAppShell(props: ReuiAppShellProps) {
               account={account}
               walletStatus={walletStatus}
               busy={busy}
+              disconnecting={disconnecting}
               onConnect={onConnect}
+              onDisconnect={onDisconnect}
             />
           </SidebarFooter>
         </Sidebar>

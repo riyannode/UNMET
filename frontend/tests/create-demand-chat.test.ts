@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { normalizeCapability } from "../capability";
 import {
   buildReviewRows,
+  canContinueCreateDemandWorkflow,
   deadlineDurationSeconds,
   formatPriceUsage,
   parseCapabilityAnswer,
@@ -26,6 +27,16 @@ const completeAnswers: CreateDemandAnswers = {
   commitment: "20",
   deadlineDays: "14",
 };
+
+describe("Create Demand wallet gate", () => {
+  test("requires a connected wallet and blocks while disconnect is pending", () => {
+    const account = "0x1111111111111111111111111111111111111111";
+
+    expect(canContinueCreateDemandWorkflow(null, false)).toBe(false);
+    expect(canContinueCreateDemandWorkflow(account, true)).toBe(false);
+    expect(canContinueCreateDemandWorkflow(account, false)).toBe(true);
+  });
+});
 
 describe("guided demand answers", () => {
   test("normalizes capabilities and preserves the validation boundaries", () => {

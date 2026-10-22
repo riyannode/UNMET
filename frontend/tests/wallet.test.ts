@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { currentChainId, currentWallet, setReownWalletProvider, walletClient } from "../contract";
-import { reownButtonLabel, resolveReownStatus } from "../reown-status";
+import { reownButtonLabel, resolveReownStatus, runDisconnectRequest } from "../reown-status";
 
 const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
 
@@ -63,5 +63,49 @@ describe("Reown initialization state", () => {
     expect(status).toBe("ready");
     expect(reownButtonLabel(status)).toBe("Connect wallet");
     expect(reownButtonLabel(status, "0x1234\u2026abcd")).toBe("0x1234\u2026abcd");
+  });
+});
+
+describe("Reown disconnect request", () => {
+  test("shows pending synchronously and ignores duplicate requests", async () => {
+    const lock = { current: false };
+    const events: string[] = [];
+    let requestCount = 0;
+    let resolveRequest: (() => void) | undefined;
+    const request = new Promise<void>((resolve) => { resolveRequest = resolve; });
+
+    const first = runDisconnectRequest(
+      lock,
+      () => events.push("start"),
+      () => { requestCount += 1; return request; },
+      () => events.push("finish"),
+    );
+
+    expect(lock.current).toBe(true);
+    expect(events).toEqual(["start"]);
+    expect(await runDisconnectRequest(lock, () => events.push("duplicate-start"), async () => {
+      requestCount += 1;
+    }, () => events.push("duplicate-finish"))).toBe(false);
+    expect(requestCount).toBe(1);
+
+    resolveRequest?.();
+    expect(await first).toBe(true);
+    expect(lock.current).toBe(false);
+    expect(events).toEqual(["start", "finish"]);
+  });
+
+  test("releases the duplicate-request guard after a failed request", async () => {
+    const lock = { current: false };
+    const events: string[] = [];
+
+    await expect(runDisconnectRequest(
+      lock,
+      () => events.push("start"),
+      async () => { throw new Error("disconnect failed"); },
+      () => events.push("finish"),
+    )).rejects.toThrow("disconnect failed");
+
+    expect(lock.current).toBe(false);
+    expect(events).toEqual(["start", "finish"]);
   });
 });

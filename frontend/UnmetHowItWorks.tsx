@@ -97,7 +97,7 @@ export default function UnmetHowItWorks() {
               <AnimatedContent delay={0.3}>
                 <p className="unmet-how-description">
                   Post a missing agent capability, fund the request, and review the
-                  builder's solution before payment.
+                  builder's solution before payment
                 </p>
               </AnimatedContent>
             </div>

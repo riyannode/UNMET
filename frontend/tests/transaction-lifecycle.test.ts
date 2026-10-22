@@ -324,7 +324,7 @@ describe("transaction lifecycle", () => {
       intent,
       readTransaction: async () => { throw new Error("RPC unavailable"); },
       waitForReceipt: async () => successReceipt(replacementHash),
-    })).rejects.toMatchObject({ state: "unknown", message: "The existing transaction could not be matched to the original wallet and action." });
+    })).rejects.toMatchObject({ state: "unknown", message: "The existing transaction could not be matched to the original wallet and action" });
   });
 
   test("keeps a mismatched replacement receipt hash unknown and uses the receipt hash", async () => {
@@ -523,7 +523,7 @@ describe("transaction error classification regression coverage", () => {
     expect(errorMessage("RPC offline")).toBe("RPC offline");
     expect(errorMessage({ shortMessage: "  ", message: "RPC rejected" })).toBe("RPC rejected");
     expect(errorMessage(new Error("WALLET_NOT_CONNECTED"))).toBe("WALLET_NOT_CONNECTED");
-    expect(errorMessage(new Error("DEMAND_INVALID_CAPABILITY"))).toBe("Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max).");
+    expect(errorMessage(new Error("DEMAND_INVALID_CAPABILITY"))).toBe("Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max)");
     expect(errorMessage({ code: -1 })).toBe("INTERNAL_ERROR (-1)");
     expect(errorMessage(null)).toBe("INTERNAL_ERROR");
   });

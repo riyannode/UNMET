@@ -12,7 +12,7 @@ export function errorMessage(error: unknown): string {
     return code ? "INTERNAL_ERROR (" + code + ")" : "INTERNAL_ERROR";
   }
   const known = message.match(/(WALLET_[A-Z_]+|CHAIN_[A-Z_]+|DEMAND_[A-Z_]+|SUPPORT_[A-Z_]+|SUBMISSION_[A-Z_]+)/)?.[1];
-  if (known === "DEMAND_INVALID_CAPABILITY") return "Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max).";
+  if (known === "DEMAND_INVALID_CAPABILITY") return "Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max)";
   return known ?? message.slice(0, 180);
 }
 

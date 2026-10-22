@@ -373,7 +373,7 @@ export async function waitForTransaction({
       observed = null;
     }
     if (observed && (observed.hash.toLowerCase() !== hash.toLowerCase() || !isTransactionIntentMatch(intent, observed, wallet))) {
-      return fail("unknown", hash, "This transaction does not match the original wallet and action.");
+      return fail("unknown", hash, "This transaction does not match the original wallet and action");
     }
   }
 
@@ -397,8 +397,8 @@ export async function waitForTransaction({
       cancelledReplacement ? "cancelled" : "unknown",
       failedHash,
       cancelledReplacement
-        ? "The transaction was cancelled by a wallet replacement."
-        : error instanceof Error ? error.message : "The transaction receipt could not be verified.",
+        ? "The transaction was cancelled by a wallet replacement"
+        : error instanceof Error ? error.message : "The transaction receipt could not be verified",
     );
   }
 
@@ -407,29 +407,29 @@ export async function waitForTransaction({
   if (replacement?.reason === "cancelled") {
     if (replacement.transaction.hash.toLowerCase() !== receiptHash.toLowerCase()
       || replacement.transaction.from.toLowerCase() !== wallet.toLowerCase()) {
-      return fail("unknown", receiptHash, "The replacement cancellation could not be matched to this wallet.");
+      return fail("unknown", receiptHash, "The replacement cancellation could not be matched to this wallet");
     }
-    return fail("cancelled", receiptHash, "The transaction was cancelled by a wallet replacement.");
+    return fail("cancelled", receiptHash, "The transaction was cancelled by a wallet replacement");
   }
 
   if (replacement && replacement.transaction.hash.toLowerCase() !== receiptHash.toLowerCase()) {
-    return fail("unknown", receiptHash, "The replacement hash did not match its receipt.");
+    return fail("unknown", receiptHash, "The replacement hash did not match its receipt");
   }
 
   if (replacement && !isTransactionIntentMatch(intent, replacement.transaction, wallet)) {
-    return fail("unknown", receiptHash, "A replacement transaction was found, but its action could not be verified.");
+    return fail("unknown", receiptHash, "A replacement transaction was found, but its action could not be verified");
   }
 
   if (!replacement && receiptHash.toLowerCase() !== hash.toLowerCase()) {
-    return fail("unknown", receiptHash, "The receipt hash did not match the submitted transaction.");
+    return fail("unknown", receiptHash, "The receipt hash did not match the submitted transaction");
   }
 
   if (readTransaction && !observed && !replacement) {
-    return fail("unknown", receiptHash, "The existing transaction could not be matched to the original wallet and action.");
+    return fail("unknown", receiptHash, "The existing transaction could not be matched to the original wallet and action");
   }
 
   if (receipt.status !== "success") {
-    return fail("reverted", receiptHash, "The transaction reverted on X Layer.");
+    return fail("reverted", receiptHash, "The transaction reverted on X Layer");
   }
 
   update("confirmed", receiptHash);

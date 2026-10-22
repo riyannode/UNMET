@@ -1,5 +1,28 @@
 export type ReownStatus = "initializing" | "ready" | "unavailable";
 
+export const WALLET_REQUIRED_TOAST_ID = "create-demand-wallet-required";
+
+export async function runDisconnectRequest(
+  lock: { current: boolean },
+  onStart: () => void,
+  request: () => Promise<void>,
+  onFinish: () => void,
+): Promise<boolean> {
+  if (lock.current) return false;
+  lock.current = true;
+  try {
+    onStart();
+    await request();
+    return true;
+  } finally {
+    try {
+      onFinish();
+    } finally {
+      lock.current = false;
+    }
+  }
+}
+
 export function resolveReownStatus(
   configured: boolean,
   moduleLoaded: boolean,

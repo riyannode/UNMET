@@ -31,13 +31,13 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
         <div>
           <p className="analytics-kicker">Public on-chain overview</p>
           <h1 id="analytics-title">Analytics</h1>
-          <p>Current request status and escrow across X Layer.</p>
+          <p>Current request status and escrow across X Layer</p>
         </div>
         <span className="analytics-source">Full request board</span>
       </header>
 
       {!contractConfigured ? (
-        <div className="analytics-state" role="alert">Analytics are unavailable because the demand contract is not configured.</div>
+        <div className="analytics-state" role="alert">Analytics are unavailable because the demand contract is not configured</div>
       ) : loading && board.length === 0 ? (
         <div className="analytics-loading" role="status">
           <span>Loading the public market snapshot…</span>
@@ -50,13 +50,13 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
         </div>
       ) : (
         <>
-          {loadError && <p className="analytics-stale" role="status">Showing the last successful request snapshot. The latest refresh failed.</p>}
+          {loadError && <p className="analytics-stale" role="status">Showing the last successful request snapshot. The latest refresh failed</p>}
 
           <div className="analytics-kpis">
-            <MetricCard label="Total requests" value={analytics.totalRequests.toLocaleString()} detail="Unique on-chain demand IDs." />
-            <MetricCard label="Requests fulfilled" value={analytics.fulfilledRequests.toLocaleString()} detail="Current fulfilled status, counted once per request." />
-            <MetricCard label="Escrow locked" value={formatUsd0(analytics.escrowLocked)} unit="USD₮0" detail="Current committed balances across all requests." />
-            <MetricCard label="Builder payouts" value="Unavailable" detail="Complete fulfillment events are not indexed." unavailable />
+            <MetricCard label="Total requests" value={analytics.totalRequests.toLocaleString()} detail="Unique on-chain demand IDs" />
+            <MetricCard label="Requests fulfilled" value={analytics.fulfilledRequests.toLocaleString()} detail="Current fulfilled status, counted once per request" />
+            <MetricCard label="Escrow locked" value={formatUsd0(analytics.escrowLocked)} unit="USD₮0" detail="Current committed balances across all requests" />
+            <MetricCard label="Builder payouts" value="Unavailable" detail="Complete fulfillment events are not indexed" unavailable />
           </div>
 
           <div className="analytics-chart-grid">
@@ -64,12 +64,12 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
               <div className="analytics-card-heading">
                 <div>
                   <h2>Request status</h2>
-                  <p>Current effective status for every request.</p>
+                  <p>Current effective status for every request</p>
                 </div>
               </div>
               <CardContent className="analytics-status-content">
                 {analytics.totalRequests === 0 ? (
-                  <p className="analytics-empty">No on-chain requests yet.</p>
+                  <p className="analytics-empty">No on-chain requests yet</p>
                 ) : (
                   <StatusDonut counts={analytics.statusCounts} total={analytics.totalRequests} />
                 )}
@@ -80,12 +80,12 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
               <div className="analytics-card-heading">
                 <div>
                   <h2>Current escrow by request</h2>
-                  <p>Largest remaining committed balances.</p>
+                  <p>Largest remaining committed balances</p>
                 </div>
               </div>
               <CardContent className="analytics-escrow-content">
                 {analytics.escrowByRequest.length === 0 ? (
-                  <p className="analytics-empty">No escrow is currently locked.</p>
+                  <p className="analytics-empty">No escrow is currently locked</p>
                 ) : (
                   <EscrowBars requests={analytics.escrowByRequest} />
                 )}
@@ -98,12 +98,12 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
               <div className="analytics-card-heading">
                 <div>
                   <h2>Recently fulfilled requests</h2>
-                  <p>Sorted by request ID; fulfillment times are not indexed.</p>
+                  <p>Sorted by request ID; fulfillment times are not indexed</p>
                 </div>
               </div>
               <CardContent className="analytics-recent-content">
                 {analytics.recentlyFulfilled.length === 0 ? (
-                  <p className="analytics-empty">No requests have been fulfilled yet.</p>
+                  <p className="analytics-empty">No requests have been fulfilled yet</p>
                 ) : (
                   <ul className="analytics-recent-list">
                     {analytics.recentlyFulfilled.map((demand) => (
@@ -130,8 +130,8 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
               </div>
               <CardContent>
                 <div className="analytics-history-state">
-                  <strong>Complete event history is not indexed.</strong>
-                  <p>This page reports current request state only. It does not estimate builder payouts from escrow balances.</p>
+                  <strong>Complete event history is not indexed</strong>
+                  <p>This page reports current request state only. It does not estimate builder payouts from escrow balances</p>
                 </div>
               </CardContent>
             </Card>

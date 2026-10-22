@@ -26,7 +26,7 @@ export default function UnmetFooter() {
           <a className="unmet-footer-logo" href="/" aria-label="UNMET Home">
             <img src="/logos/unmet.png" alt="UNMET" />
           </a>
-          <p>© 2026 UNMET. All rights reserved.</p>
+          <p>© 2026 UNMET. All rights reserved</p>
           <div className="unmet-footer-socials" aria-label="Social links">
             <span
               className="unmet-footer-social"

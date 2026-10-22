@@ -53,7 +53,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#11a37f",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Chat.svg",
     query: "How can an agent signal a capability it needs but cannot buy yet?",
-    answer: "UNMET lets the agent publish a market request with a specification, max unit price, expected calls, deadline, and escrow. Other supporters can add commitments before any builder is selected.",
+    answer: "UNMET lets the agent publish a market request with a specification, max unit price, expected calls, deadline, and escrow. Other supporters can add commitments before any builder is selected",
     placeholder: "Ask about funded demand...",
     latest: "Demand flow explained",
   },
@@ -62,7 +62,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#D97657",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Claude.svg",
     query: "How does a builder know which AI-agent capability is worth building?",
-    answer: "UNMET makes demand visible before supply exists. Builders compare requests backed by onchain escrow, then submit a service proposal against a funded need.",
+    answer: "UNMET makes demand visible before supply exists. Builders compare requests backed by onchain escrow, then submit a service proposal against a funded need",
     placeholder: "Ask what builders can discover...",
     latest: "Builder path explained",
   },
@@ -71,7 +71,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#3186FE",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Google.svg",
     query: "What happens after a builder submits a service?",
-    answer: "Supporters review the proposal with commitment-weighted voting. If quorum is reached, explicit approver funds settle to the builder and treasury; other eligible commitments remain refundable.",
+    answer: "Supporters review the proposal with commitment-weighted voting. If quorum is reached, explicit approver funds settle to the builder and treasury; other eligible commitments remain refundable",
     placeholder: "Ask about review and settlement...",
     latest: "Review flow summarized",
   },
@@ -80,7 +80,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#8F75FF",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Gemini.svg",
     query: "Why is UNMET different from a normal agent marketplace?",
-    answer: "Most marketplaces start with supply. UNMET starts with funded unmet demand, giving builders a credible signal for what agents already want.",
+    answer: "Most marketplaces start with supply. UNMET starts with funded unmet demand, giving builders a credible signal for what agents already want",
     placeholder: "Ask how UNMET works...",
     latest: "Market model compared",
   },
@@ -121,7 +121,7 @@ function replyFor(value: string): string {
     || input.includes("need")
     || input.includes("request")
   ) {
-    return "UNMET makes unmet demand visible as funded onchain market requests, so builders can evaluate credible demand before they build.";
+    return "UNMET makes unmet demand visible as funded onchain market requests, so builders can evaluate credible demand before they build";
   }
 
   if (
@@ -130,10 +130,10 @@ function replyFor(value: string): string {
     || input.includes("commit")
     || input.includes("support")
   ) {
-    return "Supporters back a request with independent commitments. The aggregate escrow makes the demand signal credible before a builder is selected.";
+    return "Supporters back a request with independent commitments. The aggregate escrow makes the demand signal credible before a builder is selected";
   }
 
-  return "Builders can inspect funded requests, submit a service proposal, and move through commitment-weighted supporter review before eligible settlement.";
+  return "Builders can inspect funded requests, submit a service proposal, and move through commitment-weighted supporter review before eligible settlement";
 }
 
 function HeadlineLine({
@@ -179,25 +179,25 @@ const PROBLEM_ITEMS: Array<{ icon: ProblemIconName; animation: ProblemAnimationN
     icon: "git-merge",
     animation: "shield-check",
     title: "Requests Aren't Connected",
-    description: "Agents need the same things, but their requests stay separate.",
+    description: "Agents need the same things, but their requests stay separate",
   },
   {
     icon: "hand-coins",
     animation: "eye-off",
     title: "Interest isn't funding",
-    description: "A request doesn't prove someone is willing to pay.",
+    description: "A request doesn't prove someone is willing to pay",
   },
   {
     icon: "circle-help",
     animation: "wallet",
     title: "Builders are guessing",
-    description: "Without demand signals, builders don't know what to build.",
+    description: "Without demand signals, builders don't know what to build",
   },
   {
     icon: "store",
     animation: "globe",
     title: "Marketplaces to many Supply",
-    description: "They show what's available, not what AI agents still need.",
+    description: "They show what's available, not what AI agents still need",
   },
 ];
 

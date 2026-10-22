@@ -1,6 +1,7 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
+import { Toaster } from "sonner";
 import UnmetLanding from "./UnmetLanding.tsx";
 import UnmetNavigation from "./UnmetNavigation.tsx";
 import { ROUTES } from "./routing.ts";
@@ -20,7 +21,7 @@ function NotFoundRoute() {
   return (
     <main className="unmet-not-found">
       <h1>Page not found</h1>
-      <p>This UNMET route does not exist.</p>
+      <p>This UNMET route does not exist</p>
       <Link to={ROUTES.landing.href}>Home</Link>
       <Link to={ROUTES.market.href}>Explore Market</Link>
     </main>
@@ -53,6 +54,24 @@ createRoot(el).render(
         </Route>
         <Route path="*" element={<NotFoundRoute />} />
       </Routes>
+      <Toaster
+        position="top-right"
+        theme="light"
+        closeButton
+        toastOptions={{
+          duration: 5000,
+          style: {
+            background: "#ffffff",
+            color: "#192800",
+            border: "1px solid #d9e3ce",
+            fontFamily: "Inter Tight, sans-serif",
+          },
+          actionButtonStyle: {
+            background: "#eff6e5",
+            color: "#192800",
+          },
+        }}
+      />
     </BrowserRouter>
   </StrictMode>,
 );
