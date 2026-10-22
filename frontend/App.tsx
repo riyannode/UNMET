@@ -33,6 +33,13 @@ import {
   type DemandView,
   type SupportView,
 } from "./contract.ts";
+import {
+  afterConfirmedTransaction,
+  readSupportForIdentity,
+  settleBoardRead,
+  settleSupportRead,
+  type SupportReadResult,
+} from "./app-state.ts";
 import { ReuiAppShell } from "./components/examples/c-sidebar-1.tsx";
 import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
 import { errorMessage } from "./errors.ts";
@@ -63,7 +70,6 @@ export default function App() {
   const selectedId = parseDemandId(demandMatch?.params.demandId);
   const [board, setBoard] = useState<DemandView[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
-  const [boardLoadError, setBoardLoadError] = useState(false);
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [walletModuleLoaded, setWalletModuleLoaded] = useState(false);
   const [account, setAccount] = useState<Address | null>(null);
@@ -74,24 +80,60 @@ export default function App() {
   const [mySupportIds, setMySupportIds] = useState<Set<string>>(new Set());
   const [activityState, setActivityState] = useState<"loading" | "ready" | "error">("ready");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+  const [readStatus, setReadStatus] = useState({ actionStatus: "", boardError: "", supportError: "" });
+  const { actionStatus: status, boardError, supportError } = readStatus;
+  const boardLoadError = boardError !== "";
   const [lastTx, setLastTx] = useState<Hash | null>(null);
   const walletStatus = resolveReownStatus(Boolean(reownProjectId), walletModuleLoaded, Boolean(walletKit));
+  const setStatus = useCallback((actionStatus: string) => {
+    setReadStatus((current) => ({ ...current, actionStatus }));
+  }, []);
 
   const supportIdentity = account && selectedId !== null ? account.toLowerCase() + ":" + selectedId.toString() : "";
+  const supportIdentityRef = useRef(supportIdentity);
+  supportIdentityRef.current = supportIdentity;
+  const supportRequestRef = useRef(0);
+  const activityRoute = location.pathname === ROUTES.myActivity.href;
   const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
   const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
 
+  const loadSupport = useCallback(async (
+    demandId: bigint,
+    supporter: Address,
+    identity: string,
+    isLive: () => boolean = () => true,
+  ): Promise<SupportReadResult<SupportView>> => {
+    if (!isLive() || supportIdentityRef.current !== identity) return { kind: "stale" };
+    const request = ++supportRequestRef.current;
+    setSupportKey(identity);
+    setSupportState("loading");
+    setReadStatus((current) => settleSupportRead(current, { kind: "loading" }));
+    const result = await readSupportForIdentity(
+      identity,
+      () => readSupport(demandId, supporter),
+      (candidate) => isLive() && supportIdentityRef.current === candidate && supportRequestRef.current === request,
+    );
+    if (result.kind === "ready") {
+      setSupport(result.value);
+      setSupportState("ready");
+      setReadStatus((current) => settleSupportRead(current, { kind: "success" }));
+    } else if (result.kind === "error") {
+      setSupport(EMPTY_SUPPORT);
+      setSupportState("error");
+      setReadStatus((current) => settleSupportRead(current, { kind: "error", message: errorMessage(result.error) }));
+    }
+    return result;
+  }, []);
+
   const refresh = useCallback(async (): Promise<boolean> => {
     setBoardLoading(true);
-    setBoardLoadError(false);
     try {
       const latestBoard = await readBoard();
       setBoard(latestBoard);
+      setReadStatus((current) => settleBoardRead(current, { kind: "success" }));
       return true;
     } catch (error) {
-      setStatus(errorMessage(error));
-      setBoardLoadError(true);
+      setReadStatus((current) => settleBoardRead(current, { kind: "error", message: errorMessage(error) }));
       return false;
     } finally {
       setBoardLoading(false);
@@ -152,30 +194,22 @@ export default function App() {
 
   useEffect(() => {
     if (!account || selectedId === null) {
+      supportRequestRef.current += 1;
       setSupport(EMPTY_SUPPORT);
       setSupportKey("");
       setSupportState("ready");
+      setReadStatus((current) => settleSupportRead(current, { kind: "success" }));
       return;
     }
     let live = true;
     const key = account.toLowerCase() + ":" + selectedId.toString();
     setSupport(EMPTY_SUPPORT);
-    setSupportKey(key);
-    setSupportState("loading");
-    void readSupport(selectedId, account)
-      .then((value) => { if (live) { setSupport(value); setSupportState("ready"); } })
-      .catch((error: unknown) => {
-        if (live) {
-          setSupport(EMPTY_SUPPORT);
-          setSupportState("error");
-          setStatus(errorMessage(error));
-        }
-      });
+    void loadSupport(selectedId, account, key, () => live);
     return () => { live = false; };
-  }, [account, selectedId]);
+  }, [account, loadSupport, selectedId]);
 
   useEffect(() => {
-    if (!account) {
+    if (!account || !activityRoute) {
       setMySupportIds(new Set());
       setActivityState("ready");
       return;
@@ -212,7 +246,7 @@ export default function App() {
       }
     });
     return () => { live = false; };
-  }, [account, board, boardLoading, boardLoadError]);
+  }, [account, activityRoute, board, boardLoading, boardLoadError, setStatus]);
 
   async function connect() {
     const kit = walletKit;
@@ -230,15 +264,22 @@ export default function App() {
 
   async function run(label: string, fn: () => Promise<Hash>) {
     setBusy(true);
-    if (account && selectedId !== null) setSupportState("loading");
     setStatus(label + " pending");
     setLastTx(null);
+    const supportSnapshot = account && selectedId !== null
+      ? { demandId: selectedId, supporter: account, identity: supportIdentity }
+      : null;
     try {
-      const hash = await fn();
-      setLastTx(hash);
-      const readbackComplete = await refresh();
+      const readback = await afterConfirmedTransaction(
+        fn,
+        setLastTx,
+        refresh,
+        async () => supportSnapshot
+          ? loadSupport(supportSnapshot.demandId, supportSnapshot.supporter, supportSnapshot.identity)
+          : null,
+      );
       await syncWallet();
-      if (!readbackComplete) {
+      if (!readback.boardReadbackSucceeded) {
         setStatus("CHAIN_STATE_READBACK_FAILED");
         return;
       }
@@ -304,14 +345,19 @@ export default function App() {
         boardLoading={boardLoading}
         onConnect={() => void connect()}
         onRefresh={() => {
-          if (account && selectedId !== null) setSupportState("loading");
-          void refresh();
+          const boardReadback = refresh();
+          const supportReadback = account && selectedId !== null
+            ? loadSupport(selectedId, account, supportIdentity)
+            : Promise.resolve(null);
+          void Promise.all([boardReadback, supportReadback]);
         }}
       >
         <div className="legacy-content">
           <a className="skip-link" href="#workspace">Skip to Market Requests</a>
           <div className="status-stack">
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
+            {supportError && <div role="alert" aria-live="polite" className="status-line err">{supportError}</div>}
+            {boardError && <div role="alert" aria-live="polite" className="status-line err">{boardError}</div>}
             {status && <div role="status" aria-live="polite" className={"status-line " + (status.includes("success") ? "ok" : status.includes("pending") ? "" : "err")}>{status}</div>}
             {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
           </div>

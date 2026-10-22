@@ -216,13 +216,13 @@
 
 .unmet-landing .unmet-book {
   display: none;
-  width: 144px;
+  width: 164px;
   flex-shrink: 0;
-  height: 44px;
+  height: 48px;
   align-items: center;
   justify-content: center;
-  gap: 13px;
-  border-radius: 8px;
+  gap: 14px;
+  border-radius: 10px;
   background: #192800;
   color: white;
   font-size: 15px;
@@ -1265,4 +1265,41 @@
   .unmet-market-infrastructure {
     margin-left: -13px;
   }
+}
+html:has(.unmet-landing),
+body:has(.unmet-landing) {
+  min-width: 0;
+  background: #fff;
+}
+
+html:has(.unmet-landing) {
+  color-scheme: light;
+}
+
+#root:has(.unmet-landing) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  padding: 0;
+  background: #fff;
+}
+
+#root:has(.unmet-landing) > .unmet-landing,
+#root:has(.unmet-landing) > .unmet-problem,
+#root:has(.unmet-landing) > .unmet-market-infrastructure,
+#root:has(.unmet-landing) > .unmet-how,
+#root:has(.unmet-landing) > .unmet-footer {
+  box-sizing: border-box;
+  width: 100%;
+  margin-left: 0;
+}
+
+#root:has(.unmet-landing) > .unmet-landing,
+#root:has(.unmet-landing) > .unmet-footer {
+  margin-bottom: 0;
+}
+
+#root:has(.unmet-landing) > .unmet-landing {
+  overflow-x: clip;
 }
