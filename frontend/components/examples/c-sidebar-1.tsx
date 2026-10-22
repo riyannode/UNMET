@@ -1,7 +1,7 @@
 // Adapted from ReUI registry component @reui/c-sidebar-1 (base-nova).
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { ActivityIcon, CompassIcon, PlusIcon, WalletIcon } from "lucide-react";
+import { ActivityIcon, CompassIcon, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
 import { reownButtonLabel, type ReownStatus } from "@/reown-status";
 
 import {
@@ -166,13 +166,20 @@ function Workbench({
           </BreadcrumbList>
         </Breadcrumb>
         <Button
+          type="button"
           variant="outline"
-          size="sm"
+          size="icon-sm"
           className="ml-auto"
           onClick={onRefresh}
           disabled={busy || boardLoading}
+          aria-label="Refresh data"
+          aria-busy={boardLoading}
+          title="Refresh data"
         >
-          {boardLoading ? "Updating" : "Refresh"}
+          <RefreshCw
+            className={boardLoading ? "animate-spin" : ""}
+            aria-hidden="true"
+          />
         </Button>
       </header>
 
