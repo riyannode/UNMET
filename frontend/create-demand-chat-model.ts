@@ -99,6 +99,14 @@ export function parseCommitmentAnswer(value: string): string {
   return formatAmount(parseAmount(value, "Initial escrow"));
 }
 
+export function deadlineDurationSeconds(value: string | number): number {
+  const days = Number(value);
+  if (!Number.isFinite(days) || days <= 0 || days > 3650) throw new Error("DEMAND_INVALID_DEADLINE");
+  const seconds = Math.floor(days * 86400);
+  if (seconds < 3600) throw new Error("DEMAND_DEADLINE_TOO_SHORT");
+  return seconds;
+}
+
 export function parseDeadlineAnswer(value: string): string {
   const text = value.trim().replace(/\s*(?:days?|d)$/i, "").trim();
   if (!/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) {
@@ -107,6 +115,14 @@ export function parseDeadlineAnswer(value: string): string {
   const days = Number(text);
   if (!Number.isFinite(days) || days <= 0) throw new Error("The deadline must be greater than zero days.");
   if (days > 3650) throw new Error("The deadline must be 3,650 days or less.");
+  try {
+    deadlineDurationSeconds(days);
+  } catch (error) {
+    if (error instanceof Error && error.message === "DEMAND_DEADLINE_TOO_SHORT") {
+      throw new Error("The deadline must be at least one hour.");
+    }
+    throw error;
+  }
   return days.toString();
 }
 

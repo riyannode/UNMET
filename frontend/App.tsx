@@ -9,7 +9,7 @@ import {
   useOutletContext,
   useParams,
 } from "react-router";
-import { getAddress, isAddress, type Address, type Hash } from "viem";
+import { getAddress, isAddress, type Address, type Hash, type Hex } from "viem";
 import type { AppKit } from "@reown/appkit/react";
 import {
   CHAIN_ID,
@@ -30,6 +30,7 @@ import {
   statusName,
   submitService,
   supportDemand,
+  verifyTransaction,
   setReownWalletProvider,
   type DemandView,
   type SupportView,
@@ -42,10 +43,11 @@ import {
   type SupportReadResult,
 } from "./app-state.ts";
 import { ReuiAppShell } from "./components/examples/c-sidebar-1.tsx";
-import { CreateDemandChat, type CreateDemandRunOutcome } from "./CreateDemandChat";
+import { CreateDemandChat, type CreateDemandRunOutcome, type CreateDemandTransactionOutcome } from "./CreateDemandChat";
 import { normalizeCapability } from "./capability";
 import { resolveUniqueCreatedDemandId } from "./create-demand-chat-model";
 import type { CreatedDemandVerification, DemandReadbackMatch } from "./create-demand-chat-model";
+import { isTransactionSubmissionBlocked, TransactionLifecycleError, type TransactionState, type TransactionUpdateHandler } from "./transaction-lifecycle";
 import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
 import { errorMessage } from "./errors.ts";
 import { resolveReownStatus, type ReownStatus } from "./reown-status.ts";
@@ -53,6 +55,51 @@ type CreateDemandInput = Parameters<typeof createDemand>[0];
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
+const PENDING_CREATE_KEY = "unmet.pending-create-transaction";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readPendingCreate(): CreateDemandTransactionOutcome | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_CREATE_KEY) ?? "null");
+    if (!isRecord(stored) || stored.kind !== "unknown" || (stored.stage !== "approval" && stored.stage !== "demand")) return null;
+    if (typeof stored.hash !== "string" || !/^0x[\da-f]{64}$/i.test(stored.hash)) return null;
+    if (!isRecord(stored.intent)) return null;
+    const { to, data, value } = stored.intent;
+    if (typeof to !== "string" || !isAddress(to) || typeof data !== "string" || !/^0x(?:[\da-f]{2})*$/i.test(data)) return null;
+    if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
+    return {
+      kind: "unknown",
+      stage: stored.stage,
+      hash: stored.hash as Hash,
+      intent: { to: getAddress(to), data: data as Hex, value: BigInt(value) },
+      message: "The transaction receipt has not been verified yet.",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function storePendingCreate(outcome: CreateDemandTransactionOutcome | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (!outcome || outcome.kind !== "unknown") {
+      window.sessionStorage.removeItem(PENDING_CREATE_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(PENDING_CREATE_KEY, JSON.stringify({
+      kind: outcome.kind,
+      stage: outcome.stage,
+      hash: outcome.hash,
+      intent: { ...outcome.intent, value: outcome.intent.value.toString() },
+    }));
+  } catch {
+    // The in-memory guard remains active when session storage is unavailable.
+  }
+}
 
 type AppOutletContext = {
   board: DemandView[];
@@ -66,7 +113,9 @@ type AppOutletContext = {
   supportState: "loading" | "ready" | "error";
   busy: boolean;
   lastTx: Hash | null;
-  run: (label: string, fn: () => Promise<Hash>, createdDemand?: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
+  pendingCreate: CreateDemandTransactionOutcome | null;
+  run: (label: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
+  verifyCreate: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   connect: () => Promise<void>;
   refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
   walletStatus: ReownStatus;
@@ -95,6 +144,9 @@ export default function App() {
   const { actionStatus: status, boardError, supportError } = readStatus;
   const boardLoadError = boardError !== "";
   const [lastTx, setLastTx] = useState<Hash | null>(null);
+  const [transactionState, setTransactionState] = useState<TransactionState | null>(null);
+  const [pendingCreate, setPendingCreate] = useState<CreateDemandTransactionOutcome | null>(readPendingCreate);
+  const createTransactionStateRef = useRef<TransactionState | null>(pendingCreate?.kind === "unknown" ? "unknown" : null);
   const walletStatus = resolveReownStatus(Boolean(reownProjectId), walletModuleLoaded, Boolean(walletKit));
   const setStatus = useCallback((actionStatus: string) => {
     setReadStatus((current) => ({ ...current, actionStatus }));
@@ -107,6 +159,8 @@ export default function App() {
   const activityRoute = location.pathname === ROUTES.myActivity.href;
   const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
   const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
+
+  useEffect(() => { storePendingCreate(pendingCreate); }, [pendingCreate]);
 
   const loadSupport = useCallback(async (
     demandId: bigint,
@@ -280,19 +334,37 @@ export default function App() {
 
   async function run(
     label: string,
-    fn: () => Promise<Hash>,
+    fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
     createdDemand?: CreateDemandInput,
   ): Promise<CreateDemandRunOutcome> {
+    if (label === "create" && (pendingCreate?.kind === "unknown" || isTransactionSubmissionBlocked(createTransactionStateRef.current))) {
+      return pendingCreate?.kind === "unknown"
+        ? pendingCreate
+        : { kind: "failed", message: "A demand transaction is already pending. Verify it before creating another." };
+    }
     setBusy(true);
     setStatus(label + " pending");
     setLastTx(null);
+    setTransactionState(null);
     const supportSnapshot = account && selectedId !== null
       ? { demandId: selectedId, supporter: account, identity: supportIdentity }
       : null;
     const boardBeforeTransaction = boardRef.current;
     let confirmedHash: Hash | null = null;
+    let verification: CreatedDemandVerification | undefined;
+    const onUpdate: TransactionUpdateHandler = ({ stage, state, hash, intent }) => {
+      setLastTx(hash);
+      setTransactionState(state);
+      setStatus(`${label} ${stage === "action" ? "transaction" : stage} ${state === "broadcast" ? "pending" : state}`);
+      if (label === "create") {
+        createTransactionStateRef.current = state;
+        storePendingCreate(state === "broadcast" || state === "unknown"
+          ? { kind: "unknown", stage: stage === "action" ? "demand" : stage, hash, intent, message: "The transaction receipt has not been verified yet." }
+          : null);
+      }
+    };
     try {
-      const verification: CreatedDemandVerification | undefined = createdDemand && account
+      verification = createdDemand && account
         ? {
           before: boardBeforeTransaction.map(({ demandId }) => ({ demandId })),
           expected: {
@@ -306,10 +378,12 @@ export default function App() {
         }
         : undefined;
       const readback = await afterConfirmedTransaction(
-        fn,
+        () => fn(onUpdate),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
+          setTransactionState("confirmed");
+          if (label === "create") createTransactionStateRef.current = "confirmed";
         },
         refresh,
         async () => supportSnapshot
@@ -332,10 +406,108 @@ export default function App() {
         ? { kind: "confirmed", hash: confirmedHash, demandId, ...(verification ? { verification } : {}) }
         : { kind: "failed", message: "The transaction hash was not available." };
     } catch (error) {
+      if (error instanceof TransactionLifecycleError) {
+        setLastTx(error.hash);
+        setTransactionState(error.state);
+        setStatus(`${label} ${error.stage} ${error.state}`);
+        if (error.stage === "action") return { kind: "failed", message: error.message };
+        const outcome: CreateDemandTransactionOutcome = {
+          kind: error.state,
+          stage: error.stage,
+          hash: error.hash,
+          intent: error.intent,
+          message: error.message,
+          ...(verification ? { verification } : {}),
+        };
+        if (label === "create") setPendingCreate(error.state === "unknown" ? outcome : null);
+        return outcome;
+      }
       const message = errorMessage(error);
       setStatus(message);
       return confirmedHash
         ? { kind: "readback-failed", hash: confirmedHash, message }
+        : { kind: "failed", message };
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyCreate(outcome: CreateDemandTransactionOutcome): Promise<CreateDemandRunOutcome> {
+    setBusy(true);
+    setStatus(`create ${outcome.stage} pending`);
+    setLastTx(outcome.hash);
+    setTransactionState("broadcast");
+    const supportSnapshot = account && selectedId !== null
+      ? { demandId: selectedId, supporter: account, identity: supportIdentity }
+      : null;
+    let confirmedHash: Hash | null = null;
+    const onUpdate: TransactionUpdateHandler = ({ stage, state, hash, intent }) => {
+      setLastTx(hash);
+      setTransactionState(state);
+      setStatus(`create ${stage} ${state === "broadcast" ? "pending" : state}`);
+      createTransactionStateRef.current = state;
+      storePendingCreate(state === "broadcast" || state === "unknown"
+        ? { kind: "unknown", stage: stage === "action" ? "demand" : stage, hash, intent, message: "The transaction receipt has not been verified yet." }
+        : null);
+    };
+
+    try {
+      if (outcome.stage === "approval") {
+        const hash = await verifyTransaction("approval", outcome.hash, outcome.intent, onUpdate);
+        setPendingCreate(null);
+        setStatus("create approval confirmed");
+        return { kind: "approval-confirmed", hash };
+      }
+
+      const readback = await afterConfirmedTransaction(
+        () => verifyTransaction("demand", outcome.hash, outcome.intent, onUpdate),
+        (hash) => {
+          confirmedHash = hash;
+          setLastTx(hash);
+          setTransactionState("confirmed");
+          createTransactionStateRef.current = "confirmed";
+          setPendingCreate(null);
+        },
+        refresh,
+        async () => supportSnapshot
+          ? loadSupport(supportSnapshot.demandId, supportSnapshot.supporter, supportSnapshot.identity)
+          : null,
+      );
+      await syncWallet();
+      if (!readback.boardReadbackSucceeded) {
+        setStatus("CHAIN_STATE_READBACK_FAILED");
+        return confirmedHash
+          ? { kind: "readback-failed", hash: confirmedHash, ...(outcome.verification ? { verification: outcome.verification } : {}) }
+          : { kind: "failed", message: "The transaction result could not be verified." };
+      }
+      const demandId = outcome.verification
+        ? resolveUniqueCreatedDemandId(outcome.verification.before, boardRef.current, outcome.verification.expected)
+        : null;
+      setStatus("create success");
+      return confirmedHash
+        ? { kind: "confirmed", hash: confirmedHash, demandId, ...(outcome.verification ? { verification: outcome.verification } : {}) }
+        : { kind: "failed", message: "The transaction hash was not available." };
+    } catch (error) {
+      if (error instanceof TransactionLifecycleError) {
+        setLastTx(error.hash);
+        setTransactionState(error.state);
+        setStatus(`create ${error.stage} ${error.state}`);
+        if (error.stage === "action") return { kind: "failed", message: error.message };
+        const nextOutcome: CreateDemandTransactionOutcome = {
+          kind: error.state,
+          stage: error.stage,
+          hash: error.hash,
+          intent: error.intent,
+          message: error.message,
+          ...(outcome.verification ? { verification: outcome.verification } : {}),
+        };
+        setPendingCreate(error.state === "unknown" ? nextOutcome : null);
+        return nextOutcome;
+      }
+      const message = errorMessage(error);
+      setStatus(message);
+      return confirmedHash
+        ? { kind: "readback-failed", hash: confirmedHash, message, ...(outcome.verification ? { verification: outcome.verification } : {}) }
         : { kind: "failed", message };
     } finally {
       setBusy(false);
@@ -382,7 +554,9 @@ export default function App() {
     supportState: currentSupportState,
     busy,
     lastTx,
+    pendingCreate,
     run,
+    verifyCreate,
     connect,
     refreshBoard: refreshBoardForCreate,
     walletStatus,
@@ -412,7 +586,7 @@ export default function App() {
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
             {supportError && <div role="alert" aria-live="polite" className="status-line err">{supportError}</div>}
             {boardError && <div role="alert" aria-live="polite" className="status-line err">{boardError}</div>}
-            {status && <div role="status" aria-live="polite" className={"status-line " + (status.includes("success") ? "ok" : status.includes("pending") ? "" : "err")}>{status}</div>}
+            {status && <div role="status" aria-live="polite" className={"status-line " + (status.includes("FAILED") ? "err" : status.includes("success") || status.includes("confirmed") ? "ok" : transactionState === "reverted" || transactionState === "cancelled" || transactionState === "unknown" ? "err" : status.includes("pending") || transactionState === "broadcast" ? "" : "err")}>{status}</div>}
             {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
           </div>
 
@@ -441,15 +615,17 @@ export function MarketRoute() {
 }
 
 export function CreateDemandRoute() {
-  const { account, busy, connect, refreshBoard, run, walletStatus } = useOutletContext<AppOutletContext>();
+  const { account, busy, connect, pendingCreate, refreshBoard, run, verifyCreate, walletStatus } = useOutletContext<AppOutletContext>();
   return (
     <CreateDemandChat
       account={account}
       busy={busy}
       contractConfigured={Boolean(DEMAND_CONTRACT)}
       walletStatus={walletStatus}
+      pendingTransaction={pendingCreate}
       onConnect={connect}
-      onCreate={(input) => run("create", () => createDemand(input), input)}
+      onCreate={(input) => run("create", (onUpdate) => createDemand(input, onUpdate), input)}
+      onVerify={verifyCreate}
       onRefreshBoard={refreshBoard}
     />
   );
@@ -642,7 +818,7 @@ function DemandDetail({
   busy: boolean;
   close: () => void;
   closeLabel: string;
-  run: (label: string, fn: () => Promise<Hash>) => Promise<CreateDemandRunOutcome>;
+  run: (label: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>) => Promise<CreateDemandRunOutcome>;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -748,11 +924,11 @@ function DemandDetail({
                 <h3>Support this request</h3>
                 <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} /></label>
                 <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} /></label>
-                <button className="primary" disabled={busy || !account} onClick={() => void run("support", () => supportDemand(demand.demandId, supportAmount, supportCalls))}>Support This Request</button>
+                <button className="primary" disabled={busy || !account} onClick={() => void run("support", (onUpdate) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate))}>Support This Request</button>
               </div>
             )}
             {supportState === "ready" && support.refundable && (
-              <div className="actions"><button className="danger" disabled={busy || !account} onClick={() => void run("refund", () => refundDemand(demand.demandId))}>Refund {formatUsd0(support.commitment)} USD₮0</button></div>
+              <div className="actions"><button className="danger" disabled={busy || !account} onClick={() => void run("refund", (onUpdate) => refundDemand(demand.demandId, onUpdate))}>Refund {formatUsd0(support.commitment)} USD₮0</button></div>
             )}
           </section>
         </div>
@@ -778,7 +954,7 @@ function DemandDetail({
                 <label htmlFor="proposal-evidence">Evidence</label>
                 <textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(e) => setEvidence(e.target.value)} />
                 <p className="workflow-summary" id="proposal-evidence-help">Proof that the service fulfills this request.</p>
-                <button className="primary" disabled={busy || !account} onClick={() => void run("submit", () => submitService(demand.demandId, serviceUrl, evidence))}>Submit Service Proposal</button>
+                <button className="primary" disabled={busy || !account} onClick={() => void run("submit", (onUpdate) => submitService(demand.demandId, serviceUrl, evidence, onUpdate))}>Submit Service Proposal</button>
               </div>
             </section>
           ) : null}
@@ -800,8 +976,8 @@ function DemandDetail({
               <div className="actions actions-column">
                 {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
                   <>
-                    <button className="primary" disabled={busy || !account} onClick={() => void run("approve", () => approveService(demand.demandId))}>Approve Proposal</button>
-                    <button className="danger" disabled={busy || !account} onClick={() => void run("reject", () => rejectService(demand.demandId))}>Reject Proposal</button>
+                    <button className="primary" disabled={busy || !account} onClick={() => void run("approve", (onUpdate) => approveService(demand.demandId, onUpdate))}>Approve Proposal</button>
+                    <button className="danger" disabled={busy || !account} onClick={() => void run("reject", (onUpdate) => rejectService(demand.demandId, onUpdate))}>Reject Proposal</button>
                   </>
                 )}
                 {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
@@ -814,10 +990,10 @@ function DemandDetail({
               <h3 id="settlement-heading">Settlement</h3>
               <div className="actions actions-column">
                 {demand.status === 1 && demand.quorumReached && (
-                  <button className="primary" disabled={busy} onClick={() => void run("finalize", () => finalizeDemand(demand.demandId))}>Finalize Payout</button>
+                  <button className="primary" disabled={busy} onClick={() => void run("finalize", (onUpdate) => finalizeDemand(demand.demandId, onUpdate))}>Finalize Payout</button>
                 )}
                 {canReopen && (
-                  <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", () => reopenDemand(demand.demandId))}>Reopen Demand</button>
+                  <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", (onUpdate) => reopenDemand(demand.demandId, onUpdate))}>Reopen Demand</button>
                 )}
               </div>
             </section>

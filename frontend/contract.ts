@@ -3,6 +3,7 @@ import {
   createWalletClient,
   custom,
   defineChain,
+  encodeFunctionData,
   formatUnits,
   getAddress,
   http,
@@ -16,6 +17,14 @@ import {
   type PublicClient,
 } from "viem";
 import { normalizeCapability } from "./capability";
+import {
+  waitForTransaction,
+  type ObservedTransaction,
+  type TransactionIntent,
+  type TransactionStage,
+  type TransactionUpdateHandler,
+} from "./transaction-lifecycle";
+import { deadlineDurationSeconds } from "./create-demand-chat-model";
 
 export const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || "1952");
 if (CHAIN_ID !== 1952 && CHAIN_ID !== 196) throw new Error("VITE_CHAIN_ID must be 1952 or 196");
@@ -327,29 +336,70 @@ async function requireAccount(): Promise<Address> {
   return account;
 }
 
-async function wait(hash: Hash): Promise<Hash> {
-  const receipt = await getPublic().waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("CHAIN_RECEIPT_FAILED");
-  return hash;
+async function wait(
+  hash: Hash,
+  intent: TransactionIntent,
+  stage: TransactionStage,
+  onUpdate?: TransactionUpdateHandler,
+  verifyExisting = false,
+): Promise<Hash> {
+  return waitForTransaction({
+    stage,
+    hash,
+    intent,
+    onUpdate,
+    ...(verifyExisting ? {
+      readTransaction: async (transactionHash: Hash): Promise<ObservedTransaction> => {
+        const transaction = await getPublic().getTransaction({ hash: transactionHash });
+        return {
+          hash: transaction.hash,
+          to: transaction.to,
+          data: transaction.input,
+          value: transaction.value,
+        };
+      },
+    } : {}),
+    waitForReceipt: ({ hash: receiptHash, onReplaced }) => getPublic().waitForTransactionReceipt({
+      hash: receiptHash,
+      onReplaced: (replacement) => onReplaced?.({
+        reason: replacement.reason,
+        transaction: {
+          hash: replacement.transaction.hash,
+          to: replacement.transaction.to,
+          data: replacement.transaction.input,
+          value: replacement.transaction.value,
+        },
+        transactionReceipt: {
+          transactionHash: replacement.transactionReceipt.transactionHash,
+          status: replacement.transactionReceipt.status,
+        },
+      }),
+    }),
+  });
 }
 
 async function writeDemand(
   account: Address,
   functionName: "createDemand" | "supportDemand" | "submitService" | "approveService" | "rejectService" | "finalize" | "reopen" | "refund",
   args: readonly unknown[],
+  stage: TransactionStage = "action",
+  onUpdate?: TransactionUpdateHandler,
 ): Promise<Hash> {
+  const address = requireContract();
+  const data = encodeFunctionData({ abi: DEMAND_ABI, functionName, args: args as never });
+  const intent: TransactionIntent = { to: address, data, value: 0n };
   const hash = await walletClient().writeContract({
-    address: requireContract(),
+    address,
     abi: DEMAND_ABI,
     functionName,
     args: args as never,
     account,
     chain: targetChain,
   }) as Hash;
-  return wait(hash);
+  return wait(hash, intent, stage, onUpdate);
 }
 
-async function ensureAllowance(owner: Address, amount: bigint): Promise<void> {
+async function ensureAllowance(owner: Address, amount: bigint, onUpdate?: TransactionUpdateHandler): Promise<void> {
   if (amount <= 0n) throw new Error("SUPPORT_TOO_SMALL");
   const client = getPublic();
   const contract = requireContract();
@@ -357,11 +407,13 @@ async function ensureAllowance(owner: Address, amount: bigint): Promise<void> {
   if (current >= amount) return;
   const wallet = walletClient();
   if (current > 0n) {
+    const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, 0n] });
     const reset = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, 0n], account: owner, chain: targetChain });
-    await wait(reset);
+    await wait(reset, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", onUpdate);
   }
+  const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, amount] });
   const approval = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, amount], account: owner, chain: targetChain });
-  await wait(approval);
+  await wait(approval, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", onUpdate);
 }
 
 function parsePositiveUint(value: string, bits: 64 | 96, code: string): bigint {
@@ -378,7 +430,8 @@ export async function createDemand(input: {
   expectedCalls: string;
   deadlineDays: string;
   commitment: string;
-}): Promise<Hash> {
+}, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+  const durationSeconds = deadlineDurationSeconds(input.deadlineDays);
   const account = await requireAccount();
   const capability = normalizeCapability(input.capability);
   const specification = input.specification.trim();
@@ -387,23 +440,21 @@ export async function createDemand(input: {
   const maxPrice = parseUsd0(input.maxPrice);
   if (commitment <= 0n || commitment > (1n << 96n) - 1n || maxPrice <= 0n || maxPrice > (1n << 96n) - 1n) throw new Error("DEMAND_INVALID_AMOUNT");
   const calls = parsePositiveUint(input.expectedCalls, 64, "DEMAND_INVALID_CALLS");
-  const days = Number(input.deadlineDays);
-  if (!Number.isFinite(days) || days <= 0 || days > 3650) throw new Error("DEMAND_INVALID_DEADLINE");
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + Math.floor(days * 86400));
-  await ensureAllowance(account, commitment);
-  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment]);
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + durationSeconds);
+  await ensureAllowance(account, commitment, onUpdate);
+  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment], "demand", onUpdate);
 }
 
-export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string): Promise<Hash> {
+export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
   const account = await requireAccount();
   const atomic = parseUsd0(amount);
   if (atomic <= 0n || atomic > (1n << 96n) - 1n) throw new Error("SUPPORT_TOO_SMALL");
   const calls = parsePositiveUint(expectedCalls, 64, "DEMAND_INVALID_CALLS");
-  await ensureAllowance(account, atomic);
-  return writeDemand(account, "supportDemand", [demandId, atomic, calls]);
+  await ensureAllowance(account, atomic, onUpdate);
+  return writeDemand(account, "supportDemand", [demandId, atomic, calls], "action", onUpdate);
 }
 
-export async function submitService(demandId: bigint, serviceUrl: string, evidence: string): Promise<Hash> {
+export async function submitService(demandId: bigint, serviceUrl: string, evidence: string, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
   const account = await requireAccount();
   let parsedUrl: URL;
   try { parsedUrl = new URL(serviceUrl.trim()); } catch { throw new Error("SUBMISSION_INVALID_URL"); }
@@ -413,23 +464,32 @@ export async function submitService(demandId: bigint, serviceUrl: string, eviden
   const evidenceHash = /^0x[0-9a-fA-F]{64}$/.test(evidenceValue)
     ? evidenceValue as `0x${string}`
     : keccak256(toBytes(evidenceValue));
-  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash]);
+  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash], "action", onUpdate);
 }
 
-export async function approveService(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "approveService", [demandId]);
+export async function approveService(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+  return writeDemand(await requireAccount(), "approveService", [demandId], "action", onUpdate);
 }
-export async function rejectService(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "rejectService", [demandId]);
+export async function rejectService(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+  return writeDemand(await requireAccount(), "rejectService", [demandId], "action", onUpdate);
 }
-export async function finalizeDemand(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "finalize", [demandId]);
+export async function finalizeDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+  return writeDemand(await requireAccount(), "finalize", [demandId], "action", onUpdate);
 }
-export async function reopenDemand(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "reopen", [demandId]);
+export async function reopenDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+  return writeDemand(await requireAccount(), "reopen", [demandId], "action", onUpdate);
 }
-export async function refundDemand(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "refund", [demandId]);
+export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+  return writeDemand(await requireAccount(), "refund", [demandId], "action", onUpdate);
+}
+
+export async function verifyTransaction(
+  stage: "approval" | "demand",
+  hash: Hash,
+  intent: TransactionIntent,
+  onUpdate?: TransactionUpdateHandler,
+): Promise<Hash> {
+  return wait(hash, intent, stage, onUpdate, true);
 }
 
 export function formatUsd0(value: bigint): string { return formatUnits(value, 6); }

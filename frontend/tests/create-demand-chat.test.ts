@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildReviewRows,
+  deadlineDurationSeconds,
   formatPriceUsage,
   parseCapabilityAnswer,
   parseCommitmentAnswer,
@@ -91,6 +92,12 @@ describe("guided demand answers", () => {
     expect(() => parseCommitmentAnswer("1.0000001")).toThrow("6 decimal places");
     expect(parseDeadlineAnswer("14 days")).toBe("14");
     expect(parseDeadlineAnswer("0.5")).toBe("0.5");
+    expect(() => parseDeadlineAnswer("0.041655 days")).toThrow("at least one hour");
+    expect(parseDeadlineAnswer("0.041666666666666664")).toBe("0.041666666666666664");
+    expect(parseDeadlineAnswer("0.04167824074074075")).toBe("0.04167824074074075");
+    expect(() => deadlineDurationSeconds("0.041655")).toThrow("DEMAND_DEADLINE_TOO_SHORT");
+    expect(deadlineDurationSeconds("0.041666666666666664")).toBe(3600);
+    expect(deadlineDurationSeconds("0.04167824074074075")).toBe(3601);
     expect(() => parseDeadlineAnswer("-1")).toThrow("greater than zero");
     expect(() => parseDeadlineAnswer("3651 days")).toThrow("3,650 days");
   });

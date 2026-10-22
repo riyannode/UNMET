@@ -29,6 +29,7 @@ import type { createDemand } from "@/contract";
 import { demandHref } from "@/routing";
 import { explorerTx } from "@/contract";
 import type { ReownStatus } from "@/reown-status";
+import { isTransactionSubmissionBlocked, type TransactionIntent } from "@/transaction-lifecycle";
 import "./create-demand-chat.css";
 
 type CreateDemandInput = Parameters<typeof createDemand>[0];
@@ -36,7 +37,11 @@ type CreateDemandInput = Parameters<typeof createDemand>[0];
 export type CreateDemandRunOutcome =
   | { kind: "confirmed"; hash: Hash; demandId: bigint | null; verification?: CreatedDemandVerification }
   | { kind: "readback-failed"; hash: Hash; message?: string; verification?: CreatedDemandVerification }
+  | { kind: "approval-confirmed"; hash: Hash }
+  | { kind: "reverted" | "cancelled" | "unknown"; stage: "approval" | "demand"; hash: Hash; intent: TransactionIntent; message: string; verification?: CreatedDemandVerification }
   | { kind: "failed"; message: string };
+
+export type CreateDemandTransactionOutcome = Extract<CreateDemandRunOutcome, { kind: "reverted" | "cancelled" | "unknown" }>;
 
 type ChatStep =
   | "capability"
@@ -53,8 +58,10 @@ type CreateDemandChatProps = {
   busy: boolean;
   contractConfigured: boolean;
   walletStatus: ReownStatus;
+  pendingTransaction: CreateDemandTransactionOutcome | null;
   onConnect: () => Promise<void>;
   onCreate: (input: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
+  onVerify: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   onRefreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
 };
 
@@ -169,6 +176,7 @@ function transactionError(message: string): string {
   if (message === "DEMAND_INVALID_SPEC") return "The service specification is empty or exceeds 2,048 UTF-8 bytes.";
   if (message === "DEMAND_INVALID_AMOUNT") return "The contract rejected the amount. Check the price and minimum escrow, then review again.";
   if (message === "DEMAND_INVALID_CALLS") return "Expected calls must be a positive whole number within the contract limit.";
+  if (message === "DEMAND_DEADLINE_TOO_SHORT") return "Choose a deadline of at least one hour.";
   if (message === "DEMAND_INVALID_DEADLINE") return "The deadline was rejected by X Layer. Choose a later deadline and retry.";
   return message;
 }
@@ -178,8 +186,10 @@ export function CreateDemandChat({
   busy,
   contractConfigured,
   walletStatus,
+  pendingTransaction,
   onConnect,
   onCreate,
+  onVerify,
   onRefreshBoard,
 }: CreateDemandChatProps) {
   const [answers, setAnswers] = useState(EMPTY_ANSWERS);
@@ -192,6 +202,7 @@ export function CreateDemandChat({
   const [editChoicesOpen, setEditChoicesOpen] = useState(false);
   const [outcome, setOutcome] = useState<CreateDemandRunOutcome | { kind: "message"; text: string } | null>(null);
   const [createPending, setCreatePending] = useState(false);
+  const [verificationPending, setVerificationPending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const refreshLock = useRef(false);
   const [refreshMessage, setRefreshMessage] = useState("");
@@ -202,8 +213,14 @@ export function CreateDemandChat({
   const reviewRows = buildReviewRows(answers);
   const prompt = editPrompt(editingField, step);
   const busyCreating = busy || createPending;
+  const unresolvedTransaction = outcome?.kind === "unknown" || pendingTransaction?.kind === "unknown";
+  const unresolvedOutcome = outcome?.kind === "unknown"
+    ? outcome
+    : pendingTransaction?.kind === "unknown" ? pendingTransaction : null;
+  const blocksChatInput = unresolvedTransaction || outcome?.kind === "confirmed" || outcome?.kind === "readback-failed";
   const canCreate = step === "review" && !editingField && !editChoicesOpen && !busyCreating
-    && contractConfigured && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed";
+    && contractConfigured && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed"
+    && !isTransactionSubmissionBlocked(unresolvedTransaction ? "unknown" : null);
 
   useEffect(() => {
     if (editingField) return;
@@ -217,8 +234,16 @@ export function CreateDemandChat({
     submitLock.current = false;
   }, [step, answers, editingField]);
 
+  useEffect(() => {
+    if (pendingTransaction?.kind === "unknown") {
+      setOutcome(pendingTransaction);
+      return;
+    }
+    setOutcome((current) => current?.kind === "unknown" ? null : current);
+  }, [pendingTransaction]);
+
   function handleAnswer(raw: string) {
-    if (submitLock.current || (step === "review" && !editingField) || busyCreating || outcome?.kind === "confirmed") return;
+    if (submitLock.current || (step === "review" && !editingField) || busyCreating || blocksChatInput) return;
     submitLock.current = true;
     setError("");
     try {
@@ -265,7 +290,7 @@ export function CreateDemandChat({
 
   function handlePricingContinue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitLock.current || step !== "pricing" || busyCreating || outcome?.kind === "confirmed") return;
+    if (submitLock.current || step !== "pricing" || busyCreating || blocksChatInput) return;
     submitLock.current = true;
     setError("");
 
@@ -297,6 +322,7 @@ export function CreateDemandChat({
   }
 
   function chooseEdit(field: EditableDemandField) {
+    if (unresolvedTransaction || blocksChatInput) return;
     setEditingField(field);
     setEditChoicesOpen(false);
     setValue(editValue(answers, field));
@@ -385,6 +411,17 @@ export function CreateDemandChat({
     }
   }
 
+  async function handleVerify(outcomeToVerify: CreateDemandTransactionOutcome) {
+    if (verificationPending) return;
+    setVerificationPending(true);
+    setRefreshMessage("");
+    try {
+      setOutcome(await onVerify(outcomeToVerify));
+    } finally {
+      setVerificationPending(false);
+    }
+  }
+
   const completedReview = step === "review";
   const editing = editingField !== null;
 
@@ -415,6 +452,54 @@ export function CreateDemandChat({
           <div ref={endRef} aria-hidden="true" />
         </div>
 
+        {unresolvedOutcome && (
+          <div className="create-demand-outcome create-demand-outcome-error" role="alert" aria-live="polite">
+            <strong>Transaction status is unknown.</strong>
+            <p>{unresolvedOutcome.message}</p>
+            <p>{unresolvedOutcome.stage === "approval"
+              ? "The USD₮0 approval may still be pending. Verify it before submitting the demand."
+              : "The demand transaction may still be pending. Do not submit it again until this transaction is verified."}</p>
+            <a href={explorerTx(unresolvedOutcome.hash)} target="_blank" rel="noreferrer">View transaction</a>
+            <Button type="button" variant="outline" disabled={verificationPending || busy} onClick={() => void handleVerify(unresolvedOutcome)}>
+              <RefreshCw aria-hidden="true" />
+              {verificationPending || busy ? "Checking transaction..." : "Verify existing transaction"}
+            </Button>
+          </div>
+        )}
+
+        {!completedReview && outcome?.kind === "confirmed" && (
+          <div className="create-demand-outcome create-demand-outcome-success" role="status" aria-live="polite">
+            <strong>Demand transaction confirmed on X Layer.</strong>
+            <p>{outcome.demandId === null ? "The demand was confirmed, but its market entry could not be uniquely identified." : "The demand was confirmed and market data was refreshed."}</p>
+            <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View confirmed transaction</a>
+            {outcome.demandId !== null && <Link to={demandHref(outcome.demandId)}>Open demand details</Link>}
+            <Link to="/market">Explore Market</Link>
+          </div>
+        )}
+
+        {!completedReview && outcome?.kind === "readback-failed" && (
+          <div className="create-demand-outcome create-demand-outcome-error" role="alert" aria-live="polite">
+            <strong>Demand transaction confirmed; market data could not be read.</strong>
+            <p>{outcome.message ?? "Do not submit this demand again until its status is verified."}</p>
+            <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View confirmed transaction</a>
+          </div>
+        )}
+
+        {!completedReview && outcome?.kind === "approval-confirmed" && (
+          <div className="create-demand-outcome create-demand-outcome-success" role="status" aria-live="polite">
+            <strong>Token allowance step confirmed. No demand was submitted.</strong>
+            <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View confirmed approval</a>
+          </div>
+        )}
+
+        {!completedReview && (outcome?.kind === "reverted" || outcome?.kind === "cancelled") && (
+          <div className="create-demand-outcome create-demand-outcome-error" role="alert" aria-live="polite">
+            <strong>{outcome.stage === "approval" ? "Token allowance" : "Demand"} transaction {outcome.kind}.</strong>
+            <p>{outcome.message} No demand was confirmed.</p>
+            <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View transaction</a>
+          </div>
+        )}
+
         {completedReview && (
           <section className="create-demand-review" aria-labelledby="demand-review-title">
             <div className="create-demand-review-heading">
@@ -422,7 +507,7 @@ export function CreateDemandChat({
                 <p className="create-demand-kicker">READY FOR YOUR REVIEW</p>
                 <h2 id="demand-review-title">Review your demand</h2>
               </div>
-              {!editChoicesOpen && !editing && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed" && (
+              {!editChoicesOpen && !editing && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed" && !unresolvedTransaction && (
                 <Button type="button" variant="outline" className="create-demand-edit-trigger" onClick={() => setEditChoicesOpen(true)}>
                   <Pencil aria-hidden="true" />
                   Edit answers
@@ -490,6 +575,22 @@ export function CreateDemandChat({
               </div>
             )}
 
+            {outcome?.kind === "approval-confirmed" && (
+              <div className="create-demand-outcome create-demand-outcome-success" role="status" aria-live="polite">
+                <strong>Token allowance step confirmed.</strong>
+                <p>No demand was submitted. Choose Create &amp; Fund Demand when you are ready to continue.</p>
+                <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View confirmed approval</a>
+              </div>
+            )}
+
+            {(outcome?.kind === "reverted" || outcome?.kind === "cancelled") && (
+              <div className="create-demand-outcome create-demand-outcome-error" role="alert" aria-live="polite">
+                <strong>{outcome.stage === "approval" ? "Token allowance transaction " : "Demand transaction "}{outcome.kind}.</strong>
+                <p>{outcome.message} No demand was confirmed.</p>
+                <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View transaction</a>
+              </div>
+            )}
+
             {outcome?.kind === "failed" && (
               <div className="create-demand-outcome create-demand-outcome-error" role="alert" aria-live="polite">
                 <strong>Demand was not confirmed.</strong>
@@ -505,7 +606,7 @@ export function CreateDemandChat({
 
             {refreshMessage && <p className="create-demand-refresh-message" role="status" aria-live="polite">{refreshMessage}</p>}
 
-            {completedReview && !editChoicesOpen && !editing && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed" && (
+            {completedReview && !editChoicesOpen && !editing && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed" && !unresolvedTransaction && (
               <div className="create-demand-actions">
                 {!account && walletStatus === "unavailable" && <p className="create-demand-wallet-state" role="status">Reown Unavailable</p>}
                 {!account && walletStatus === "ready" && <p className="create-demand-wallet-state">Wallet connection opens in Reown only after you continue.</p>}
@@ -519,7 +620,7 @@ export function CreateDemandChat({
           </section>
         )}
 
-        {!completedReview && step === "pricing" && !editing && (
+        {!completedReview && step === "pricing" && !editing && !blocksChatInput && (
           <form className="create-demand-pricing-form" onSubmit={handlePricingContinue} noValidate>
             <div className="create-demand-pricing-field">
               <label htmlFor="create-demand-max-price">Max price per call (USD₮0)</label>
@@ -571,7 +672,7 @@ export function CreateDemandChat({
           </form>
         )}
 
-        {(!completedReview || editing) && (step !== "pricing" || editing) && (
+        {(!completedReview || editing) && (step !== "pricing" || editing) && !blocksChatInput && (
           <PromptInput
             value={value}
             onValueChange={setValue}
