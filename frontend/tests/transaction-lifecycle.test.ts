@@ -6,6 +6,7 @@ import {
   isTransactionIntentMatch,
   isTransactionSubmissionBlocked,
   TransactionLifecycleError,
+  transactionFailureOutcome,
   waitForTransaction,
   findPendingTransaction,
   readPendingTransactions,
@@ -474,6 +475,49 @@ describe("pending transaction storage", () => {
 });
 
 describe("transaction error classification regression coverage", () => {
+  test("preserves lifecycle state and transaction scope for approval and action failures", () => {
+    for (const stage of ["approval", "action"] as const) {
+      for (const state of ["reverted", "cancelled", "unknown"] as const) {
+        const error = new TransactionLifecycleError(
+          stage,
+          state,
+          replacementHash,
+          intent,
+          wallet,
+          1952,
+          "Receipt status could not be verified.",
+        );
+
+        expect(transactionFailureOutcome(error, "support:1")).toEqual({
+          kind: state,
+          stage,
+          hash: replacementHash,
+          intent,
+          wallet,
+          chainId: 1952,
+          actionId: "support:1",
+          message: "Receipt status could not be verified.",
+        });
+      }
+    }
+  });
+
+  test("keeps the action id attached to every non-create action failure", () => {
+    const error = new TransactionLifecycleError(
+      "action",
+      "unknown",
+      originalHash,
+      intent,
+      wallet,
+      1952,
+      "RPC timed out after broadcast.",
+    );
+
+    for (const actionId of ["support:1", "refund:1", "submit:1", "approve:1", "reject:1", "finalize:1", "reopen:1"]) {
+      expect(transactionFailureOutcome(error, actionId)).toMatchObject({ kind: "unknown", actionId });
+    }
+  });
+
   test("preserves useful RPC, application, and fallback error messages", () => {
     expect(errorMessage({ shortMessage: "RPC request failed", message: "underlying RPC rejection" })).toBe("RPC request failed");
     expect(errorMessage("RPC offline")).toBe("RPC offline");

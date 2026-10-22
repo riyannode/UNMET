@@ -96,6 +96,33 @@ export class TransactionLifecycleError extends Error {
   }
 }
 
+export type TransactionFailureOutcome = {
+  kind: TransactionFailureState;
+  stage: TransactionStage;
+  hash: Hash;
+  intent: TransactionIntent;
+  wallet: Address;
+  chainId: number;
+  actionId: string;
+  message: string;
+};
+
+export function transactionFailureOutcome(
+  error: TransactionLifecycleError,
+  actionId: string,
+): TransactionFailureOutcome {
+  return {
+    kind: error.state,
+    stage: error.stage,
+    hash: error.hash,
+    intent: error.intent,
+    wallet: error.wallet,
+    chainId: error.chainId,
+    actionId,
+    message: error.message,
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }

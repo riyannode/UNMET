@@ -57,8 +57,10 @@ import {
   removePendingTransaction,
   storePendingTransaction,
   TransactionLifecycleError,
+  transactionFailureOutcome,
   type LegacyPendingCreate,
   type PendingTransactionRecord,
+  type TransactionFailureOutcome,
   type TransactionState,
   type TransactionUpdateHandler,
 } from "./transaction-lifecycle";
@@ -66,6 +68,19 @@ import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
 import { errorMessage } from "./errors.ts";
 import { resolveReownStatus, type ReownStatus } from "./reown-status.ts";
 type CreateDemandInput = Parameters<typeof createDemand>[0];
+type CreateDemandPendingTransactionRecord = PendingTransactionRecord & {
+  actionId: typeof CREATE_DEMAND_ACTION_ID;
+  stage: "approval" | "demand";
+};
+type AppTransactionOutcome = CreateDemandRunOutcome | TransactionFailureOutcome;
+type RunHandler = {
+  (label: "create", actionId: typeof CREATE_DEMAND_ACTION_ID, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<CreateDemandRunOutcome>;
+  (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<AppTransactionOutcome>;
+};
+type VerifyPendingHandler = {
+  (record: CreateDemandPendingTransactionRecord): Promise<CreateDemandRunOutcome>;
+  (record: PendingTransactionRecord): Promise<AppTransactionOutcome>;
+};
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
@@ -116,7 +131,7 @@ function withoutPendingRecord(records: readonly PendingTransactionRecord[], targ
   );
 }
 
-function createOutcomeFromPending(record: PendingTransactionRecord, message?: string): CreateDemandTransactionOutcome {
+function createOutcomeFromPending(record: CreateDemandPendingTransactionRecord, message?: string): CreateDemandTransactionOutcome {
   return {
     kind: record.state,
     stage: record.stage === "approval" ? "approval" : "demand",
@@ -141,6 +156,24 @@ function pendingActionLabel(label: string): string {
   }
 }
 
+function transactionOutcomeFromError(
+  error: TransactionLifecycleError,
+  actionId: string,
+  verification?: CreatedDemandVerification,
+): AppTransactionOutcome {
+  if (actionId === CREATE_DEMAND_ACTION_ID && error.stage !== "action") {
+    return {
+      kind: error.state,
+      stage: error.stage,
+      hash: error.hash,
+      intent: error.intent,
+      message: error.message,
+      ...(verification ? { verification } : {}),
+    };
+  }
+  return transactionFailureOutcome(error, actionId);
+}
+
 type AppOutletContext = {
   board: DemandView[];
   boardLoading: boolean;
@@ -155,8 +188,8 @@ type AppOutletContext = {
   lastTx: Hash | null;
   pendingCreate: CreateDemandTransactionOutcome | null;
   blockedActionIds: string[];
-  run: (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
-  verifyPendingTransaction: (record: PendingTransactionRecord) => Promise<CreateDemandRunOutcome>;
+  run: RunHandler;
+  verifyPendingTransaction: VerifyPendingHandler;
   verifyCreate: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   connect: () => Promise<void>;
   refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
@@ -222,7 +255,10 @@ export default function App() {
     && record.wallet.toLowerCase() === account.toLowerCase()
     && record.chainId === CHAIN_ID,
   );
-  const pendingCreateRecord = pendingTransactions.find((record) => record.actionId === CREATE_DEMAND_ACTION_ID) ?? null;
+  const pendingCreateRecord = pendingTransactions.find(
+    (record): record is CreateDemandPendingTransactionRecord =>
+      record.actionId === CREATE_DEMAND_ACTION_ID && record.stage !== "action",
+  ) ?? null;
   const pendingCreate = useMemo(
     () => pendingCreateRecord ? createOutcomeFromPending(pendingCreateRecord) : null,
     [pendingCreateRecord],
@@ -471,12 +507,24 @@ export default function App() {
     }
   }
 
+  function run(
+    label: "create",
+    actionId: typeof CREATE_DEMAND_ACTION_ID,
+    fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
+    createdDemand?: CreateDemandInput,
+  ): Promise<CreateDemandRunOutcome>;
+  function run(
+    label: string,
+    actionId: string,
+    fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
+    createdDemand?: CreateDemandInput,
+  ): Promise<AppTransactionOutcome>;
   async function run(
     label: string,
     actionId: string,
     fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
     createdDemand?: CreateDemandInput,
-  ): Promise<CreateDemandRunOutcome> {
+  ): Promise<AppTransactionOutcome> {
     const lockKey = `${account?.toLowerCase() ?? "disconnected"}:${CHAIN_ID}:${actionId}`;
     const storagePending = account
       ? findPendingTransaction(readPendingTransactions(transactionStorage()).records, account, CHAIN_ID, actionId)
@@ -484,9 +532,14 @@ export default function App() {
     const inMemoryPending = account ? findPendingTransaction(recordsRef.current, account, CHAIN_ID, actionId) : null;
     const existingPending = storagePending ?? inMemoryPending;
     if (existingPending) {
-      return actionId === CREATE_DEMAND_ACTION_ID
-        ? createOutcomeFromPending(existingPending)
-        : { kind: "failed", message: `${pendingActionLabel(label)} already has an unresolved transaction. Verify it before trying again.` };
+      if (actionId === CREATE_DEMAND_ACTION_ID && existingPending.stage !== "action") {
+        return createOutcomeFromPending({
+          ...existingPending,
+          actionId: CREATE_DEMAND_ACTION_ID,
+          stage: existingPending.stage,
+        });
+      }
+      return { kind: "failed", message: `${pendingActionLabel(label)} already has an unresolved transaction. Verify it before trying again.` };
     }
     if (activeActionLocksRef.current.has(lockKey)) {
       return { kind: "failed", message: `${pendingActionLabel(label)} is already being submitted.` };
@@ -550,17 +603,7 @@ export default function App() {
         setLastTx(error.hash);
         setTransactionState(error.state);
         if (activeWalletIdentityRef.current === error.wallet.toLowerCase()) setStatus(`${label} ${error.stage} ${error.state}`);
-        if (actionId !== CREATE_DEMAND_ACTION_ID || error.stage === "action") {
-          return { kind: "failed", message: error.message };
-        }
-        return {
-          kind: error.state,
-          stage: error.stage,
-          hash: error.hash,
-          intent: error.intent,
-          message: error.message,
-          ...(verification ? { verification } : {}),
-        };
+        return transactionOutcomeFromError(error, actionId, verification);
       }
       const message = errorMessage(error);
       if (activeWalletIdentityRef.current === account?.toLowerCase()) setStatus(message);
@@ -573,7 +616,9 @@ export default function App() {
     }
   }
 
-  async function verifyPendingTransaction(record: PendingTransactionRecord): Promise<CreateDemandRunOutcome> {
+  function verifyPendingTransaction(record: CreateDemandPendingTransactionRecord): Promise<CreateDemandRunOutcome>;
+  function verifyPendingTransaction(record: PendingTransactionRecord): Promise<AppTransactionOutcome>;
+  async function verifyPendingTransaction(record: PendingTransactionRecord): Promise<AppTransactionOutcome> {
     if (account?.toLowerCase() !== record.wallet.toLowerCase()) {
       return { kind: "failed", message: "Connect the wallet that sent this transaction before verifying it." };
     }
@@ -637,17 +682,7 @@ export default function App() {
         setLastTx(error.hash);
         setTransactionState(error.state);
         if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) setStatus(`${displayLabel} ${error.stage} ${error.state}`);
-        if (record.actionId !== CREATE_DEMAND_ACTION_ID || error.stage === "action") {
-          return { kind: "failed", message: error.message };
-        }
-        return {
-          kind: error.state,
-          stage: error.stage,
-          hash: error.hash,
-          intent: error.intent,
-          message: error.message,
-          ...(record.verification ? { verification: record.verification } : {}),
-        };
+        return transactionOutcomeFromError(error, record.actionId, record.verification);
       }
       const message = errorMessage(error);
       if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) setStatus(message);
@@ -988,7 +1023,7 @@ function DemandDetail({
   busy: boolean;
   close: () => void;
   closeLabel: string;
-  run: (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>) => Promise<CreateDemandRunOutcome>;
+  run: RunHandler;
   blockedActionIds: string[];
 }) {
   const panelRef = useRef<HTMLElement>(null);
