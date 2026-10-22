@@ -10,6 +10,7 @@ const routeObjects = Object.entries(ROUTES).map(([id, route]) => ({
 describe("app routes", () => {
   test.each([
     ["/", "landing"],
+    ["/docs", "docs"],
     ["/market", "market"],
     ["/market/42", "demandDetail"],
     ["/create-demand", "createDemand"],

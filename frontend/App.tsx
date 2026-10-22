@@ -15,19 +15,19 @@ import { ArrowUpDown, ChevronDown, CircleCheck, CircleHelp, CircleX, Clock3, Mor
 import {
   CHAIN_ID,
   DEMAND_CONTRACT,
+  MARKET_SYNC_INTERVAL_MS,
   approveService,
   createDemand,
+  getPublic,
   readTransactionOnChain,
   effectiveStatus,
   explorerTx,
   finalizeDemand,
   formatUsd0,
   parseUsd0,
-  readBoard,
-  readDemandOnChain,
-  readNewDemandsAfter,
+  readBoardSnapshot,
   readSupport,
-  sortDemandsByFunding,
+  synchronizeMarketBoard,
   refundDemand,
   rejectService,
   reopenDemand,
@@ -37,6 +37,7 @@ import {
   verifyTransaction,
   setReownWalletProvider,
   type DemandView,
+  type MarketSyncCursor,
   type SupportView,
 } from "./contract.ts";
 import {
@@ -45,6 +46,7 @@ import {
   readSupportForIdentity,
   settleBoardRead,
   settleSupportRead,
+  nextMarketStatusChangeAt,
   type MarketSort,
   type SupportReadResult,
 } from "./app-state.ts";
@@ -236,7 +238,6 @@ type AppOutletContext = {
   verifyCreate: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   connect: () => Promise<void>;
   refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
-  refreshNewDemands: () => Promise<void>;
   walletStatus: ReownStatus;
 };
 
@@ -249,7 +250,13 @@ export default function App() {
   const boardRef = useRef(board);
   boardRef.current = board;
   const marketPollInFlightRef = useRef(false);
-  const [boardLoading, setBoardLoading] = useState(true);
+  const marketSyncCursorRef = useRef<MarketSyncCursor | null>(null);
+  const marketSyncGenerationRef = useRef(0);
+  const boardRefreshRequestRef = useRef(0);
+  const initialBoardLoadStartedRef = useRef(false);
+  const [boardLoading, setBoardLoadingState] = useState(true);
+  const boardLoadingRef = useRef(boardLoading);
+  boardLoadingRef.current = boardLoading;
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [walletModuleLoaded, setWalletModuleLoaded] = useState(false);
   const [account, setAccount] = useState<Address | null>(null);
@@ -263,7 +270,10 @@ export default function App() {
   const [supportState, setSupportState] = useState<"loading" | "ready" | "error">("ready");
   const [mySupportIds, setMySupportIds] = useState<Set<string>>(new Set());
   const [activityState, setActivityState] = useState<"loading" | "ready" | "error">("ready");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const [marketClock, setMarketClock] = useState(0);
   const [readStatus, setReadStatus] = useState({ actionStatus: "", boardError: "", supportError: "" });
   const { actionStatus: status, boardError, supportError } = readStatus;
   const boardLoadError = boardError !== "";
@@ -277,6 +287,16 @@ export default function App() {
   const walletStatus = resolveReownStatus(Boolean(reownProjectId), walletModuleLoaded, Boolean(walletKit));
   const setStatus = useCallback((actionStatus: string) => {
     setReadStatus((current) => ({ ...current, actionStatus }));
+  }, []);
+  const setBoardLoading = useCallback((next: boolean) => {
+    boardLoadingRef.current = next;
+    if (next) marketSyncGenerationRef.current += 1;
+    setBoardLoadingState(next);
+  }, []);
+  const setBusy = useCallback((next: boolean) => {
+    busyRef.current = next;
+    if (next) marketSyncGenerationRef.current += 1;
+    setBusyState(next);
   }, []);
 
   useEffect(() => {
@@ -293,6 +313,7 @@ export default function App() {
   supportIdentityRef.current = supportIdentity;
   const supportRequestRef = useRef(0);
   const activityRoute = location.pathname === ROUTES.myActivity.href;
+  const marketSyncRoute = location.pathname === ROUTES.market.href || demandMatch !== null;
   const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
   const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
   const pendingTransactions = transactionPersistence.records.filter((record) =>
@@ -411,18 +432,22 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(async (): Promise<boolean> => {
+    const request = ++boardRefreshRequestRef.current;
     setBoardLoading(true);
     try {
-      const latestBoard = await readBoard();
-      boardRef.current = latestBoard;
-      setBoard(latestBoard);
+      const snapshot = await readBoardSnapshot();
+      if (request !== boardRefreshRequestRef.current) return false;
+      marketSyncCursorRef.current = snapshot.cursor;
+      boardRef.current = snapshot.demands;
+      setBoard(snapshot.demands);
       setReadStatus((current) => settleBoardRead(current, { kind: "success" }));
       return true;
     } catch (error) {
+      if (request !== boardRefreshRequestRef.current) return false;
       setReadStatus((current) => settleBoardRead(current, { kind: "error", message: errorMessage(error) }));
       return false;
     } finally {
-      setBoardLoading(false);
+      if (request === boardRefreshRequestRef.current) setBoardLoading(false);
     }
   }, []);
 
@@ -430,24 +455,29 @@ export default function App() {
     return await refresh() ? boardRef.current : null;
   }, [refresh]);
 
-  const refreshNewDemands = useCallback(async (): Promise<void> => {
-    if (!DEMAND_CONTRACT || marketPollInFlightRef.current) return;
+  const synchronizeMarket = useCallback(async (): Promise<void> => {
+    const cursor = marketSyncCursorRef.current;
+    if (
+      !DEMAND_CONTRACT || !cursor || marketPollInFlightRef.current || boardLoadingRef.current || busyRef.current
+      || activeActionLocksRef.current.size > 0 || document.visibilityState !== "visible"
+    ) return;
+
+    const generation = marketSyncGenerationRef.current;
     marketPollInFlightRef.current = true;
     try {
-      const lastSeenDemandId = boardRef.current.reduce(
-        (latest, demand) => demand.demandId > latest ? demand.demandId : latest,
-        0n,
-      );
-      const newDemands = await readNewDemandsAfter(lastSeenDemandId);
-      if (newDemands.length > 0) {
-        const demandsById = new Map(boardRef.current.map((demand) => [demand.demandId.toString(), demand]));
-        for (const demand of newDemands) demandsById.set(demand.demandId.toString(), demand);
-        const latestBoard = sortDemandsByFunding([...demandsById.values()]);
-        boardRef.current = latestBoard;
-        setBoard(latestBoard);
+      const result = await synchronizeMarketBoard(getPublic(), DEMAND_CONTRACT, boardRef.current, cursor);
+      if (
+        generation !== marketSyncGenerationRef.current || boardLoadingRef.current || busyRef.current
+        || activeActionLocksRef.current.size > 0
+      ) return;
+      marketSyncCursorRef.current = result.cursor;
+      if (result.changed) {
+        boardRef.current = result.demands;
+        setBoard(result.demands);
       }
       setReadStatus((current) => current.boardError ? settleBoardRead(current, { kind: "success" }) : current);
     } catch (error) {
+      if (generation !== marketSyncGenerationRef.current || boardLoadingRef.current || busyRef.current) return;
       const message = errorMessage(error);
       setReadStatus((current) => current.boardError === message ? current : settleBoardRead(current, { kind: "error", message }));
     } finally {
@@ -490,7 +520,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (initialBoardLoadStartedRef.current) return;
+    initialBoardLoadStartedRef.current = true;
     void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
     void syncWallet();
     const kit = walletKit;
     if (kit) {
@@ -505,7 +540,51 @@ export default function App() {
       };
     }
     setReownWalletProvider(null);
-  }, [refresh, syncWallet, walletKit]);
+  }, [syncWallet, walletKit]);
+
+  useEffect(() => {
+    if (!marketSyncRoute || boardLoading || busy) return;
+    let live = true;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setTimeout(() => { void poll(); }, MARKET_SYNC_INTERVAL_MS);
+    };
+    const poll = async () => {
+      if (!live || document.visibilityState !== "visible") return;
+      await synchronizeMarket();
+      if (live && document.visibilityState === "visible") schedule();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+      } else {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    if (document.visibilityState === "visible") void poll();
+    return () => {
+      live = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [marketSyncRoute, boardLoading, busy, synchronizeMarket]);
+
+  useEffect(() => {
+    if (!marketSyncRoute && !activityRoute) return;
+    const nextChange = nextMarketStatusChangeAt(board, BigInt(Math.floor(Date.now() / 1000)));
+    if (nextChange === null) return;
+    const remainingMs = Number(nextChange * 1000n - BigInt(Date.now()));
+    const maxTimeoutMs = 2_147_483_647;
+    const timer = window.setTimeout(
+      () => setMarketClock((current) => current + 1),
+      Math.min(Math.max(remainingMs, 0), maxTimeoutMs),
+    );
+    return () => window.clearTimeout(timer);
+  }, [marketSyncRoute, activityRoute, board, marketClock]);
 
   useEffect(() => {
     if (!account || selectedId === null) {
@@ -821,7 +900,6 @@ export default function App() {
     verifyCreate,
     connect,
     refreshBoard: refreshBoardForCreate,
-    refreshNewDemands,
     walletStatus,
   };
 
@@ -875,26 +953,7 @@ export default function App() {
 }
 
 export function MarketRoute() {
-  const { board, boardLoading, boardLoadError, selectedId, busy, refreshNewDemands } = useOutletContext<AppOutletContext>();
-  const pollStateRef = useRef({ boardLoading, busy });
-  useEffect(() => {
-    pollStateRef.current = { boardLoading, busy };
-  }, [boardLoading, busy]);
-  useEffect(() => {
-    const poll = () => {
-      if (
-        document.visibilityState === "visible" &&
-        !pollStateRef.current.boardLoading &&
-        !pollStateRef.current.busy
-      ) {
-        void refreshNewDemands();
-      }
-    };
-    const interval = window.setInterval(poll, 60_000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [refreshNewDemands]);
+  const { board, boardLoading, boardLoadError, selectedId } = useOutletContext<AppOutletContext>();
   return (
     <DemandBoard
       board={board}
@@ -954,38 +1013,21 @@ export function DemandDetailRoute() {
   const demandId = parseDemandId(rawDemandId);
   const location = useLocation();
   const navigate = useNavigate();
-  const { account, support, supportState, busy, lastTx, run, blockedActionIds } = useOutletContext<AppOutletContext>();
-  const [attempt, setAttempt] = useState(0);
-  const [detail, setDetail] = useState<DemandDetailLoad>({ kind: "loading" });
+  const { board, boardLoading, boardLoadError, refreshBoard, account, support, supportState, busy, lastTx, run, blockedActionIds } = useOutletContext<AppOutletContext>();
+  const demand = demandId === null ? undefined : board.find((candidate) => candidate.demandId === demandId);
+  const detail: DemandDetailLoad = demandId === null
+    ? { kind: "invalid" }
+    : !DEMAND_CONTRACT
+      ? { kind: "not-configured" }
+      : demand
+        ? { kind: "ready", demand }
+        : boardLoading
+          ? { kind: "loading" }
+          : boardLoadError
+            ? { kind: "error" }
+            : { kind: "not-found" };
   const returnTo = demandReturnPath(location.state);
   const close = useCallback(() => navigate(returnTo), [navigate, returnTo]);
-
-  useEffect(() => {
-    let live = true;
-    if (demandId === null) {
-      setDetail({ kind: "invalid" });
-      return () => { live = false; };
-    }
-    if (!DEMAND_CONTRACT) {
-      setDetail({ kind: "not-configured" });
-      return () => { live = false; };
-    }
-    setDetail({ kind: "loading" });
-    void readDemandOnChain(demandId).then((demand) => {
-      if (live) setDetail({ kind: "ready", demand });
-    }).catch(async () => {
-      try {
-        const board = await readBoard();
-        if (!live) return;
-        setDetail(board.some((demand) => demand.demandId === demandId)
-          ? { kind: "error" }
-          : { kind: "not-found" });
-      } catch {
-        if (live) setDetail({ kind: "error" });
-      }
-    });
-    return () => { live = false; };
-  }, [demandId, attempt, lastTx]);
 
   if (detail.kind !== "ready") {
     const message = detail.kind === "loading"
@@ -1022,7 +1064,7 @@ export function DemandDetailRoute() {
             )}
             <p className="demand-detail-state-message" role={detail.kind === "loading" ? "status" : "alert"}>{message}</p>
             {detail.kind === "error" && (
-              <Button type="button" className="demand-detail-action" onClick={() => setAttempt((value) => value + 1)}>Retry</Button>
+              <Button type="button" className="demand-detail-action" onClick={() => void refreshBoard()}>Retry</Button>
             )}
           </CardContent>
         </Card>

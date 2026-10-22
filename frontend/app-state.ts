@@ -11,6 +11,29 @@ type MarketRequest = {
   capability: string;
 };
 
+type DeadlineStatusDemand = {
+  status: number;
+  deadline: bigint;
+  reviewEndsAt: bigint;
+  quorumReached: boolean;
+  candidateRejected: boolean;
+};
+
+export function nextMarketStatusChangeAt<T extends DeadlineStatusDemand>(board: readonly T[], now: bigint): bigint | null {
+  let next: bigint | null = null;
+  for (const demand of board) {
+    let transition: bigint | null = null;
+    if (demand.status === 0) transition = demand.deadline;
+    else if (demand.status === 1 && !demand.quorumReached) {
+      transition = demand.candidateRejected || demand.deadline >= demand.reviewEndsAt
+        ? demand.deadline
+        : demand.reviewEndsAt;
+    }
+    if (transition !== null && transition > now && (next === null || transition < next)) next = transition;
+  }
+  return next;
+}
+
 export function deriveMarketRequests<T extends MarketRequest>(
   board: readonly T[],
   filters: { search: string; status: string; sort: MarketSort },

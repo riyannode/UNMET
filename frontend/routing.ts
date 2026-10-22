@@ -1,5 +1,6 @@
 export const ROUTES = {
   landing: { path: "/", href: "/" },
+  docs: { path: "docs", href: "/docs" },
   market: { path: "market", href: "/market" },
   demandDetail: { path: "market/:demandId", href: "/market/:demandId" },
   createDemand: { path: "create-demand", href: "/create-demand" },

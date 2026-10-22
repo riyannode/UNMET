@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  decodeEventLog,
   defineChain,
   encodeFunctionData,
   formatUnits,
@@ -14,6 +15,7 @@ import {
   type Abi,
   type Address,
   type Hash,
+  type Log,
   type PublicClient,
 } from "viem";
 import { normalizeCapability } from "./capability";
@@ -37,6 +39,19 @@ const DEFAULT_TOKEN = CHAIN_ID === 196
 export const RPC_URL = import.meta.env.VITE_XLAYER_RPC_URL || DEFAULT_RPC;
 export const DEMAND_CONTRACT = parseConfiguredAddress(import.meta.env.VITE_DEMAND_CONTRACT, "VITE_DEMAND_CONTRACT");
 export const PAYMENT_TOKEN = getAddress(import.meta.env.VITE_PAYMENT_TOKEN || DEFAULT_TOKEN);
+
+const DEFAULT_MARKET_SYNC_INTERVAL_MS = 60_000;
+const MARKET_SYNC_LOG_RANGE = 100n;
+const MARKET_SYNC_MAX_LOG_RANGES_PER_POLL = 10n;
+const BOARD_READ_BATCH_SIZE = 20;
+
+export function parseMarketSyncInterval(value: string | undefined): number {
+  if (!value?.trim()) return DEFAULT_MARKET_SYNC_INTERVAL_MS;
+  const interval = Number(value);
+  return Number.isSafeInteger(interval) && interval > 0 ? interval : DEFAULT_MARKET_SYNC_INTERVAL_MS;
+}
+
+export const MARKET_SYNC_INTERVAL_MS = parseMarketSyncInterval(import.meta.env.VITE_MARKET_SYNC_INTERVAL_MS);
 
 export const targetChain = defineChain({
   id: CHAIN_ID,
@@ -137,6 +152,92 @@ export const DEMAND_ABI = [
     type: "function", name: "isRefundable", stateMutability: "view",
     inputs: [{ name: "demandId", type: "uint256" }, { name: "supporter", type: "address" }],
     outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "event", name: "DemandCreated", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "demandKey", type: "bytes32", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "capability", type: "string", indexed: false },
+      { name: "maxUnitPrice", type: "uint96", indexed: false },
+      { name: "expectedCalls", type: "uint64", indexed: false },
+      { name: "deadline", type: "uint64", indexed: false },
+      { name: "initialCommitment", type: "uint96", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "DemandSupported", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "amount", type: "uint96", indexed: false },
+      { name: "expectedCalls", type: "uint64", indexed: false },
+      { name: "committedTotal", type: "uint128", indexed: false },
+      { name: "supporterCount", type: "uint32", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "ServiceSubmitted", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "builder", type: "address", indexed: true },
+      { name: "serviceUrl", type: "string", indexed: false },
+      { name: "evidenceHash", type: "bytes32", indexed: false },
+      { name: "reviewEndsAt", type: "uint64", indexed: false },
+      { name: "reviewCommitted", type: "uint128", indexed: false },
+      { name: "approvalRequired", type: "uint128", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "ServiceApproved", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "weight", type: "uint96", indexed: false },
+      { name: "approvalWeight", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "ServiceRejected", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "weight", type: "uint96", indexed: false },
+      { name: "rejectionWeight", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "SubmissionRejected", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "builder", type: "address", indexed: true },
+      { name: "approvalWeight", type: "uint256", indexed: false },
+      { name: "rejectionWeight", type: "uint256", indexed: false },
+      { name: "approvalRequired", type: "uint128", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "DemandFulfilled", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "builder", type: "address", indexed: true },
+      { name: "treasury", type: "address", indexed: true },
+      { name: "approvedAmount", type: "uint128", indexed: false },
+      { name: "fee", type: "uint128", indexed: false },
+      { name: "payout", type: "uint128", indexed: false },
+      { name: "remainingRefundable", type: "uint128", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "Refunded", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "amount", type: "uint96", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "DemandClosed", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "demandKey", type: "bytes32", indexed: true },
+    ],
   },
 ] as const satisfies Abi;
 
@@ -276,12 +377,17 @@ export function effectiveStatus(demand: DemandView, now = BigInt(Math.floor(Date
   return base;
 }
 
-async function readDemandWithClient(client: PublicClient, demandId: bigint): Promise<DemandView> {
-  const contract = requireContract();
+async function readDemandWithClient(
+  client: PublicClient,
+  demandId: bigint,
+  blockNumber?: bigint,
+  contract: Address = requireContract(),
+): Promise<DemandView> {
+  const atBlock = blockNumber === undefined ? {} : { blockNumber };
   const [raw, progress, rejection] = await Promise.all([
-    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "getDemand", args: [demandId] }),
-    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "approvalProgress", args: [demandId] }),
-    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "rejectionProgress", args: [demandId] }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "getDemand", args: [demandId], ...atBlock }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "approvalProgress", args: [demandId], ...atBlock }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "rejectionProgress", args: [demandId], ...atBlock }),
   ]);
   const d = raw as Omit<DemandView, "demandId" | "approvalWeight" | "quorumReached" | "rejectionWeight" | "rejectionThreshold" | "candidateRejected">;
   const p = progress as readonly [bigint, bigint, boolean];
@@ -308,30 +414,108 @@ export function sortDemandsByFunding(output: DemandView[]): DemandView[] {
   return output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
 }
 
-export async function readBoard(): Promise<DemandView[]> {
-  if (!DEMAND_CONTRACT) return [];
-  const client = getPublic();
-  const next = await client.readContract({ address: DEMAND_CONTRACT, abi: DEMAND_ABI, functionName: "nextDemandId" }) as bigint;
+export type MarketSyncCursor = { blockNumber: bigint; blockHash: Hash };
+export type MarketBoardSnapshot = { demands: DemandView[]; cursor: MarketSyncCursor | null };
+export type MarketSyncResult = MarketBoardSnapshot & { changed: boolean; reorgRecovered: boolean };
+
+async function readBoardAt(client: PublicClient, contract: Address, blockNumber: bigint): Promise<DemandView[]> {
+  const next = await client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "nextDemandId", blockNumber }) as bigint;
   const ids: bigint[] = [];
   for (let id = 1n; id < next; id += 1n) ids.push(id);
   const output: DemandView[] = [];
-  for (let i = 0; i < ids.length; i += 20) {
-    output.push(...await Promise.all(ids.slice(i, i + 20).map((id) => readDemandWithClient(client, id))));
+  for (let i = 0; i < ids.length; i += BOARD_READ_BATCH_SIZE) {
+    output.push(...await Promise.all(ids.slice(i, i + BOARD_READ_BATCH_SIZE).map((id) => readDemandWithClient(client, id, blockNumber, contract))));
   }
   return sortDemandsByFunding(output);
 }
 
-export async function readNewDemandsAfter(lastSeenDemandId: bigint): Promise<DemandView[]> {
-  if (!DEMAND_CONTRACT) return [];
-  const client = getPublic();
-  const next = await client.readContract({ address: DEMAND_CONTRACT, abi: DEMAND_ABI, functionName: "nextDemandId" }) as bigint;
-  const ids: bigint[] = [];
-  for (let id = lastSeenDemandId + 1n; id < next; id += 1n) ids.push(id);
-  const output: DemandView[] = [];
-  for (let i = 0; i < ids.length; i += 20) {
-    output.push(...await Promise.all(ids.slice(i, i + 20).map((id) => readDemandWithClient(client, id))));
+async function readBoardSnapshotWithClient(client: PublicClient, contract: Address): Promise<MarketBoardSnapshot> {
+  const block = await client.getBlock({ blockTag: "latest" });
+  const demands = await readBoardAt(client, contract, block.number);
+  const canonicalBlock = await client.getBlock({ blockNumber: block.number });
+  if (canonicalBlock.hash !== block.hash) throw new Error("MARKET_SNAPSHOT_REORGED");
+  return { demands, cursor: { blockNumber: block.number, blockHash: block.hash } };
+}
+
+export async function readBoardSnapshot(): Promise<MarketBoardSnapshot> {
+  if (!DEMAND_CONTRACT) return { demands: [], cursor: null };
+  return readBoardSnapshotWithClient(getPublic(), DEMAND_CONTRACT);
+}
+
+export async function readBoard(): Promise<DemandView[]> {
+  return (await readBoardSnapshot()).demands;
+}
+
+export function demandIdsFromLogs(logs: readonly Pick<Log, "data" | "topics">[]): Set<bigint> {
+  const demandIds = new Set<bigint>();
+  for (const log of logs) {
+    try {
+      const decoded = decodeEventLog({ abi: DEMAND_ABI, data: log.data, topics: log.topics, strict: false });
+      if (typeof decoded.args.demandId === "bigint") demandIds.add(decoded.args.demandId);
+    } catch {
+      // Ignore logs from events outside the AgentDemand ABI.
+    }
   }
-  return sortDemandsByFunding(output);
+  return demandIds;
+}
+
+export async function synchronizeMarketBoard(
+  client: PublicClient,
+  contract: Address,
+  currentBoard: readonly DemandView[],
+  cursor: MarketSyncCursor,
+): Promise<MarketSyncResult> {
+  const head = await client.getBlockNumber();
+  if (head < cursor.blockNumber) {
+    return { ...(await readBoardSnapshotWithClient(client, contract)), changed: true, reorgRecovered: true };
+  }
+
+  const checkpoint = await client.getBlock({ blockNumber: cursor.blockNumber });
+  if (checkpoint.hash !== cursor.blockHash) {
+    return { ...(await readBoardSnapshotWithClient(client, contract)), changed: true, reorgRecovered: true };
+  }
+  if (head === cursor.blockNumber) {
+    return { demands: [...currentBoard], cursor, changed: false, reorgRecovered: false };
+  }
+
+  const maximumBlocks = MARKET_SYNC_LOG_RANGE * MARKET_SYNC_MAX_LOG_RANGES_PER_POLL;
+  const lastBlock = head < cursor.blockNumber + maximumBlocks ? head : cursor.blockNumber + maximumBlocks;
+  const target = await client.getBlock({ blockNumber: lastBlock });
+  const changedIds = new Set<bigint>();
+  for (let fromBlock = cursor.blockNumber + 1n; fromBlock <= lastBlock;) {
+    const rangeEnd = fromBlock + MARKET_SYNC_LOG_RANGE - 1n;
+    const toBlock = rangeEnd < lastBlock ? rangeEnd : lastBlock;
+    const logs = await client.getLogs({ address: contract, fromBlock, toBlock });
+    for (const demandId of demandIdsFromLogs(logs)) changedIds.add(demandId);
+    fromBlock = toBlock + 1n;
+  }
+
+  const ids = [...changedIds];
+  const updates: DemandView[] = [];
+  for (let i = 0; i < ids.length; i += BOARD_READ_BATCH_SIZE) {
+    updates.push(...await Promise.all(
+      ids.slice(i, i + BOARD_READ_BATCH_SIZE).map((demandId) => readDemandWithClient(client, demandId, lastBlock, contract)),
+    ));
+  }
+
+  const canonicalTarget = await client.getBlock({ blockNumber: lastBlock });
+  if (canonicalTarget.hash !== target.hash) throw new Error("MARKET_SYNC_REORGED_DURING_SCAN");
+
+  if (updates.length === 0) return {
+    demands: [...currentBoard],
+    cursor: { blockNumber: lastBlock, blockHash: target.hash },
+    changed: false,
+    reorgRecovered: false,
+  };
+
+  const demandsById = new Map(currentBoard.map((demand) => [demand.demandId.toString(), demand]));
+  for (const demand of updates) demandsById.set(demand.demandId.toString(), demand);
+  return {
+    demands: sortDemandsByFunding([...demandsById.values()]),
+    cursor: { blockNumber: lastBlock, blockHash: target.hash },
+    changed: true,
+    reorgRecovered: false,
+  };
 }
 
 export async function readSupport(demandId: bigint, supporter: Address): Promise<SupportView> {

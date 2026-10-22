@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import UnmetLanding from "./UnmetLanding.tsx";
+import UnmetNavigation from "./UnmetNavigation.tsx";
 import { ROUTES } from "./routing.ts";
 import "./app.css";
 
@@ -26,6 +27,14 @@ function NotFoundRoute() {
   );
 }
 
+function DocsRoute() {
+  return (
+    <main className="unmet-docs-page" aria-label="Documentation">
+      <UnmetNavigation />
+    </main>
+  );
+}
+
 const el = document.getElementById("root");
 if (!el) throw new Error("root missing");
 
@@ -34,6 +43,7 @@ createRoot(el).render(
     <BrowserRouter>
       <Routes>
         <Route path={ROUTES.landing.path} element={<UnmetLanding />} />
+        <Route path={ROUTES.docs.path} element={<DocsRoute />} />
         <Route element={<Suspense fallback={<WorkspaceLoading />}><App /></Suspense>}>
           <Route id="market" path={ROUTES.market.path} element={<MarketRoute />} />
           <Route id="demand-detail" path={ROUTES.demandDetail.path} element={<DemandDetailRoute />} />
