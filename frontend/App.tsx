@@ -20,6 +20,7 @@ import {
   explorerTx,
   finalizeDemand,
   formatUsd0,
+  parseUsd0,
   readBoard,
   readDemandOnChain,
   readSupport,
@@ -41,9 +42,14 @@ import {
   type SupportReadResult,
 } from "./app-state.ts";
 import { ReuiAppShell } from "./components/examples/c-sidebar-1.tsx";
+import { CreateDemandChat, type CreateDemandRunOutcome } from "./CreateDemandChat";
+import { normalizeCapability } from "./capability";
+import { resolveUniqueCreatedDemandId } from "./create-demand-chat-model";
+import type { CreatedDemandVerification, DemandReadbackMatch } from "./create-demand-chat-model";
 import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
 import { errorMessage } from "./errors.ts";
-import { resolveReownStatus } from "./reown-status.ts";
+import { resolveReownStatus, type ReownStatus } from "./reown-status.ts";
+type CreateDemandInput = Parameters<typeof createDemand>[0];
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
@@ -60,7 +66,10 @@ type AppOutletContext = {
   supportState: "loading" | "ready" | "error";
   busy: boolean;
   lastTx: Hash | null;
-  run: (label: string, fn: () => Promise<Hash>) => Promise<void>;
+  run: (label: string, fn: () => Promise<Hash>, createdDemand?: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
+  connect: () => Promise<void>;
+  refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
+  walletStatus: ReownStatus;
 };
 
 export default function App() {
@@ -69,6 +78,8 @@ export default function App() {
   const demandMatch = useMatch(ROUTES.demandDetail.href);
   const selectedId = parseDemandId(demandMatch?.params.demandId);
   const [board, setBoard] = useState<DemandView[]>([]);
+  const boardRef = useRef(board);
+  boardRef.current = board;
   const [boardLoading, setBoardLoading] = useState(true);
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [walletModuleLoaded, setWalletModuleLoaded] = useState(false);
@@ -129,6 +140,7 @@ export default function App() {
     setBoardLoading(true);
     try {
       const latestBoard = await readBoard();
+      boardRef.current = latestBoard;
       setBoard(latestBoard);
       setReadStatus((current) => settleBoardRead(current, { kind: "success" }));
       return true;
@@ -139,6 +151,10 @@ export default function App() {
       setBoardLoading(false);
     }
   }, []);
+
+  const refreshBoardForCreate = useCallback(async (): Promise<readonly DemandReadbackMatch[] | null> => {
+    return await refresh() ? boardRef.current : null;
+  }, [refresh]);
 
   const syncWallet = useCallback((kit: AppKit | null = walletKit) => {
     if (kit) {
@@ -262,17 +278,39 @@ export default function App() {
     }
   }
 
-  async function run(label: string, fn: () => Promise<Hash>) {
+  async function run(
+    label: string,
+    fn: () => Promise<Hash>,
+    createdDemand?: CreateDemandInput,
+  ): Promise<CreateDemandRunOutcome> {
     setBusy(true);
     setStatus(label + " pending");
     setLastTx(null);
     const supportSnapshot = account && selectedId !== null
       ? { demandId: selectedId, supporter: account, identity: supportIdentity }
       : null;
+    const boardBeforeTransaction = boardRef.current;
+    let confirmedHash: Hash | null = null;
     try {
+      const verification: CreatedDemandVerification | undefined = createdDemand && account
+        ? {
+          before: boardBeforeTransaction.map(({ demandId }) => ({ demandId })),
+          expected: {
+            creator: account,
+            capability: normalizeCapability(createdDemand.capability),
+            specification: createdDemand.specification.trim(),
+            maxPrice: parseUsd0(createdDemand.maxPrice),
+            expectedCalls: BigInt(createdDemand.expectedCalls),
+            initialCommitment: parseUsd0(createdDemand.commitment),
+          },
+        }
+        : undefined;
       const readback = await afterConfirmedTransaction(
         fn,
-        setLastTx,
+        (hash) => {
+          confirmedHash = hash;
+          setLastTx(hash);
+        },
         refresh,
         async () => supportSnapshot
           ? loadSupport(supportSnapshot.demandId, supportSnapshot.supporter, supportSnapshot.identity)
@@ -281,11 +319,24 @@ export default function App() {
       await syncWallet();
       if (!readback.boardReadbackSucceeded) {
         setStatus("CHAIN_STATE_READBACK_FAILED");
-        return;
+        return confirmedHash
+          ? { kind: "readback-failed", hash: confirmedHash, ...(verification ? { verification } : {}) }
+          : { kind: "failed", message: "The transaction result could not be verified." };
       }
+
+      const demandId = verification
+        ? resolveUniqueCreatedDemandId(verification.before, boardRef.current, verification.expected)
+        : null;
       setStatus(label + " success");
+      return confirmedHash
+        ? { kind: "confirmed", hash: confirmedHash, demandId, ...(verification ? { verification } : {}) }
+        : { kind: "failed", message: "The transaction hash was not available." };
     } catch (error) {
-      setStatus(errorMessage(error));
+      const message = errorMessage(error);
+      setStatus(message);
+      return confirmedHash
+        ? { kind: "readback-failed", hash: confirmedHash, message }
+        : { kind: "failed", message };
     } finally {
       setBusy(false);
     }
@@ -332,6 +383,9 @@ export default function App() {
     busy,
     lastTx,
     run,
+    connect,
+    refreshBoard: refreshBoardForCreate,
+    walletStatus,
   };
 
   return (
@@ -352,8 +406,8 @@ export default function App() {
           void Promise.all([boardReadback, supportReadback]);
         }}
       >
-        <div className="legacy-content">
-          <a className="skip-link" href="#workspace">Skip to Market Requests</a>
+        <div className={activeRoute === "create-demand" ? "legacy-content create-demand-content" : "legacy-content"}>
+          <a className="skip-link" href="#workspace">{activeRoute === "create-demand" ? "Skip to Create Demand" : "Skip to Market Requests"}</a>
           <div className="status-stack">
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
             {supportError && <div role="alert" aria-live="polite" className="status-line err">{supportError}</div>}
@@ -366,10 +420,6 @@ export default function App() {
             <Outlet context={outletContext} />
           </main>
 
-          <footer className="app-footer">
-            <span>AgentDemand</span>
-            {DEMAND_CONTRACT && <code>{short(DEMAND_CONTRACT)}</code>}
-          </footer>
         </div>
       </ReuiAppShell>
     </div>
@@ -391,8 +441,18 @@ export function MarketRoute() {
 }
 
 export function CreateDemandRoute() {
-  const { busy, run } = useOutletContext<AppOutletContext>();
-  return <CreatePanel busy={busy} run={run} />;
+  const { account, busy, connect, refreshBoard, run, walletStatus } = useOutletContext<AppOutletContext>();
+  return (
+    <CreateDemandChat
+      account={account}
+      busy={busy}
+      contractConfigured={Boolean(DEMAND_CONTRACT)}
+      walletStatus={walletStatus}
+      onConnect={connect}
+      onCreate={(input) => run("create", () => createDemand(input), input)}
+      onRefreshBoard={refreshBoard}
+    />
+  );
 }
 
 export function MyActivityRoute() {
@@ -582,7 +642,7 @@ function DemandDetail({
   busy: boolean;
   close: () => void;
   closeLabel: string;
-  run: (label: string, fn: () => Promise<Hash>) => Promise<void>;
+  run: (label: string, fn: () => Promise<Hash>) => Promise<CreateDemandRunOutcome>;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -768,47 +828,6 @@ function DemandDetail({
   );
 }
 
-function CreatePanel({ busy, run }: {
-  busy: boolean;
-  run: (label: string, fn: () => Promise<Hash>) => Promise<void>;
-}) {
-  const [capability, setCapability] = useState("vendor-kyb-singapore");
-  const [specification, setSpecification] = useState("legal entity status + ownership data + source URLs + JSON");
-  const [maxPrice, setMaxPrice] = useState("0.02");
-  const [expectedCalls, setExpectedCalls] = useState("25000");
-  const [deadlineDays, setDeadlineDays] = useState("14");
-  const [commitment, setCommitment] = useState("0.05");
-
-  return (
-    <section className="panel create-panel">
-      <h1>Post a Market Request</h1>
-      <p className="workflow-summary">Describe what the market needs and back it with escrow.</p>
-      <form className="create-form" onSubmit={(event) => {
-        event.preventDefault();
-        void run("create", () => createDemand({ capability, specification, maxPrice, expectedCalls, deadlineDays, commitment }));
-      }}>
-        <section className="create-core" aria-labelledby="create-request-heading">
-          <h2 id="create-request-heading" className="form-section-heading">Request</h2>
-          <label>Capability<input value={capability} onChange={(e) => setCapability(e.target.value)} maxLength={64} required /></label>
-          <label>Specification<textarea value={specification} onChange={(e) => setSpecification(e.target.value)} maxLength={2048} required /></label>
-          <label>Deadline (days from now)<input inputMode="decimal" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} required /></label>
-        </section>
-        <div className="create-core">
-          <section className="create-terms" aria-labelledby="create-economics-heading">
-            <h2 id="create-economics-heading" className="form-section-heading">Economics</h2>
-            <label>Max unit price (USD₮0)<input inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} required /></label>
-            <label>Expected calls<input inputMode="numeric" value={expectedCalls} onChange={(e) => setExpectedCalls(e.target.value)} required /></label>
-          </section>
-          <section className="create-core" aria-labelledby="create-escrow-heading">
-            <h2 id="create-escrow-heading" className="form-section-heading">Initial Escrow</h2>
-            <label>Initial commitment (USD₮0)<input inputMode="decimal" value={commitment} onChange={(e) => setCommitment(e.target.value)} required /></label>
-          </section>
-        </div>
-        <div className="create-submit"><button className="primary" disabled={busy} type="submit">Post Request &amp; Commit Escrow</button></div>
-      </form>
-    </section>
-  );
-}
 
 function safeHttpsUrl(value: string): string | null {
   if (!value) return null;
