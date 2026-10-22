@@ -336,10 +336,27 @@ async function requireAccount(): Promise<Address> {
   return account;
 }
 
+async function readTransactionByHash(hash: Hash): Promise<ObservedTransaction> {
+  const transaction = await getPublic().getTransaction({ hash });
+  return {
+    hash: transaction.hash,
+    from: transaction.from,
+    to: transaction.to,
+    data: transaction.input,
+    value: transaction.value,
+  };
+}
+
+export async function readTransactionOnChain(hash: Hash): Promise<ObservedTransaction> {
+  return readTransactionByHash(hash);
+}
+
 async function wait(
   hash: Hash,
   intent: TransactionIntent,
   stage: TransactionStage,
+  wallet: Address,
+  chainId: number,
   onUpdate?: TransactionUpdateHandler,
   verifyExisting = false,
 ): Promise<Hash> {
@@ -347,24 +364,17 @@ async function wait(
     stage,
     hash,
     intent,
+    wallet,
+    chainId,
     onUpdate,
-    ...(verifyExisting ? {
-      readTransaction: async (transactionHash: Hash): Promise<ObservedTransaction> => {
-        const transaction = await getPublic().getTransaction({ hash: transactionHash });
-        return {
-          hash: transaction.hash,
-          to: transaction.to,
-          data: transaction.input,
-          value: transaction.value,
-        };
-      },
-    } : {}),
+    ...(verifyExisting ? { readTransaction: readTransactionByHash } : {}),
     waitForReceipt: ({ hash: receiptHash, onReplaced }) => getPublic().waitForTransactionReceipt({
       hash: receiptHash,
       onReplaced: (replacement) => onReplaced?.({
         reason: replacement.reason,
         transaction: {
           hash: replacement.transaction.hash,
+          from: replacement.transaction.from,
           to: replacement.transaction.to,
           data: replacement.transaction.input,
           value: replacement.transaction.value,
@@ -396,7 +406,7 @@ async function writeDemand(
     account,
     chain: targetChain,
   }) as Hash;
-  return wait(hash, intent, stage, onUpdate);
+  return wait(hash, intent, stage, account, CHAIN_ID, onUpdate);
 }
 
 async function ensureAllowance(owner: Address, amount: bigint, onUpdate?: TransactionUpdateHandler): Promise<void> {
@@ -409,11 +419,11 @@ async function ensureAllowance(owner: Address, amount: bigint, onUpdate?: Transa
   if (current > 0n) {
     const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, 0n] });
     const reset = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, 0n], account: owner, chain: targetChain });
-    await wait(reset, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", onUpdate);
+    await wait(reset, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
   }
   const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, amount] });
   const approval = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, amount], account: owner, chain: targetChain });
-  await wait(approval, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", onUpdate);
+  await wait(approval, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
 }
 
 function parsePositiveUint(value: string, bits: 64 | 96, code: string): bigint {
@@ -484,12 +494,19 @@ export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdat
 }
 
 export async function verifyTransaction(
-  stage: "approval" | "demand",
+  stage: TransactionStage,
   hash: Hash,
   intent: TransactionIntent,
+  expectedWallet: Address,
+  expectedChainId: number,
   onUpdate?: TransactionUpdateHandler,
 ): Promise<Hash> {
-  return wait(hash, intent, stage, onUpdate, true);
+  const wallet = await currentWallet();
+  if (!wallet) throw new Error("WALLET_NOT_CONNECTED");
+  const chainId = await currentChainId();
+  if (chainId !== CHAIN_ID || expectedChainId !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
+  if (wallet.toLowerCase() !== expectedWallet.toLowerCase()) throw new Error("WALLET_CHANGED");
+  return wait(hash, intent, stage, wallet, expectedChainId, onUpdate, true);
 }
 
 export function formatUsd0(value: bigint): string { return formatUnits(value, 6); }

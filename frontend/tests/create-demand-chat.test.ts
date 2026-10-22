@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { normalizeCapability } from "../capability";
 import {
   buildReviewRows,
   deadlineDurationSeconds,
@@ -27,6 +28,15 @@ const completeAnswers: CreateDemandAnswers = {
 };
 
 describe("guided demand answers", () => {
+  test("normalizes capabilities and preserves the validation boundaries", () => {
+    expect(normalizeCapability(" Paid API For Business ")).toBe("paid-api-for-business");
+    expect(normalizeCapability("paid-api-for-business")).toBe("paid-api-for-business");
+    expect(normalizeCapability("paid   api  for business")).toBe("paid-api-for-business");
+    expect(() => normalizeCapability("paid_api")).toThrow("DEMAND_INVALID_CAPABILITY");
+    expect(normalizeCapability("a".repeat(64))).toBe("a".repeat(64));
+    expect(() => normalizeCapability("a".repeat(65))).toThrow("DEMAND_INVALID_CAPABILITY");
+  });
+
   test("normalizes a readable capability while retaining its label", () => {
     expect(parseCapabilityAnswer(" Vendor KYB API ")).toEqual({
       capability: "vendor-kyb-api",

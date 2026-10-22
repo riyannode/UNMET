@@ -35,13 +35,14 @@ import "./create-demand-chat.css";
 type CreateDemandInput = Parameters<typeof createDemand>[0];
 
 export type CreateDemandRunOutcome =
+  | { kind: "broadcast"; stage: "approval" | "demand"; hash: Hash; intent: TransactionIntent; message: string; verification?: CreatedDemandVerification }
   | { kind: "confirmed"; hash: Hash; demandId: bigint | null; verification?: CreatedDemandVerification }
   | { kind: "readback-failed"; hash: Hash; message?: string; verification?: CreatedDemandVerification }
   | { kind: "approval-confirmed"; hash: Hash }
   | { kind: "reverted" | "cancelled" | "unknown"; stage: "approval" | "demand"; hash: Hash; intent: TransactionIntent; message: string; verification?: CreatedDemandVerification }
   | { kind: "failed"; message: string };
 
-export type CreateDemandTransactionOutcome = Extract<CreateDemandRunOutcome, { kind: "reverted" | "cancelled" | "unknown" }>;
+export type CreateDemandTransactionOutcome = Extract<CreateDemandRunOutcome, { kind: "broadcast" | "reverted" | "cancelled" | "unknown" }>;
 
 type ChatStep =
   | "capability"
@@ -213,10 +214,11 @@ export function CreateDemandChat({
   const reviewRows = buildReviewRows(answers);
   const prompt = editPrompt(editingField, step);
   const busyCreating = busy || createPending;
-  const unresolvedTransaction = outcome?.kind === "unknown" || pendingTransaction?.kind === "unknown";
-  const unresolvedOutcome = outcome?.kind === "unknown"
+  const unresolvedTransaction = outcome?.kind === "broadcast" || outcome?.kind === "unknown"
+    || pendingTransaction?.kind === "broadcast" || pendingTransaction?.kind === "unknown";
+  const unresolvedOutcome = outcome?.kind === "broadcast" || outcome?.kind === "unknown"
     ? outcome
-    : pendingTransaction?.kind === "unknown" ? pendingTransaction : null;
+    : pendingTransaction?.kind === "broadcast" || pendingTransaction?.kind === "unknown" ? pendingTransaction : null;
   const blocksChatInput = unresolvedTransaction || outcome?.kind === "confirmed" || outcome?.kind === "readback-failed";
   const canCreate = step === "review" && !editingField && !editChoicesOpen && !busyCreating
     && contractConfigured && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed"
@@ -235,11 +237,11 @@ export function CreateDemandChat({
   }, [step, answers, editingField]);
 
   useEffect(() => {
-    if (pendingTransaction?.kind === "unknown") {
+    if (pendingTransaction?.kind === "broadcast" || pendingTransaction?.kind === "unknown") {
       setOutcome(pendingTransaction);
       return;
     }
-    setOutcome((current) => current?.kind === "unknown" ? null : current);
+    setOutcome((current) => current?.kind === "broadcast" || current?.kind === "unknown" ? null : current);
   }, [pendingTransaction]);
 
   function handleAnswer(raw: string) {
@@ -454,7 +456,7 @@ export function CreateDemandChat({
 
         {unresolvedOutcome && (
           <div className="create-demand-outcome create-demand-outcome-error" role="alert" aria-live="polite">
-            <strong>Transaction status is unknown.</strong>
+            <strong>{unresolvedOutcome.kind === "broadcast" ? "Transaction submitted; receipt pending." : "Transaction status is unknown."}</strong>
             <p>{unresolvedOutcome.message}</p>
             <p>{unresolvedOutcome.stage === "approval"
               ? "The USD₮0 approval may still be pending. Verify it before submitting the demand."

@@ -1,5 +1,5 @@
 import { animate, stagger } from "animejs";
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Link,
   Outlet,
@@ -9,13 +9,14 @@ import {
   useOutletContext,
   useParams,
 } from "react-router";
-import { getAddress, isAddress, type Address, type Hash, type Hex } from "viem";
+import { getAddress, isAddress, type Address, type Hash } from "viem";
 import type { AppKit } from "@reown/appkit/react";
 import {
   CHAIN_ID,
   DEMAND_CONTRACT,
   approveService,
   createDemand,
+  readTransactionOnChain,
   effectiveStatus,
   explorerTx,
   finalizeDemand,
@@ -47,7 +48,20 @@ import { CreateDemandChat, type CreateDemandRunOutcome, type CreateDemandTransac
 import { normalizeCapability } from "./capability";
 import { resolveUniqueCreatedDemandId } from "./create-demand-chat-model";
 import type { CreatedDemandVerification, DemandReadbackMatch } from "./create-demand-chat-model";
-import { isTransactionSubmissionBlocked, TransactionLifecycleError, type TransactionState, type TransactionUpdateHandler } from "./transaction-lifecycle";
+import {
+  CREATE_DEMAND_ACTION_ID,
+  findPendingTransaction,
+  readLegacyPendingCreate,
+  readPendingTransactions,
+  recoverLegacyPendingCreate,
+  removePendingTransaction,
+  storePendingTransaction,
+  TransactionLifecycleError,
+  type LegacyPendingCreate,
+  type PendingTransactionRecord,
+  type TransactionState,
+  type TransactionUpdateHandler,
+} from "./transaction-lifecycle";
 import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
 import { errorMessage } from "./errors.ts";
 import { resolveReownStatus, type ReownStatus } from "./reown-status.ts";
@@ -55,49 +69,75 @@ type CreateDemandInput = Parameters<typeof createDemand>[0];
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
-const PENDING_CREATE_KEY = "unmet.pending-create-transaction";
+type TransactionPersistenceState = {
+  records: PendingTransactionRecord[];
+  legacy: LegacyPendingCreate | null;
+  warning: string | null;
+};
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function readPendingCreate(): CreateDemandTransactionOutcome | null {
-  if (typeof window === "undefined") return null;
+function transactionStorage(): Storage | null {
   try {
-    const stored: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_CREATE_KEY) ?? "null");
-    if (!isRecord(stored) || stored.kind !== "unknown" || (stored.stage !== "approval" && stored.stage !== "demand")) return null;
-    if (typeof stored.hash !== "string" || !/^0x[\da-f]{64}$/i.test(stored.hash)) return null;
-    if (!isRecord(stored.intent)) return null;
-    const { to, data, value } = stored.intent;
-    if (typeof to !== "string" || !isAddress(to) || typeof data !== "string" || !/^0x(?:[\da-f]{2})*$/i.test(data)) return null;
-    if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
-    return {
-      kind: "unknown",
-      stage: stored.stage,
-      hash: stored.hash as Hash,
-      intent: { to: getAddress(to), data: data as Hex, value: BigInt(value) },
-      message: "The transaction receipt has not been verified yet.",
-    };
+    return typeof window === "undefined" ? null : window.sessionStorage;
   } catch {
     return null;
   }
 }
 
-function storePendingCreate(outcome: CreateDemandTransactionOutcome | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (!outcome || outcome.kind !== "unknown") {
-      window.sessionStorage.removeItem(PENDING_CREATE_KEY);
-      return;
-    }
-    window.sessionStorage.setItem(PENDING_CREATE_KEY, JSON.stringify({
-      kind: outcome.kind,
-      stage: outcome.stage,
-      hash: outcome.hash,
-      intent: { ...outcome.intent, value: outcome.intent.value.toString() },
-    }));
-  } catch {
-    // The in-memory guard remains active when session storage is unavailable.
+function readTransactionPersistence(): TransactionPersistenceState {
+  const storage = transactionStorage();
+  const pending = readPendingTransactions(storage);
+  const legacy = readLegacyPendingCreate(storage);
+  const warning = !pending.available || !legacy.available
+    ? "Transaction recovery storage is unavailable. Pending details may be lost if this tab reloads."
+    : pending.invalidRecords > 0 || legacy.invalid
+      ? "An unreadable saved transaction record was preserved in this tab, but it cannot be safely verified."
+      : legacy.record
+        ? "An older unresolved transaction was found. Its sender and intent must match a wallet on X Layer before it can be restored."
+        : null;
+  return { records: pending.records, legacy: legacy.record, warning };
+}
+
+function upsertPendingRecord(records: readonly PendingTransactionRecord[], next: PendingTransactionRecord): PendingTransactionRecord[] {
+  return [
+    ...records.filter((record) =>
+      record.wallet.toLowerCase() !== next.wallet.toLowerCase()
+      || record.chainId !== next.chainId
+      || record.actionId !== next.actionId,
+    ),
+    next,
+  ];
+}
+
+function withoutPendingRecord(records: readonly PendingTransactionRecord[], target: PendingTransactionRecord): PendingTransactionRecord[] {
+  return records.filter((record) =>
+    record.wallet.toLowerCase() !== target.wallet.toLowerCase()
+    || record.chainId !== target.chainId
+    || record.actionId !== target.actionId,
+  );
+}
+
+function createOutcomeFromPending(record: PendingTransactionRecord, message?: string): CreateDemandTransactionOutcome {
+  return {
+    kind: record.state,
+    stage: record.stage === "approval" ? "approval" : "demand",
+    hash: record.hash,
+    intent: record.intent,
+    message: message ?? "The transaction receipt has not been verified yet.",
+    ...(record.verification ? { verification: record.verification } : {}),
+  };
+}
+
+function pendingActionLabel(label: string): string {
+  switch (label) {
+    case "create": return "Create Demand";
+    case "support": return "Support Demand";
+    case "submit": return "Submit Service";
+    case "approve": return "Approve Service";
+    case "reject": return "Reject Service";
+    case "finalize": return "Finalize";
+    case "reopen": return "Reopen Demand";
+    case "refund": return "Refund";
+    default: return label;
   }
 }
 
@@ -114,7 +154,9 @@ type AppOutletContext = {
   busy: boolean;
   lastTx: Hash | null;
   pendingCreate: CreateDemandTransactionOutcome | null;
-  run: (label: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
+  blockedActionIds: string[];
+  run: (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput) => Promise<CreateDemandRunOutcome>;
+  verifyPendingTransaction: (record: PendingTransactionRecord) => Promise<CreateDemandRunOutcome>;
   verifyCreate: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   connect: () => Promise<void>;
   refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
@@ -133,6 +175,10 @@ export default function App() {
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [walletModuleLoaded, setWalletModuleLoaded] = useState(false);
   const [account, setAccount] = useState<Address | null>(null);
+  const currentWalletIdentity = account?.toLowerCase() ?? null;
+  const activeWalletIdentityRef = useRef(currentWalletIdentity);
+  const previousWalletIdentityRef = useRef(currentWalletIdentity);
+  activeWalletIdentityRef.current = currentWalletIdentity;
   const [chainOk, setChainOk] = useState(true);
   const [support, setSupport] = useState<SupportView>(EMPTY_SUPPORT);
   const [supportKey, setSupportKey] = useState("");
@@ -144,13 +190,25 @@ export default function App() {
   const { actionStatus: status, boardError, supportError } = readStatus;
   const boardLoadError = boardError !== "";
   const [lastTx, setLastTx] = useState<Hash | null>(null);
+  const [lastTxWallet, setLastTxWallet] = useState<string | null>(null);
   const [transactionState, setTransactionState] = useState<TransactionState | null>(null);
-  const [pendingCreate, setPendingCreate] = useState<CreateDemandTransactionOutcome | null>(readPendingCreate);
-  const createTransactionStateRef = useRef<TransactionState | null>(pendingCreate?.kind === "unknown" ? "unknown" : null);
+  const [transactionPersistence, setTransactionPersistence] = useState(readTransactionPersistence);
+  const recordsRef = useRef(transactionPersistence.records);
+  recordsRef.current = transactionPersistence.records;
+  const activeActionLocksRef = useRef(new Set<string>());
   const walletStatus = resolveReownStatus(Boolean(reownProjectId), walletModuleLoaded, Boolean(walletKit));
   const setStatus = useCallback((actionStatus: string) => {
     setReadStatus((current) => ({ ...current, actionStatus }));
   }, []);
+
+  useEffect(() => {
+    if (previousWalletIdentityRef.current === currentWalletIdentity) return;
+    previousWalletIdentityRef.current = currentWalletIdentity;
+    setLastTx(null);
+    setLastTxWallet(null);
+    setTransactionState(null);
+    setStatus("");
+  }, [currentWalletIdentity, setStatus]);
 
   const supportIdentity = account && selectedId !== null ? account.toLowerCase() + ":" + selectedId.toString() : "";
   const supportIdentityRef = useRef(supportIdentity);
@@ -159,8 +217,89 @@ export default function App() {
   const activityRoute = location.pathname === ROUTES.myActivity.href;
   const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
   const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
+  const pendingTransactions = transactionPersistence.records.filter((record) =>
+    account !== null
+    && record.wallet.toLowerCase() === account.toLowerCase()
+    && record.chainId === CHAIN_ID,
+  );
+  const pendingCreateRecord = pendingTransactions.find((record) => record.actionId === CREATE_DEMAND_ACTION_ID) ?? null;
+  const pendingCreate = useMemo(
+    () => pendingCreateRecord ? createOutcomeFromPending(pendingCreateRecord) : null,
+    [pendingCreateRecord],
+  );
+  const blockedActionIds = pendingTransactions.map(({ actionId }) => actionId);
 
-  useEffect(() => { storePendingCreate(pendingCreate); }, [pendingCreate]);
+  function updatePendingRecord(record: PendingTransactionRecord | null, target: PendingTransactionRecord) {
+    const storage = transactionStorage();
+    const saved = record ? storePendingTransaction(storage, record) : removePendingTransaction(storage, target);
+    const records = record
+      ? upsertPendingRecord(recordsRef.current, record)
+      : withoutPendingRecord(recordsRef.current, target);
+    recordsRef.current = records;
+    setTransactionPersistence((current) => ({
+      ...current,
+      records,
+      warning: saved ? current.warning : "Transaction recovery storage is unavailable. Pending details may be lost if this tab reloads.",
+    }));
+  }
+
+  function createTransactionUpdateHandler(
+    label: string,
+    actionId: string,
+    verification?: CreatedDemandVerification,
+    baseRecord?: PendingTransactionRecord,
+    actionStageLabel = "action",
+  ): TransactionUpdateHandler {
+    return ({ stage, state, hash, intent, wallet, chainId }) => {
+      setLastTx(hash);
+      setLastTxWallet(wallet.toLowerCase());
+      setTransactionState(state);
+      if (activeWalletIdentityRef.current === wallet.toLowerCase()) {
+        const statusStage = stage === "action" ? actionStageLabel : stage;
+        setStatus(label + " " + statusStage + " " + (state === "broadcast" ? "pending" : state));
+      }
+      const savedVerification = verification ?? baseRecord?.verification;
+      const target: PendingTransactionRecord = {
+        ...baseRecord,
+        wallet,
+        chainId,
+        actionId,
+        actionLabel: baseRecord?.actionLabel ?? label,
+        stage,
+        state: state === "unknown" ? "unknown" : "broadcast",
+        hash,
+        intent,
+        ...(savedVerification ? { verification: savedVerification } : {}),
+      };
+      updatePendingRecord(state === "broadcast" || state === "unknown" ? target : null, target);
+    };
+  }
+
+  useEffect(() => {
+    const legacy = transactionPersistence.legacy;
+    if (!legacy || !account) return;
+    let live = true;
+    void readTransactionOnChain(legacy.hash).then((observed) => {
+      if (!live) return;
+      const recovered = recoverLegacyPendingCreate(legacy, observed, account, CHAIN_ID);
+      if (!recovered) return;
+      const storage = transactionStorage();
+      const saved = storePendingTransaction(storage, recovered);
+      const records = upsertPendingRecord(recordsRef.current, recovered);
+      recordsRef.current = records;
+      if (saved && storage) {
+        try { storage.removeItem("unmet.pending-create-transaction"); } catch { /* preserve the recovered in-memory record */ }
+      }
+      const refreshedLegacy = saved ? readLegacyPendingCreate(storage) : { record: legacy, available: Boolean(storage), invalid: false };
+      setTransactionPersistence((current) => ({
+        ...current,
+        records,
+        legacy: refreshedLegacy.record,
+        warning: saved ? (refreshedLegacy.invalid ? current.warning : null) : "Transaction recovery storage is unavailable. Pending details may be lost if this tab reloads.",
+      }));
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [account, transactionPersistence.legacy]);
 
   const loadSupport = useCallback(async (
     demandId: bigint,
@@ -334,17 +473,29 @@ export default function App() {
 
   async function run(
     label: string,
+    actionId: string,
     fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
     createdDemand?: CreateDemandInput,
   ): Promise<CreateDemandRunOutcome> {
-    if (label === "create" && (pendingCreate?.kind === "unknown" || isTransactionSubmissionBlocked(createTransactionStateRef.current))) {
-      return pendingCreate?.kind === "unknown"
-        ? pendingCreate
-        : { kind: "failed", message: "A demand transaction is already pending. Verify it before creating another." };
+    const lockKey = `${account?.toLowerCase() ?? "disconnected"}:${CHAIN_ID}:${actionId}`;
+    const storagePending = account
+      ? findPendingTransaction(readPendingTransactions(transactionStorage()).records, account, CHAIN_ID, actionId)
+      : null;
+    const inMemoryPending = account ? findPendingTransaction(recordsRef.current, account, CHAIN_ID, actionId) : null;
+    const existingPending = storagePending ?? inMemoryPending;
+    if (existingPending) {
+      return actionId === CREATE_DEMAND_ACTION_ID
+        ? createOutcomeFromPending(existingPending)
+        : { kind: "failed", message: `${pendingActionLabel(label)} already has an unresolved transaction. Verify it before trying again.` };
     }
+    if (activeActionLocksRef.current.has(lockKey)) {
+      return { kind: "failed", message: `${pendingActionLabel(label)} is already being submitted.` };
+    }
+    activeActionLocksRef.current.add(lockKey);
     setBusy(true);
     setStatus(label + " pending");
     setLastTx(null);
+    setLastTxWallet(null);
     setTransactionState(null);
     const supportSnapshot = account && selectedId !== null
       ? { demandId: selectedId, supporter: account, identity: supportIdentity }
@@ -352,17 +503,6 @@ export default function App() {
     const boardBeforeTransaction = boardRef.current;
     let confirmedHash: Hash | null = null;
     let verification: CreatedDemandVerification | undefined;
-    const onUpdate: TransactionUpdateHandler = ({ stage, state, hash, intent }) => {
-      setLastTx(hash);
-      setTransactionState(state);
-      setStatus(`${label} ${stage === "action" ? "transaction" : stage} ${state === "broadcast" ? "pending" : state}`);
-      if (label === "create") {
-        createTransactionStateRef.current = state;
-        storePendingCreate(state === "broadcast" || state === "unknown"
-          ? { kind: "unknown", stage: stage === "action" ? "demand" : stage, hash, intent, message: "The transaction receipt has not been verified yet." }
-          : null);
-      }
-    };
     try {
       verification = createdDemand && account
         ? {
@@ -377,13 +517,13 @@ export default function App() {
           },
         }
         : undefined;
+      const onUpdate = createTransactionUpdateHandler(label, actionId, verification, undefined, "transaction");
       const readback = await afterConfirmedTransaction(
         () => fn(onUpdate),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
           setTransactionState("confirmed");
-          if (label === "create") createTransactionStateRef.current = "confirmed";
         },
         refresh,
         async () => supportSnapshot
@@ -392,7 +532,7 @@ export default function App() {
       );
       await syncWallet();
       if (!readback.boardReadbackSucceeded) {
-        setStatus("CHAIN_STATE_READBACK_FAILED");
+        if (activeWalletIdentityRef.current === account?.toLowerCase()) setStatus("CHAIN_STATE_READBACK_FAILED");
         return confirmedHash
           ? { kind: "readback-failed", hash: confirmedHash, ...(verification ? { verification } : {}) }
           : { kind: "failed", message: "The transaction result could not be verified." };
@@ -401,7 +541,7 @@ export default function App() {
       const demandId = verification
         ? resolveUniqueCreatedDemandId(verification.before, boardRef.current, verification.expected)
         : null;
-      setStatus(label + " success");
+      if (activeWalletIdentityRef.current === account?.toLowerCase()) setStatus(label + " success");
       return confirmedHash
         ? { kind: "confirmed", hash: confirmedHash, demandId, ...(verification ? { verification } : {}) }
         : { kind: "failed", message: "The transaction hash was not available." };
@@ -409,9 +549,11 @@ export default function App() {
       if (error instanceof TransactionLifecycleError) {
         setLastTx(error.hash);
         setTransactionState(error.state);
-        setStatus(`${label} ${error.stage} ${error.state}`);
-        if (error.stage === "action") return { kind: "failed", message: error.message };
-        const outcome: CreateDemandTransactionOutcome = {
+        if (activeWalletIdentityRef.current === error.wallet.toLowerCase()) setStatus(`${label} ${error.stage} ${error.state}`);
+        if (actionId !== CREATE_DEMAND_ACTION_ID || error.stage === "action") {
+          return { kind: "failed", message: error.message };
+        }
+        return {
           kind: error.state,
           stage: error.stage,
           hash: error.hash,
@@ -419,54 +561,57 @@ export default function App() {
           message: error.message,
           ...(verification ? { verification } : {}),
         };
-        if (label === "create") setPendingCreate(error.state === "unknown" ? outcome : null);
-        return outcome;
       }
       const message = errorMessage(error);
-      setStatus(message);
+      if (activeWalletIdentityRef.current === account?.toLowerCase()) setStatus(message);
       return confirmedHash
         ? { kind: "readback-failed", hash: confirmedHash, message }
         : { kind: "failed", message };
     } finally {
+      activeActionLocksRef.current.delete(lockKey);
       setBusy(false);
     }
   }
 
-  async function verifyCreate(outcome: CreateDemandTransactionOutcome): Promise<CreateDemandRunOutcome> {
+  async function verifyPendingTransaction(record: PendingTransactionRecord): Promise<CreateDemandRunOutcome> {
+    if (account?.toLowerCase() !== record.wallet.toLowerCase()) {
+      return { kind: "failed", message: "Connect the wallet that sent this transaction before verifying it." };
+    }
+    if (!chainOk || record.chainId !== CHAIN_ID) {
+      return { kind: "failed", message: `Switch to X Layer ${CHAIN_ID} before verifying this transaction.` };
+    }
+    const lockKey = `${record.wallet.toLowerCase()}:${record.chainId}:${record.actionId}`;
+    if (activeActionLocksRef.current.has(lockKey)) {
+      return { kind: "failed", message: "This transaction is already being checked." };
+    }
+    activeActionLocksRef.current.add(lockKey);
     setBusy(true);
-    setStatus(`create ${outcome.stage} pending`);
-    setLastTx(outcome.hash);
+    const displayLabel = pendingActionLabel(record.actionLabel);
+    setStatus(`${displayLabel} ${record.stage} verification pending`);
+    setLastTx(record.hash);
+    setLastTxWallet(record.wallet.toLowerCase());
     setTransactionState("broadcast");
     const supportSnapshot = account && selectedId !== null
       ? { demandId: selectedId, supporter: account, identity: supportIdentity }
       : null;
     let confirmedHash: Hash | null = null;
-    const onUpdate: TransactionUpdateHandler = ({ stage, state, hash, intent }) => {
-      setLastTx(hash);
-      setTransactionState(state);
-      setStatus(`create ${stage} ${state === "broadcast" ? "pending" : state}`);
-      createTransactionStateRef.current = state;
-      storePendingCreate(state === "broadcast" || state === "unknown"
-        ? { kind: "unknown", stage: stage === "action" ? "demand" : stage, hash, intent, message: "The transaction receipt has not been verified yet." }
-        : null);
-    };
-
     try {
-      if (outcome.stage === "approval") {
-        const hash = await verifyTransaction("approval", outcome.hash, outcome.intent, onUpdate);
-        setPendingCreate(null);
-        setStatus("create approval confirmed");
+      const onUpdate = createTransactionUpdateHandler(displayLabel, record.actionId, record.verification, record);
+      if (record.stage === "approval") {
+        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate);
+        if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) {
+          const action = record.actionId === CREATE_DEMAND_ACTION_ID ? "demand" : "support";
+          setStatus(`${displayLabel} token approval confirmed. No ${action} was submitted.`);
+        }
         return { kind: "approval-confirmed", hash };
       }
 
       const readback = await afterConfirmedTransaction(
-        () => verifyTransaction("demand", outcome.hash, outcome.intent, onUpdate),
+        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
           setTransactionState("confirmed");
-          createTransactionStateRef.current = "confirmed";
-          setPendingCreate(null);
         },
         refresh,
         async () => supportSnapshot
@@ -475,43 +620,50 @@ export default function App() {
       );
       await syncWallet();
       if (!readback.boardReadbackSucceeded) {
-        setStatus("CHAIN_STATE_READBACK_FAILED");
+        if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) setStatus("CHAIN_STATE_READBACK_FAILED");
         return confirmedHash
-          ? { kind: "readback-failed", hash: confirmedHash, ...(outcome.verification ? { verification: outcome.verification } : {}) }
+          ? { kind: "readback-failed", hash: confirmedHash, ...(record.verification ? { verification: record.verification } : {}) }
           : { kind: "failed", message: "The transaction result could not be verified." };
       }
-      const demandId = outcome.verification
-        ? resolveUniqueCreatedDemandId(outcome.verification.before, boardRef.current, outcome.verification.expected)
+      const demandId = record.verification
+        ? resolveUniqueCreatedDemandId(record.verification.before, boardRef.current, record.verification.expected)
         : null;
-      setStatus("create success");
+      if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) setStatus(`${displayLabel} success`);
       return confirmedHash
-        ? { kind: "confirmed", hash: confirmedHash, demandId, ...(outcome.verification ? { verification: outcome.verification } : {}) }
+        ? { kind: "confirmed", hash: confirmedHash, demandId, ...(record.verification ? { verification: record.verification } : {}) }
         : { kind: "failed", message: "The transaction hash was not available." };
     } catch (error) {
       if (error instanceof TransactionLifecycleError) {
         setLastTx(error.hash);
         setTransactionState(error.state);
-        setStatus(`create ${error.stage} ${error.state}`);
-        if (error.stage === "action") return { kind: "failed", message: error.message };
-        const nextOutcome: CreateDemandTransactionOutcome = {
+        if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) setStatus(`${displayLabel} ${error.stage} ${error.state}`);
+        if (record.actionId !== CREATE_DEMAND_ACTION_ID || error.stage === "action") {
+          return { kind: "failed", message: error.message };
+        }
+        return {
           kind: error.state,
           stage: error.stage,
           hash: error.hash,
           intent: error.intent,
           message: error.message,
-          ...(outcome.verification ? { verification: outcome.verification } : {}),
+          ...(record.verification ? { verification: record.verification } : {}),
         };
-        setPendingCreate(error.state === "unknown" ? nextOutcome : null);
-        return nextOutcome;
       }
       const message = errorMessage(error);
-      setStatus(message);
+      if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) setStatus(message);
       return confirmedHash
-        ? { kind: "readback-failed", hash: confirmedHash, message, ...(outcome.verification ? { verification: outcome.verification } : {}) }
+        ? { kind: "readback-failed", hash: confirmedHash, message, ...(record.verification ? { verification: record.verification } : {}) }
         : { kind: "failed", message };
     } finally {
+      activeActionLocksRef.current.delete(lockKey);
       setBusy(false);
     }
+  }
+
+  async function verifyCreate(outcome: CreateDemandTransactionOutcome): Promise<CreateDemandRunOutcome> {
+    const record = pendingCreateRecord?.hash.toLowerCase() === outcome.hash.toLowerCase() ? pendingCreateRecord : null;
+    if (!record) return { kind: "failed", message: "The saved create transaction is no longer available for this wallet." };
+    return verifyPendingTransaction(record);
   }
 
   useEffect(() => {
@@ -541,6 +693,9 @@ export default function App() {
       : activeRoute === "my-activity"
         ? "My Activity"
         : "Explore Market";
+  const visiblePendingTransactions = pendingTransactions.filter((record) =>
+    !(activeRoute === "create-demand" && record.actionId === CREATE_DEMAND_ACTION_ID),
+  );
 
   const outletContext: AppOutletContext = {
     board,
@@ -555,7 +710,9 @@ export default function App() {
     busy,
     lastTx,
     pendingCreate,
+    blockedActionIds,
     run,
+    verifyPendingTransaction,
     verifyCreate,
     connect,
     refreshBoard: refreshBoardForCreate,
@@ -584,10 +741,21 @@ export default function App() {
           <a className="skip-link" href="#workspace">{activeRoute === "create-demand" ? "Skip to Create Demand" : "Skip to Market Requests"}</a>
           <div className="status-stack">
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
+            {transactionPersistence.warning && <div className="status-line err" role="alert">{transactionPersistence.warning}</div>}
+            {visiblePendingTransactions.map((record) => (
+              <div className="status-line" role={record.state === "unknown" ? "alert" : "status"} key={`${record.wallet}:${record.chainId}:${record.actionId}`}>
+                <strong>{pendingActionLabel(record.actionLabel)} · {record.stage === "approval" ? "token approval" : "transaction"} {record.state === "broadcast" ? "submitted; receipt pending" : "status unknown"}</strong>
+                <span>{record.stage === "approval"
+                  ? "The approval is separate from the requested action. Verify it before starting the action again."
+                  : "Do not submit this action again until this transaction is verified."}</span>
+                <a href={explorerTx(record.hash)} target="_blank" rel="noreferrer"><code>{record.hash}</code></a>
+                <button className="ghost" type="button" disabled={busy || !chainOk} onClick={() => void verifyPendingTransaction(record)}>Verify existing transaction</button>
+              </div>
+            ))}
             {supportError && <div role="alert" aria-live="polite" className="status-line err">{supportError}</div>}
             {boardError && <div role="alert" aria-live="polite" className="status-line err">{boardError}</div>}
             {status && <div role="status" aria-live="polite" className={"status-line " + (status.includes("FAILED") ? "err" : status.includes("success") || status.includes("confirmed") ? "ok" : transactionState === "reverted" || transactionState === "cancelled" || transactionState === "unknown" ? "err" : status.includes("pending") || transactionState === "broadcast" ? "" : "err")}>{status}</div>}
-            {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
+            {lastTx && account?.toLowerCase() === lastTxWallet && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
           </div>
 
           <main id="workspace" ref={workspaceRef} className="workspace">
@@ -618,13 +786,14 @@ export function CreateDemandRoute() {
   const { account, busy, connect, pendingCreate, refreshBoard, run, verifyCreate, walletStatus } = useOutletContext<AppOutletContext>();
   return (
     <CreateDemandChat
+      key={account?.toLowerCase() ?? "disconnected"}
       account={account}
       busy={busy}
       contractConfigured={Boolean(DEMAND_CONTRACT)}
       walletStatus={walletStatus}
       pendingTransaction={pendingCreate}
       onConnect={connect}
-      onCreate={(input) => run("create", (onUpdate) => createDemand(input, onUpdate), input)}
+      onCreate={(input) => run("create", CREATE_DEMAND_ACTION_ID, (onUpdate) => createDemand(input, onUpdate), input)}
       onVerify={verifyCreate}
       onRefreshBoard={refreshBoard}
     />
@@ -660,7 +829,7 @@ export function DemandDetailRoute() {
   const demandId = parseDemandId(rawDemandId);
   const location = useLocation();
   const navigate = useNavigate();
-  const { account, support, supportState, busy, lastTx, run } = useOutletContext<AppOutletContext>();
+  const { account, support, supportState, busy, lastTx, run, blockedActionIds } = useOutletContext<AppOutletContext>();
   const [attempt, setAttempt] = useState(0);
   const [detail, setDetail] = useState<DemandDetailLoad>({ kind: "loading" });
   const returnTo = demandReturnPath(location.state);
@@ -735,6 +904,7 @@ export function DemandDetailRoute() {
       close={close}
       closeLabel={returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
       run={run}
+      blockedActionIds={blockedActionIds}
     />
   );
 }
@@ -809,7 +979,7 @@ function DemandCard({ demand, selected, detailFrom }: { demand: DemandView; sele
 }
 
 function DemandDetail({
-  demand, support, supportState, account, busy, close, closeLabel, run,
+  demand, support, supportState, account, busy, close, closeLabel, run, blockedActionIds,
 }: {
   demand: DemandView;
   support: SupportView;
@@ -818,7 +988,8 @@ function DemandDetail({
   busy: boolean;
   close: () => void;
   closeLabel: string;
-  run: (label: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>) => Promise<CreateDemandRunOutcome>;
+  run: (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>) => Promise<CreateDemandRunOutcome>;
+  blockedActionIds: string[];
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -852,6 +1023,7 @@ function DemandDetail({
   const hasProposal = demand.serviceUrl.length > 0;
   const percent = demand.approvalRequired === 0n ? 0 : Math.min(100, Number((demand.approvalWeight * 10_000n) / demand.approvalRequired) / 100);
   const rejectionPercent = demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number((demand.rejectionWeight * 10_000n) / demand.rejectionThreshold) / 100);
+  const actionBlocked = (action: string) => blockedActionIds.includes(`${action}:${demand.demandId.toString()}`);
 
   function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
@@ -924,11 +1096,11 @@ function DemandDetail({
                 <h3>Support this request</h3>
                 <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} /></label>
                 <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} /></label>
-                <button className="primary" disabled={busy || !account} onClick={() => void run("support", (onUpdate) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate))}>Support This Request</button>
+                <button className="primary" disabled={busy || !account || actionBlocked("support")} onClick={() => void run("support", `support:${demand.demandId}`, (onUpdate) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate))}>Support This Request</button>
               </div>
             )}
             {supportState === "ready" && support.refundable && (
-              <div className="actions"><button className="danger" disabled={busy || !account} onClick={() => void run("refund", (onUpdate) => refundDemand(demand.demandId, onUpdate))}>Refund {formatUsd0(support.commitment)} USD₮0</button></div>
+              <div className="actions"><button className="danger" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate) => refundDemand(demand.demandId, onUpdate))}>Refund {formatUsd0(support.commitment)} USD₮0</button></div>
             )}
           </section>
         </div>
@@ -954,7 +1126,7 @@ function DemandDetail({
                 <label htmlFor="proposal-evidence">Evidence</label>
                 <textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(e) => setEvidence(e.target.value)} />
                 <p className="workflow-summary" id="proposal-evidence-help">Proof that the service fulfills this request.</p>
-                <button className="primary" disabled={busy || !account} onClick={() => void run("submit", (onUpdate) => submitService(demand.demandId, serviceUrl, evidence, onUpdate))}>Submit Service Proposal</button>
+                <button className="primary" disabled={busy || !account || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate) => submitService(demand.demandId, serviceUrl, evidence, onUpdate))}>Submit Service Proposal</button>
               </div>
             </section>
           ) : null}
@@ -976,8 +1148,8 @@ function DemandDetail({
               <div className="actions actions-column">
                 {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
                   <>
-                    <button className="primary" disabled={busy || !account} onClick={() => void run("approve", (onUpdate) => approveService(demand.demandId, onUpdate))}>Approve Proposal</button>
-                    <button className="danger" disabled={busy || !account} onClick={() => void run("reject", (onUpdate) => rejectService(demand.demandId, onUpdate))}>Reject Proposal</button>
+                    <button className="primary" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}`, (onUpdate) => approveService(demand.demandId, onUpdate))}>Approve Proposal</button>
+                    <button className="danger" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}`, (onUpdate) => rejectService(demand.demandId, onUpdate))}>Reject Proposal</button>
                   </>
                 )}
                 {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
@@ -990,10 +1162,10 @@ function DemandDetail({
               <h3 id="settlement-heading">Settlement</h3>
               <div className="actions actions-column">
                 {demand.status === 1 && demand.quorumReached && (
-                  <button className="primary" disabled={busy} onClick={() => void run("finalize", (onUpdate) => finalizeDemand(demand.demandId, onUpdate))}>Finalize Payout</button>
+                  <button className="primary" disabled={busy || actionBlocked("finalize")} onClick={() => void run("finalize", `finalize:${demand.demandId}`, (onUpdate) => finalizeDemand(demand.demandId, onUpdate))}>Finalize Payout</button>
                 )}
                 {canReopen && (
-                  <button className="ghost" disabled={busy || !account} onClick={() => void run("reopen", (onUpdate) => reopenDemand(demand.demandId, onUpdate))}>Reopen Demand</button>
+                  <button className="ghost" disabled={busy || !account || actionBlocked("reopen")} onClick={() => void run("reopen", `reopen:${demand.demandId}`, (onUpdate) => reopenDemand(demand.demandId, onUpdate))}>Reopen Demand</button>
                 )}
               </div>
             </section>

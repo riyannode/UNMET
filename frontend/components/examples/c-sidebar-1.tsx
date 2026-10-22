@@ -150,10 +150,10 @@ function Workbench({
 }: Pick<ReuiAppShellProps, "children" | "pageTitle" | "boardLoading" | "busy" | "onRefresh">) {
   return (
     <SidebarInset className="min-w-0 overflow-hidden">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-transparent px-4">
         <SidebarTrigger className="-ml-1" />
         <Breadcrumb className="min-w-0">
-          <BreadcrumbList className="flex-nowrap">
+          <BreadcrumbList className="flex-nowrap font-sans font-medium">
             <BreadcrumbItem className="min-w-0">
               <BreadcrumbLink render={<Link to={ROUTES.landing.href} />} className="truncate">
                 UNMET
@@ -161,7 +161,7 @@ function Workbench({
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{pageTitle}</BreadcrumbPage>
+              <BreadcrumbPage className="font-medium">{pageTitle}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
