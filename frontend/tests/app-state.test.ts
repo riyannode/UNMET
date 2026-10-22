@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { encodeAbiParameters, encodeEventTopics, type Address, type Hash, type PublicClient } from "viem";
 import { afterConfirmedTransaction, deriveMarketRequests, nextMarketStatusChangeAt, readSupportForIdentity, settleBoardRead, settleSupportRead } from "../app-state";
+import { deriveGlobalAnalytics } from "../analytics.ts";
 import { DEMAND_ABI, demandIdsFromLogs, effectiveStatus, parseMarketSyncInterval, synchronizeMarketBoard, type DemandView, type MarketSyncCursor } from "../contract";
 
 const SYNC_CONTRACT = "0x00000000000000000000000000000000000000aa" as Address;
@@ -50,6 +51,40 @@ function createdEventData() {
     ["New capability", 2_000_000n, 1_000n, 2_000n, 1_000_000n],
   );
 }
+
+describe("global analytics snapshot", () => {
+  test("uses distinct on-chain requests and exact current escrow values", () => {
+    const requests = [
+      syncDemand(1n, 9_007_199_254_740_993n),
+      { ...syncDemand(2n, 9_007_199_254_740_992n), status: 2 },
+      { ...syncDemand(3n, 0n), status: 2 },
+    ];
+    const analytics = deriveGlobalAnalytics(requests, 1_000n);
+
+    expect(analytics.totalRequests).toBe(3);
+    expect(analytics.fulfilledRequests).toBe(2);
+    expect(analytics.escrowLocked).toBe(18_014_398_509_481_985n);
+    expect(analytics.statusCounts).toEqual([
+      { status: "OPEN", count: 1 },
+      { status: "FULFILLED", count: 2 },
+    ]);
+    expect(analytics.escrowByRequest.map(({ demandId }) => demandId)).toEqual([1n, 2n]);
+    expect(analytics.recentlyFulfilled.map(({ demandId }) => demandId)).toEqual([3n, 2n]);
+  });
+
+  test("deduplicates request IDs and uses request ID as a stable tie-breaker", () => {
+    const sameAmount = 10_000_000n;
+    const analytics = deriveGlobalAnalytics([
+      syncDemand(4n, sameAmount),
+      syncDemand(5n, sameAmount),
+      syncDemand(4n, sameAmount),
+    ], 1_000n);
+
+    expect(analytics.totalRequests).toBe(2);
+    expect(analytics.escrowLocked).toBe(20_000_000n);
+    expect(analytics.escrowByRequest.map(({ demandId }) => demandId)).toEqual([5n, 4n]);
+  });
+});
 
 describe("incremental Market synchronization", () => {
   test("decodes supported contract events and deduplicates demand IDs", () => {

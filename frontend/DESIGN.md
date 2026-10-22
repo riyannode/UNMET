@@ -37,7 +37,7 @@ Blue is reserved for current selection and primary actions. Green, amber, and re
 
 The desktop shell is a left-anchored two-column grid: a 184px workspace rail and a flexible market workspace. The shell fills the viewport width up to an 1880px left-aligned safety cap; it is never centered with auto margins. At 1440px, content begins within 24px of the left edge and uses the remaining workspace for the market table or the selected Demand view.
 
-Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the market-request board as a wide comparison table. Selecting a market request from Market Requests or My Activity opens a dedicated Demand view in the workspace, with Request Details, Escrow & Support, and Builder Proposal tabs. Keep all demand-specific actions in that view and retain a back action to the originating page. Post a Request is an operational split form. My Activity is an event ledger, not a card gallery.
+Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the market-request board as a wide comparison table. Analytics shows public aggregate request status and current escrow; settlement history stays unavailable until complete event history is indexed. Selecting a request from Market Requests or Analytics opens a dedicated Demand view in the workspace, with Request Details, Escrow & Support, and Builder Proposal tabs. Keep all demand-specific actions in that view and retain a back action to the originating page. Post a Request is an operational split form.
 
 ## 4. Typography
 

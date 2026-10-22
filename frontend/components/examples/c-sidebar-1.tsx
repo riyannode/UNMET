@@ -1,7 +1,7 @@
 // Adapted from ReUI registry component @reui/c-sidebar-1 (base-nova).
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { ActivityIcon, CompassIcon, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
+import { ChartPie, CompassIcon, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
 import { reownButtonLabel, type ReownStatus } from "@/reown-status";
 
 import {
@@ -32,7 +32,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ROUTES } from "@/routing";
 
-type AppNavRoute = "market" | "create-demand" | "my-activity";
+type AppNavRoute = "market" | "create-demand" | "analytics";
 
 type ReuiAppShellProps = {
   children: ReactNode;
@@ -49,7 +49,7 @@ type ReuiAppShellProps = {
 const NAV = [
   { id: "market", label: "Explore Market", href: ROUTES.market.href, icon: <CompassIcon aria-hidden="true" /> },
   { id: "create-demand", label: "Create Demand", href: ROUTES.createDemand.href, icon: <PlusIcon aria-hidden="true" /> },
-  { id: "my-activity", label: "My Activity", href: ROUTES.myActivity.href, icon: <ActivityIcon aria-hidden="true" /> },
+  { id: "analytics", label: "Analytics", href: ROUTES.analytics.href, icon: <ChartPie aria-hidden="true" /> },
 ] as const;
 
 function BrandHeader() {

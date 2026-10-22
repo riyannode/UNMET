@@ -4,6 +4,7 @@ export const ROUTES = {
   market: { path: "market", href: "/market" },
   demandDetail: { path: "market/:demandId", href: "/market/:demandId" },
   createDemand: { path: "create-demand", href: "/create-demand" },
+  analytics: { path: "analytics", href: "/analytics" },
   myActivity: { path: "my-activity", href: "/my-activity" },
 } as const;
 

@@ -103,6 +103,7 @@ import {
   type TransactionUpdateHandler,
 } from "./transaction-lifecycle";
 import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
+import { AnalyticsDashboard } from "./Analytics";
 import { errorMessage } from "./errors.ts";
 import { resolveReownStatus, type ReownStatus } from "./reown-status.ts";
 type CreateDemandInput = Parameters<typeof createDemand>[0];
@@ -225,8 +226,6 @@ type AppOutletContext = {
   boardLoadError: boolean;
   selectedId: bigint | null;
   account: Address | null;
-  activity: DemandView[];
-  activityState: "loading" | "ready" | "error";
   support: SupportView;
   supportState: "loading" | "ready" | "error";
   busy: boolean;
@@ -268,8 +267,6 @@ export default function App() {
   const [support, setSupport] = useState<SupportView>(EMPTY_SUPPORT);
   const [supportKey, setSupportKey] = useState("");
   const [supportState, setSupportState] = useState<"loading" | "ready" | "error">("ready");
-  const [mySupportIds, setMySupportIds] = useState<Set<string>>(new Set());
-  const [activityState, setActivityState] = useState<"loading" | "ready" | "error">("ready");
   const [busy, setBusyState] = useState(false);
   const busyRef = useRef(busy);
   busyRef.current = busy;
@@ -312,8 +309,9 @@ export default function App() {
   const supportIdentityRef = useRef(supportIdentity);
   supportIdentityRef.current = supportIdentity;
   const supportRequestRef = useRef(0);
-  const activityRoute = location.pathname === ROUTES.myActivity.href;
-  const marketSyncRoute = location.pathname === ROUTES.market.href || demandMatch !== null;
+  const marketSyncRoute = location.pathname === ROUTES.market.href
+    || location.pathname === ROUTES.analytics.href
+    || demandMatch !== null;
   const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
   const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
   const pendingTransactions = transactionPersistence.records.filter((record) =>
@@ -574,7 +572,7 @@ export default function App() {
   }, [marketSyncRoute, boardLoading, busy, synchronizeMarket]);
 
   useEffect(() => {
-    if (!marketSyncRoute && !activityRoute) return;
+    if (!marketSyncRoute) return;
     const nextChange = nextMarketStatusChangeAt(board, BigInt(Math.floor(Date.now() / 1000)));
     if (nextChange === null) return;
     const remainingMs = Number(nextChange * 1000n - BigInt(Date.now()));
@@ -584,7 +582,7 @@ export default function App() {
       Math.min(Math.max(remainingMs, 0), maxTimeoutMs),
     );
     return () => window.clearTimeout(timer);
-  }, [marketSyncRoute, activityRoute, board, marketClock]);
+  }, [marketSyncRoute, board, marketClock]);
 
   useEffect(() => {
     if (!account || selectedId === null) {
@@ -601,46 +599,6 @@ export default function App() {
     void loadSupport(selectedId, account, key, () => live);
     return () => { live = false; };
   }, [account, loadSupport, selectedId]);
-
-  useEffect(() => {
-    if (!account || !activityRoute) {
-      setMySupportIds(new Set());
-      setActivityState("ready");
-      return;
-    }
-    if (boardLoading) {
-      setActivityState("loading");
-      return;
-    }
-    if (boardLoadError) {
-      setMySupportIds(new Set());
-      setActivityState("error");
-      return;
-    }
-    if (board.length === 0) {
-      setMySupportIds(new Set());
-      setActivityState("ready");
-      return;
-    }
-    let live = true;
-    setMySupportIds(new Set());
-    setActivityState("loading");
-    void Promise.all(board.map(async (demand) => {
-      const own = await readSupport(demand.demandId, account);
-      return own.commitment > 0n ? demand.demandId.toString() : null;
-    })).then((ids) => {
-      if (live) {
-        setMySupportIds(new Set(ids.filter((id): id is string => id !== null)));
-        setActivityState("ready");
-      }
-    }).catch((error: unknown) => {
-      if (live) {
-        setActivityState("error");
-        setStatus(errorMessage(error));
-      }
-    });
-    return () => { live = false; };
-  }, [account, activityRoute, board, boardLoading, boardLoadError, setStatus]);
 
   async function connect() {
     const kit = walletKit;
@@ -858,24 +816,18 @@ export default function App() {
     return () => { animation.revert(); };
   }, [location.pathname, boardLoading]);
 
-  const activity = account
-    ? board.filter((demand) => demand.creator.toLowerCase() === account.toLowerCase()
-      || demand.builder.toLowerCase() === account.toLowerCase()
-      || mySupportIds.has(demand.demandId.toString()))
-    : [];
-
   const routeIsDetail = location.pathname.startsWith(ROUTES.market.href + "/");
   const activeRoute = location.pathname === ROUTES.createDemand.href
     ? "create-demand"
-    : location.pathname === ROUTES.myActivity.href
-      ? "my-activity"
+    : location.pathname === ROUTES.analytics.href
+      ? "analytics"
       : "market";
   const pageTitle = routeIsDetail
     ? "Demand Details"
     : activeRoute === "create-demand"
       ? "Create Demand"
-      : activeRoute === "my-activity"
-        ? "My Activity"
+      : activeRoute === "analytics"
+        ? "Analytics"
         : "Explore Market";
   const visiblePendingTransactions = pendingTransactions.filter((record) =>
     !(activeRoute === "create-demand" && record.actionId === CREATE_DEMAND_ACTION_ID),
@@ -887,8 +839,6 @@ export default function App() {
     boardLoadError,
     selectedId,
     account,
-    activity,
-    activityState,
     support: currentSupport,
     supportState: currentSupportState,
     busy,
@@ -922,7 +872,7 @@ export default function App() {
         }}
       >
         <div className={"legacy-content" + (activeRoute === "create-demand" ? " create-demand-content" : "") + (routeIsDetail ? " demand-detail-content" : "")}>
-          <a className="skip-link" href="#workspace">{activeRoute === "create-demand" ? "Skip to Create Demand" : "Skip to Market Requests"}</a>
+          <a className="skip-link" href="#workspace">{activeRoute === "create-demand" ? "Skip to Create Demand" : activeRoute === "analytics" ? "Skip to Analytics" : "Skip to Market Requests"}</a>
           <div className="status-stack">
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
             {transactionPersistence.warning && <div className="status-line err" role="alert">{transactionPersistence.warning}</div>}
@@ -984,20 +934,9 @@ export function CreateDemandRoute() {
   );
 }
 
-export function MyActivityRoute() {
-  const { account, activity, activityState, boardLoadError, selectedId } = useOutletContext<AppOutletContext>();
-
-  return (
-    <section className="panel activity-panel">
-      <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} requests</span>}</div>
-      {!account ? <div className="empty">Connect a wallet to see your activity.</div>
-        : !DEMAND_CONTRACT ? <div className="empty" role="alert">Wallet activity is unavailable because the demand contract is not configured.</div>
-        : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
-        : activityState === "error" || boardLoadError ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
-        : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
-        : <ActivityLedger board={activity} account={account} selectedId={selectedId} detailFrom={ROUTES.myActivity.href} />}
-    </section>
-  );
+export function AnalyticsRoute() {
+  const { board, boardLoading, boardLoadError } = useOutletContext<AppOutletContext>();
+  return <AnalyticsDashboard board={board} loading={boardLoading} loadError={boardLoadError} contractConfigured={Boolean(DEMAND_CONTRACT)} />;
 }
 
 type DemandDetailLoad =
@@ -1050,7 +989,7 @@ export function DemandDetailRoute() {
             </h1>
           </div>
           <Button type="button" variant="outline" className="demand-detail-action" onClick={close}>
-            {returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
+            {returnTo === ROUTES.analytics.href ? "Back to Analytics" : "Back to Market Requests"}
           </Button>
         </header>
         <Card className="demand-detail-card">
@@ -1081,7 +1020,7 @@ export function DemandDetailRoute() {
       account={account}
       busy={busy}
       close={close}
-      closeLabel={returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
+      closeLabel={returnTo === ROUTES.analytics.href ? "Back to Analytics" : "Back to Market Requests"}
       run={run}
       blockedActionIds={blockedActionIds}
     />
@@ -1090,7 +1029,7 @@ export function DemandDetailRoute() {
 
 function demandReturnPath(state: unknown): string {
   if (typeof state !== "object" || state === null || !("from" in state)) return ROUTES.market.href;
-  return state.from === ROUTES.myActivity.href ? ROUTES.myActivity.href : ROUTES.market.href;
+  return state.from === ROUTES.analytics.href || state.from === ROUTES.myActivity.href ? ROUTES.analytics.href : ROUTES.market.href;
 }
 
 function DemandBoard({ board, loading, loadError, selectedId, contractConfigured, detailFrom }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; contractConfigured: boolean; detailFrom: string }) {
@@ -1113,7 +1052,7 @@ function DemandBoard({ board, loading, loadError, selectedId, contractConfigured
     <section className="panel market-panel">
       <div className="board-title market-heading">
         <div>
-          <h1>What the market needs<span className="count">{loading || loadError || !contractConfigured ? "—" : board.length}</span></h1>
+          <h1>What the market needs</h1>
           <p className="workflow-summary">Requests backed by real escrow.</p>
         </div>
         <span className="unit">USD₮0</span>
@@ -1248,26 +1187,6 @@ function DemandBoard({ board, loading, loadError, selectedId, contractConfigured
       )}
     </section>
   );
-}
-
-function ActivityLedger({ board, account, selectedId, detailFrom }: { board: DemandView[]; account: Address; selectedId: bigint | null; detailFrom: string }) {
-  const entries = [...board].sort((a, b) => a.demandId > b.demandId ? -1 : a.demandId < b.demandId ? 1 : 0);
-  return <ol className="activity-ledger">
-    {entries.map((demand) => {
-      const roles = [
-        demand.creator.toLowerCase() === account.toLowerCase() ? "Creator" : "",
-        demand.builder.toLowerCase() === account.toLowerCase() ? "Builder" : "",
-      ].filter(Boolean);
-      return <li className={"activity-entry " + (selectedId === demand.demandId ? "selected" : "")} key={demand.demandId.toString()}>
-        <span className="activity-role">{roles.length ? roles.join(" · ") : "Supporter"}</span>
-        <Link className="activity-demand" to={demandHref(demand.demandId)} state={{ from: detailFrom }}>
-          <span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span><strong>{demand.capability}</strong>
-        </Link>
-        <span className="activity-amount"><small>Escrow</small>{formatUsd0(demand.committed)} USD₮0</span>
-        <span className={"badge " + effectiveStatus(demand)}>{effectiveStatus(demand)}</span>
-      </li>;
-    })}
-  </ol>;
 }
 
 function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView; selected: boolean; detailFrom: string; now: bigint }) {
