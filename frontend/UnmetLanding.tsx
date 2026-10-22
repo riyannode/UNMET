@@ -9,6 +9,8 @@ import {
   type FormEvent,
 } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
+import { Link } from "react-router";
+import { ROUTES } from "./routing.ts";
 import MagicRings from "./MagicRings.tsx";
 import UnmetHowItWorks from "./UnmetHowItWorks.tsx";
 import UnmetFooter from "./UnmetFooter.tsx";
@@ -214,6 +216,31 @@ function BrandChip() {
       <span className="unmet-wordmark">unmet</span>
     </a>
   );
+}
+
+function LandingNavigationLink({
+  item,
+  className,
+  animated = false,
+  onNavigate,
+}: {
+  item: { label: string; href: string; external?: boolean };
+  className?: string;
+  animated?: boolean;
+  onNavigate?: () => void;
+}) {
+  const content = animated ? <RollText text={item.label} /> : item.label;
+  if (item.external) {
+    return (
+      <a className={className} href={item.href} target="_blank" rel="noopener noreferrer" onClick={onNavigate}>
+        {content}
+      </a>
+    );
+  }
+  if (item.href.startsWith("#")) {
+    return <a className={className} href={item.href} onClick={onNavigate}>{content}</a>;
+  }
+  return <Link className={className} to={item.href} onClick={onNavigate}>{content}</Link>;
 }
 
 type ProblemIconName = "git-merge" | "hand-coins" | "circle-help" | "store";
@@ -488,10 +515,10 @@ export default function UnmetLanding() {
   }
 
   const navItems = [
-    { label: "Market" },
-    { label: "How It Works" },
-    { label: "Builders" },
-    { label: "Docs" },
+    { label: "Market", href: ROUTES.market.href },
+    { label: "How It Works", href: "#how-it-works" },
+    { label: "Builders", href: "#problem" },
+    { label: "Docs", href: "https://github.com/riyannode/UNMET#readme", external: true },
   ];
 
   return (
@@ -522,21 +549,20 @@ export default function UnmetLanding() {
           <div className="unmet-nav-cluster">
             <nav className="unmet-nav-capsule" aria-label="Landing navigation">
               {navItems.map((item) => (
-                <a
-                  className="unmet-nav-link"
-                  role="link"
-                  aria-disabled="true"
+                <LandingNavigationLink
                   key={item.label}
-                >
-                  <RollText text={item.label} />
-                </a>
+                  item={item}
+                  className="unmet-nav-link"
+                  animated
+                  onNavigate={() => setMenuOpen(false)}
+                />
               ))}
             </nav>
 
-            <a className="unmet-book" role="link" aria-disabled="true">
-              <RollText text="Soon" variant="dark" />
+            <Link className="unmet-book" to={ROUTES.createDemand.href}>
+              <RollText text="Create Demand" variant="dark" />
               <MiniBars />
-            </a>
+            </Link>
 
             <button
               className="unmet-menu-button"
@@ -559,17 +585,15 @@ export default function UnmetLanding() {
         {menuOpen && (
           <div className="unmet-mobile-menu">
             {navItems.map((item) => (
-              <a
-                role="link"
-                aria-disabled="true"
+              <LandingNavigationLink
                 key={item.label}
-              >
-                {item.label}
-              </a>
+                item={item}
+                onNavigate={() => setMenuOpen(false)}
+              />
             ))}
-            <a className="unmet-mobile-cta" role="link" aria-disabled="true">
-              Soon
-            </a>
+            <Link className="unmet-mobile-cta" to={ROUTES.createDemand.href}>
+              Create Demand
+            </Link>
           </div>
         )}
 
@@ -591,10 +615,10 @@ export default function UnmetLanding() {
               ))}
             </p>
 
-            <a className="unmet-primary-cta" role="link" aria-disabled="true">
-              <RollText text="Coming Soon" variant="dark" />
+            <Link className="unmet-primary-cta" to={ROUTES.market.href}>
+              <RollText text="Explore Market" variant="dark" />
               <MiniBars />
-            </a>
+            </Link>
 
             <div className="unmet-marquee" aria-label="UNMET ecosystem">
               <div className="unmet-marquee-track jr-animate-marquee">

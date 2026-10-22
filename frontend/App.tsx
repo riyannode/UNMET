@@ -1,21 +1,27 @@
 import { animate, stagger } from "animejs";
-import "@fontsource-variable/figtree";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useMatch,
+  useNavigate,
+  useOutletContext,
+  useParams,
+} from "react-router";
 import { getAddress, isAddress, type Address, type Hash } from "viem";
 import type { AppKit } from "@reown/appkit/react";
 import {
   CHAIN_ID,
   DEMAND_CONTRACT,
   approveService,
-  connectWallet,
   createDemand,
-  currentChainId,
-  currentWallet,
   effectiveStatus,
   explorerTx,
   finalizeDemand,
   formatUsd0,
   readBoard,
+  readDemandOnChain,
   readSupport,
   refundDemand,
   rejectService,
@@ -23,27 +29,43 @@ import {
   statusName,
   submitService,
   supportDemand,
-  setWalletProvider,
-  watchWallet,
+  setReownWalletProvider,
   type DemandView,
   type SupportView,
 } from "./contract.ts";
+import { ReuiAppShell } from "./components/examples/c-sidebar-1.tsx";
+import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
+import { errorMessage } from "./errors.ts";
+import { resolveReownStatus } from "./reown-status.ts";
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
-const NetworkBackground = lazy(() => import("./NetworkBackground.tsx"));
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
 
-type Tab = "board" | "create" | "activity";
+type AppOutletContext = {
+  board: DemandView[];
+  boardLoading: boolean;
+  boardLoadError: boolean;
+  selectedId: bigint | null;
+  account: Address | null;
+  activity: DemandView[];
+  activityState: "loading" | "ready" | "error";
+  support: SupportView;
+  supportState: "loading" | "ready" | "error";
+  busy: boolean;
+  lastTx: Hash | null;
+  run: (label: string, fn: () => Promise<Hash>) => Promise<void>;
+};
 
 export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<Tab>("board");
+  const location = useLocation();
+  const demandMatch = useMatch(ROUTES.demandDetail.href);
+  const selectedId = parseDemandId(demandMatch?.params.demandId);
   const [board, setBoard] = useState<DemandView[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
   const [boardLoadError, setBoardLoadError] = useState(false);
-  const [selectedId, setSelectedId] = useState<bigint | null>(null);
-  const [demandOpen, setDemandOpen] = useState(false);
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
+  const [walletModuleLoaded, setWalletModuleLoaded] = useState(false);
   const [account, setAccount] = useState<Address | null>(null);
   const [chainOk, setChainOk] = useState(true);
   const [support, setSupport] = useState<SupportView>(EMPTY_SUPPORT);
@@ -54,12 +76,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [lastTx, setLastTx] = useState<Hash | null>(null);
+  const walletStatus = resolveReownStatus(Boolean(reownProjectId), walletModuleLoaded, Boolean(walletKit));
 
-  const selected = useMemo(
-    () => selectedId === null ? null : board.find((d) => d.demandId === selectedId) ?? null,
-    [board, selectedId],
-  );
-  const supportIdentity = account && selectedId !== null ? `${account.toLowerCase()}:${selectedId}` : "";
+  const supportIdentity = account && selectedId !== null ? account.toLowerCase() + ":" + selectedId.toString() : "";
   const currentSupport = supportIdentity !== "" && supportKey === supportIdentity ? support : EMPTY_SUPPORT;
   const currentSupportState = supportIdentity === "" ? "ready" : supportKey === supportIdentity ? supportState : "loading";
 
@@ -79,25 +98,39 @@ export default function App() {
     }
   }, []);
 
-  const syncWallet = useCallback(async (kit: AppKit | null = walletKit) => {
+  const syncWallet = useCallback((kit: AppKit | null = walletKit) => {
     if (kit) {
       const wallet = kit.getAccount("eip155");
       const address = wallet?.address;
       setAccount(wallet?.isConnected && address && isAddress(address) ? getAddress(address) : null);
       const chain = kit.getChainId();
       setChainOk(chain === undefined || Number(chain) === CHAIN_ID);
-      setWalletProvider(kit.getWalletProvider());
+      setReownWalletProvider(kit.getWalletProvider());
       return;
     }
-    try {
-      const [wallet, chain] = await Promise.all([currentWallet(), currentChainId()]);
-      setAccount(wallet);
-      setChainOk(chain === null || chain === CHAIN_ID);
-    } catch {
-      setAccount(null);
-      setChainOk(false);
-    }
+    setReownWalletProvider(null);
+    setAccount(null);
+    setChainOk(true);
   }, [walletKit]);
+
+  useEffect(() => {
+    if (!reownProjectId) return;
+    let live = true;
+    void import("./reown.ts")
+      .then(({ appKit: kit }) => {
+        if (live) {
+          setWalletKit(kit);
+          setWalletModuleLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (live) {
+          setWalletKit(null);
+          setWalletModuleLoaded(true);
+        }
+      });
+    return () => { live = false; };
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -106,15 +139,15 @@ export default function App() {
     if (kit) {
       const stopAccount = kit.subscribeAccount(() => void syncWallet(), "eip155");
       const stopNetwork = kit.subscribeNetwork(() => void syncWallet());
-      const stopProvider = kit.subscribeProviders(() => setWalletProvider(kit.getWalletProvider()));
+      const stopProvider = kit.subscribeProviders(() => setReownWalletProvider(kit.getWalletProvider()));
       return () => {
         stopAccount();
         stopNetwork();
         stopProvider();
-        setWalletProvider(null);
+        setReownWalletProvider(null);
       };
     }
-    return watchWallet(() => void syncWallet());
+    setReownWalletProvider(null);
   }, [refresh, syncWallet, walletKit]);
 
   useEffect(() => {
@@ -125,7 +158,7 @@ export default function App() {
       return;
     }
     let live = true;
-    const key = `${account.toLowerCase()}:${selectedId}`;
+    const key = account.toLowerCase() + ":" + selectedId.toString();
     setSupport(EMPTY_SUPPORT);
     setSupportKey(key);
     setSupportState("loading");
@@ -139,7 +172,7 @@ export default function App() {
         }
       });
     return () => { live = false; };
-  }, [account, selectedId, board]);
+  }, [account, selectedId]);
 
   useEffect(() => {
     if (!account) {
@@ -151,6 +184,11 @@ export default function App() {
       setActivityState("loading");
       return;
     }
+    if (boardLoadError) {
+      setMySupportIds(new Set());
+      setActivityState("error");
+      return;
+    }
     if (board.length === 0) {
       setMySupportIds(new Set());
       setActivityState("ready");
@@ -159,9 +197,9 @@ export default function App() {
     let live = true;
     setMySupportIds(new Set());
     setActivityState("loading");
-    void Promise.all(board.map(async (d) => {
-      const own = await readSupport(d.demandId, account);
-      return own.commitment > 0n ? d.demandId.toString() : null;
+    void Promise.all(board.map(async (demand) => {
+      const own = await readSupport(demand.demandId, account);
+      return own.commitment > 0n ? demand.demandId.toString() : null;
     })).then((ids) => {
       if (live) {
         setMySupportIds(new Set(ids.filter((id): id is string => id !== null)));
@@ -174,31 +212,15 @@ export default function App() {
       }
     });
     return () => { live = false; };
-  }, [account, board, boardLoading]);
+  }, [account, board, boardLoading, boardLoadError]);
 
   async function connect() {
-    if (reownProjectId) {
-      setBusy(true);
-      setStatus("");
-      try {
-        const { appKit: kit } = await import("./reown.ts");
-        if (!kit) throw new Error("REOWN_NOT_CONFIGURED");
-        setWalletKit(kit);
-        await syncWallet(kit);
-        await kit.open({ view: kit.getAccount("eip155")?.isConnected ? "Account" : "Connect", namespace: "eip155" });
-      } catch (error) {
-        setStatus(errorMessage(error));
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
+    const kit = walletKit;
+    if (!kit) return;
     setBusy(true);
     setStatus("");
     try {
-      const address = await connectWallet();
-      setAccount(address);
-      await syncWallet();
+      await kit.open({ view: kit.getAccount("eip155")?.isConnected ? "Account" : "Connect", namespace: "eip155" });
     } catch (error) {
       setStatus(errorMessage(error));
     } finally {
@@ -209,7 +231,7 @@ export default function App() {
   async function run(label: string, fn: () => Promise<Hash>) {
     setBusy(true);
     if (account && selectedId !== null) setSupportState("loading");
-    setStatus(`${label} pending`);
+    setStatus(label + " pending");
     setLastTx(null);
     try {
       const hash = await fn();
@@ -220,7 +242,7 @@ export default function App() {
         setStatus("CHAIN_STATE_READBACK_FAILED");
         return;
       }
-      setStatus(`${label} success`);
+      setStatus(label + " success");
     } catch (error) {
       setStatus(errorMessage(error));
     } finally {
@@ -234,152 +256,233 @@ export default function App() {
     if (!rows?.length) return;
     const animation = animate(Array.from(rows).slice(0, 8), { opacity: [0.5, 1], translateY: [6, 0], duration: 280, delay: stagger(24), ease: "out(3)" });
     return () => { animation.revert(); };
-  }, [tab, boardLoading]);
-
-  function closeDetail() {
-    const trigger = document.querySelector<HTMLButtonElement>(".selected .capability button, .selected .activity-demand");
-    setDemandOpen(false);
-    setSelectedId(null);
-    requestAnimationFrame(() => trigger?.focus());
-  }
-
-  function openDemand(id: bigint) {
-    setSelectedId(id);
-    setDemandOpen(true);
-  }
-
-  function navigate(next: Tab) {
-    setDemandOpen(false);
-    setSelectedId(null);
-    setTab(next);
-  }
+  }, [location.pathname, boardLoading]);
 
   const activity = account
-    ? board.filter((d) => d.creator.toLowerCase() === account.toLowerCase()
-      || d.builder.toLowerCase() === account.toLowerCase()
-      || mySupportIds.has(d.demandId.toString()))
+    ? board.filter((demand) => demand.creator.toLowerCase() === account.toLowerCase()
+      || demand.builder.toLowerCase() === account.toLowerCase()
+      || mySupportIds.has(demand.demandId.toString()))
     : [];
 
+  const routeIsDetail = location.pathname.startsWith(ROUTES.market.href + "/");
+  const activeRoute = location.pathname === ROUTES.createDemand.href
+    ? "create-demand"
+    : location.pathname === ROUTES.myActivity.href
+      ? "my-activity"
+      : "market";
+  const pageTitle = routeIsDetail
+    ? "Demand Details"
+    : activeRoute === "create-demand"
+      ? "Create Demand"
+      : activeRoute === "my-activity"
+        ? "My Activity"
+        : "Explore Market";
+
+  const outletContext: AppOutletContext = {
+    board,
+    boardLoading,
+    boardLoadError,
+    selectedId,
+    account,
+    activity,
+    activityState,
+    support: currentSupport,
+    supportState: currentSupportState,
+    busy,
+    lastTx,
+    run,
+  };
+
   return (
-    <>
-      <Suspense fallback={null}><NetworkBackground /></Suspense>
-      <a className="skip-link" href="#workspace">Skip to Market Requests</a>
-      <div className="app-shell">
-        <aside className="nav-rail" aria-label="UNMET workspace">
-          <a className="rail-brand" href="#workspace" onClick={() => navigate("board")} aria-label="UNMET home">
-            <span className="brand-mark" aria-hidden="true" />
-            <span>UNMET</span>
-          </a>
-          <nav className="rail-nav" aria-label="Workspace">
-            <button aria-current={tab === "board" ? "page" : undefined} className={`nav-item ${tab === "board" ? "active" : ""}`} onClick={() => navigate("board")}>
-              <NavGlyph tab="board" /><span>Market Requests</span>
-            </button>
-            <button aria-current={tab === "create" ? "page" : undefined} className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => navigate("create")}>
-              <NavGlyph tab="create" /><span>Post a Request</span>
-            </button>
-            <button aria-current={tab === "activity" ? "page" : undefined} className={`nav-item ${tab === "activity" ? "active" : ""}`} onClick={() => navigate("activity")}>
-              <NavGlyph tab="activity" /><span>My Activity</span>
-            </button>
-          </nav>
-          <div className="rail-note"><span className="signal-dot" />Demand market</div>
-        </aside>
-
-        <div className="app-main">
-          <header className="topbar">
-            <div className="network"><span className="signal-dot" />X Layer <strong>{CHAIN_ID}</strong></div>
-            <div className="topbar-actions">
-              <button className="refresh" aria-label={boardLoading ? "Updating demand data" : "Refresh demand data"} onClick={() => { if (account && selectedId !== null) setSupportState("loading"); void refresh(); }} disabled={busy || boardLoading}>{boardLoading ? "Updating" : "Refresh"}</button>
-              <div className="wallet-box">
-                <button className="wallet-connect" disabled={busy} onClick={() => void connect()} aria-haspopup={reownProjectId ? "dialog" : undefined}>
-                  <span className="wallet-connect-mark" aria-hidden="true" />
-                  {account ? short(account) : "Connect wallet"}
-                  {reownProjectId && <span className="wallet-connect-chevron" aria-hidden="true">⌄</span>}
-                </button>
-              </div>
-            </div>
-          </header>
-
+    <div className="unmet-app-shell">
+      <ReuiAppShell
+        activeRoute={activeRoute}
+        pageTitle={pageTitle}
+        account={account}
+        walletStatus={walletStatus}
+        busy={busy}
+        boardLoading={boardLoading}
+        onConnect={() => void connect()}
+        onRefresh={() => {
+          if (account && selectedId !== null) setSupportState("loading");
+          void refresh();
+        }}
+      >
+        <div className="legacy-content">
+          <a className="skip-link" href="#workspace">Skip to Market Requests</a>
           <div className="status-stack">
-            {!DEMAND_CONTRACT && <div className="status-line err">Contract not configured.</div>}
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
-            {status && <div role="status" aria-live="polite" className={`status-line ${status.includes("success") ? "ok" : status.includes("pending") ? "" : "err"}`}>{status}</div>}
+            {status && <div role="status" aria-live="polite" className={"status-line " + (status.includes("success") ? "ok" : status.includes("pending") ? "" : "err")}>{status}</div>}
             {lastTx && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
           </div>
 
           <main id="workspace" ref={workspaceRef} className="workspace">
-            <div className="market-main" hidden={demandOpen}>
-              {tab === "board" && <DemandBoard board={board} loading={boardLoading} loadError={boardLoadError} selectedId={selectedId} onSelect={openDemand} />}
-              {tab === "create" && <CreatePanel busy={busy} run={run} />}
-              {tab === "activity" && (
-                <section className="panel activity-panel">
-                  <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} requests</span>}</div>
-                  {!account ? <div className="empty">Connect a wallet to see your activity.</div>
-                    : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
-                    : activityState === "error" ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
-                    : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
-                    : <ActivityLedger board={activity} account={account} selectedId={selectedId} onSelect={openDemand} />}
-                </section>
-              )}
-            </div>
-            {demandOpen && selected && (
-              <DemandDetail
-                demand={selected}
-                support={currentSupport}
-                supportState={currentSupportState}
-                account={account}
-                busy={busy}
-                close={closeDetail}
-                closeLabel={tab === "activity" ? "Back to My Activity" : "Back to Market Requests"}
-                run={run}
-              />
-            )}
-            {demandOpen && !selected && (
-              <section className="panel detail demand-page" aria-label="Market Request details">
-                <div className="detail-title"><h2>Market request unavailable</h2><button className="ghost" onClick={closeDetail}>Back to {tab === "activity" ? "My Activity" : "Market Requests"}</button></div>
-                <p className="empty">This market request is no longer in view. Refresh to try again.</p>
-              </section>
-            )}
+            <Outlet context={outletContext} />
           </main>
 
           <footer className="app-footer">
             <span>AgentDemand</span>
-            <code>{DEMAND_CONTRACT ? short(DEMAND_CONTRACT) : "not configured"}</code>
+            {DEMAND_CONTRACT && <code>{short(DEMAND_CONTRACT)}</code>}
           </footer>
         </div>
-      </div>
-    </>
+      </ReuiAppShell>
+    </div>
   );
 }
 
-function NavGlyph({ tab }: { tab: Tab }) {
-  const paths: Record<Tab, ReactNode> = {
-    board: <><rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="7" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /><rect x="13.5" y="13.5" width="7" height="7" rx="1" /></>,
-    create: <><path d="M12 4v16M4 12h16" /></>,
-    activity: <><path d="M3 12h4l2.3-5 4.2 10 2.5-5H21" /></>,
-  };
-  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{paths[tab]}</svg>;
+export function MarketRoute() {
+  const { board, boardLoading, boardLoadError, selectedId } = useOutletContext<AppOutletContext>();
+  return (
+    <DemandBoard
+      board={board}
+      loading={boardLoading}
+      loadError={boardLoadError}
+      selectedId={selectedId}
+      contractConfigured={Boolean(DEMAND_CONTRACT)}
+      detailFrom={ROUTES.market.href}
+    />
+  );
 }
 
-function DemandBoard({ board, loading, loadError, selectedId, onSelect }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; onSelect: (id: bigint) => void }) {
+export function CreateDemandRoute() {
+  const { busy, run } = useOutletContext<AppOutletContext>();
+  return <CreatePanel busy={busy} run={run} />;
+}
+
+export function MyActivityRoute() {
+  const { account, activity, activityState, boardLoadError, selectedId } = useOutletContext<AppOutletContext>();
+
   return (
-    <section className="panel">
-      <div className="board-title"><div><h1>What the market needs<span className="count">{loading || loadError ? "—" : board.length}</span></h1><p className="workflow-summary">Requests backed by real escrow.</p></div><span className="unit">USD₮0</span></div>
-      {loading ? <div className="empty" role="status">Loading market requests…</div>
-        : loadError ? <div className="empty error" role="alert">Could not load market requests. Refresh to try again.</div>
-        : board.length === 0 ? <div className="empty">No funded market requests yet.</div>
-        : <DemandTable board={board} selectedId={selectedId} onSelect={onSelect} />}
+    <section className="panel activity-panel">
+      <div className="board-title"><h1>My Activity</h1>{account && <span className="unit">{activity.length} requests</span>}</div>
+      {!account ? <div className="empty">Connect a wallet to see your activity.</div>
+        : !DEMAND_CONTRACT ? <div className="empty" role="alert">Wallet activity is unavailable because the demand contract is not configured.</div>
+        : activityState === "loading" ? <div className="empty" role="status">Loading wallet activity…</div>
+        : activityState === "error" || boardLoadError ? <div className="empty" role="alert">Could not read wallet activity. Refresh the chain view to retry.</div>
+        : activity.length === 0 ? <div className="empty">No onchain activity for this wallet.</div>
+        : <ActivityLedger board={activity} account={account} selectedId={selectedId} detailFrom={ROUTES.myActivity.href} />}
     </section>
   );
 }
 
-function DemandTable({ board, selectedId, onSelect }: { board: DemandView[]; selectedId: bigint | null; onSelect: (id: bigint) => void }) {
+type DemandDetailLoad =
+  | { kind: "loading" }
+  | { kind: "invalid" }
+  | { kind: "not-configured" }
+  | { kind: "not-found" }
+  | { kind: "error" }
+  | { kind: "ready"; demand: DemandView };
+
+export function DemandDetailRoute() {
+  const { demandId: rawDemandId } = useParams();
+  const demandId = parseDemandId(rawDemandId);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { account, support, supportState, busy, lastTx, run } = useOutletContext<AppOutletContext>();
+  const [attempt, setAttempt] = useState(0);
+  const [detail, setDetail] = useState<DemandDetailLoad>({ kind: "loading" });
+  const returnTo = demandReturnPath(location.state);
+  const close = useCallback(() => navigate(returnTo), [navigate, returnTo]);
+
+  useEffect(() => {
+    let live = true;
+    if (demandId === null) {
+      setDetail({ kind: "invalid" });
+      return () => { live = false; };
+    }
+    if (!DEMAND_CONTRACT) {
+      setDetail({ kind: "not-configured" });
+      return () => { live = false; };
+    }
+    setDetail({ kind: "loading" });
+    void readDemandOnChain(demandId).then((demand) => {
+      if (live) setDetail({ kind: "ready", demand });
+    }).catch(async () => {
+      try {
+        const board = await readBoard();
+        if (!live) return;
+        setDetail(board.some((demand) => demand.demandId === demandId)
+          ? { kind: "error" }
+          : { kind: "not-found" });
+      } catch {
+        if (live) setDetail({ kind: "error" });
+      }
+    });
+    return () => { live = false; };
+  }, [demandId, attempt, lastTx]);
+
+  if (detail.kind !== "ready") {
+    const message = detail.kind === "loading"
+      ? "Loading market request…"
+      : detail.kind === "invalid"
+        ? "This demand ID is invalid."
+        : detail.kind === "not-configured"
+          ? "The demand contract is not configured."
+          : detail.kind === "not-found"
+            ? "This market request was not found."
+            : "Could not read this market request from X Layer. Check the connection and retry.";
+
+    return (
+      <section className="panel detail demand-page" aria-labelledby="demand-load-heading">
+        <div className="detail-title">
+          <h2 id="demand-load-heading" tabIndex={-1}>
+            {detail.kind === "loading" ? "Loading Market Request" : "Market Request Unavailable"}
+          </h2>
+          <button className="ghost" onClick={close}>
+            {returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
+          </button>
+        </div>
+        <p className="empty" role={detail.kind === "loading" ? "status" : "alert"}>{message}</p>
+        {detail.kind === "error" && (
+          <div className="actions">
+            <button className="primary" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <DemandDetail
+      key={detail.demand.demandId.toString()}
+      demand={detail.demand}
+      support={support}
+      supportState={supportState}
+      account={account}
+      busy={busy}
+      close={close}
+      closeLabel={returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
+      run={run}
+    />
+  );
+}
+
+function demandReturnPath(state: unknown): string {
+  if (typeof state !== "object" || state === null || !("from" in state)) return ROUTES.market.href;
+  return state.from === ROUTES.myActivity.href ? ROUTES.myActivity.href : ROUTES.market.href;
+}
+
+function DemandBoard({ board, loading, loadError, selectedId, contractConfigured, detailFrom }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; contractConfigured: boolean; detailFrom: string }) {
+  return (
+    <section className="panel market-panel">
+      <div className="board-title"><div><h1>What the market needs<span className="count">{loading || loadError || !contractConfigured ? "—" : board.length}</span></h1><p className="workflow-summary">Requests backed by real escrow.</p></div><span className="unit">USD₮0</span></div>
+      {loading ? <div className="empty" role="status">Loading market requests…</div>
+        : !contractConfigured ? <div className="empty error" role="alert">Market data is unavailable because the demand contract is not configured.</div>
+        : loadError ? <div className="empty error" role="alert">Could not load market requests. Refresh to try again.</div>
+        : board.length === 0 ? <div className="empty">No funded market requests yet.</div>
+        : <DemandTable board={board} selectedId={selectedId} detailFrom={detailFrom} />}
+    </section>
+  );
+}
+
+function DemandTable({ board, selectedId, detailFrom }: { board: DemandView[]; selectedId: bigint | null; detailFrom: string }) {
   return <table className="demand-table">
     <thead><tr><th>Capability</th><th>Escrow</th><th>Expected calls</th><th>Wallets</th><th>Max / call</th><th>Status</th></tr></thead>
-    <tbody>{board.map((demand) => <DemandCard key={demand.demandId.toString()} demand={demand} selected={selectedId === demand.demandId} onSelect={onSelect} />)}</tbody>
+    <tbody>{board.map((demand) => <DemandCard key={demand.demandId.toString()} demand={demand} selected={selectedId === demand.demandId} detailFrom={detailFrom} />)}</tbody>
   </table>;
 }
 
-function ActivityLedger({ board, account, selectedId, onSelect }: { board: DemandView[]; account: Address; selectedId: bigint | null; onSelect: (id: bigint) => void }) {
+function ActivityLedger({ board, account, selectedId, detailFrom }: { board: DemandView[]; account: Address; selectedId: bigint | null; detailFrom: string }) {
   const entries = [...board].sort((a, b) => a.demandId > b.demandId ? -1 : a.demandId < b.demandId ? 1 : 0);
   return <ol className="activity-ledger">
     {entries.map((demand) => {
@@ -387,26 +490,38 @@ function ActivityLedger({ board, account, selectedId, onSelect }: { board: Deman
         demand.creator.toLowerCase() === account.toLowerCase() ? "Creator" : "",
         demand.builder.toLowerCase() === account.toLowerCase() ? "Builder" : "",
       ].filter(Boolean);
-      return <li className={`activity-entry ${selectedId === demand.demandId ? "selected" : ""}`} key={demand.demandId.toString()}>
+      return <li className={"activity-entry " + (selectedId === demand.demandId ? "selected" : "")} key={demand.demandId.toString()}>
         <span className="activity-role">{roles.length ? roles.join(" · ") : "Supporter"}</span>
-        <button className="activity-demand" onClick={() => onSelect(demand.demandId)}><span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span><strong>{demand.capability}</strong></button>
+        <Link className="activity-demand" to={demandHref(demand.demandId)} state={{ from: detailFrom }}>
+          <span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span><strong>{demand.capability}</strong>
+        </Link>
         <span className="activity-amount"><small>Escrow</small>{formatUsd0(demand.committed)} USD₮0</span>
-        <span className={`badge ${effectiveStatus(demand)}`}>{effectiveStatus(demand)}</span>
+        <span className={"badge " + effectiveStatus(demand)}>{effectiveStatus(demand)}</span>
       </li>;
     })}
   </ol>;
 }
 
-function DemandCard({ demand, selected, onSelect }: { demand: DemandView; selected: boolean; onSelect: (id: bigint) => void }) {
+function DemandCard({ demand, selected, detailFrom }: { demand: DemandView; selected: boolean; detailFrom: string }) {
   const state = effectiveStatus(demand);
   return (
-    <tr className={`demand-row ${selected ? "selected" : ""}`}>
-      <td className="capability"><button aria-expanded={selected} onClick={() => onSelect(demand.demandId)}><span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span><strong>{demand.capability}</strong><span className="row-open" aria-hidden="true">View</span></button></td>
+    <tr className={"demand-row " + (selected ? "selected" : "")}>
+      <td className="capability">
+        <Link
+          to={demandHref(demand.demandId)}
+          state={{ from: detailFrom }}
+          aria-label={"View Market Request #" + demand.demandId.toString() + ": " + demand.capability}
+        >
+          <span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span>
+          <strong>{demand.capability}</strong>
+          <span className="row-open" aria-hidden="true">View</span>
+        </Link>
+      </td>
       <td data-label="Escrow" className="number">{formatUsd0(demand.committed)}</td>
       <td data-label="Expected calls" className="number">{demand.expectedCalls.toLocaleString("en-US")}</td>
       <td data-label="Wallets" className="number">{demand.supporterCount}</td>
       <td data-label="Max / call" className="number">{formatUsd0(demand.maxUnitPrice)}</td>
-      <td data-label="Status"><span className={`badge ${state}`}>{state}</span></td>
+      <td data-label="Status"><span className={"badge " + state}>{state}</span></td>
     </tr>
   );
 }
@@ -665,9 +780,3 @@ function iso(value: bigint): string {
     : new Date(Number(millis)).toISOString();
 }
 function short(value: string): string { return `${value.slice(0, 6)}…${value.slice(-4)}`; }
-function errorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return "INTERNAL_ERROR";
-  const known = error.message.match(/(WALLET_[A-Z_]+|CHAIN_[A-Z_]+|DEMAND_[A-Z_]+|SUPPORT_[A-Z_]+|SUBMISSION_[A-Z_]+)/)?.[1];
-  if (known === "DEMAND_INVALID_CAPABILITY") return "Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max).";
-  return known ?? error.message.slice(0, 180);
-}

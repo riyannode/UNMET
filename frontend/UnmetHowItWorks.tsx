@@ -1,5 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
+import { Link } from "react-router";
+import { ROUTES } from "./routing.ts";
 import "./unmet-how-it-works.css";
 
 const steps = [
@@ -102,13 +104,9 @@ export default function UnmetHowItWorks() {
 
             <div>
               <AnimatedContent delay={0.4}>
-                <a
-                  role="link"
-                  aria-disabled="true"
-                  className="unmet-how-cta"
-                >
-                  Coming Soon <ArrowUpRight />
-                </a>
+                <Link className="unmet-how-cta" to={ROUTES.createDemand.href}>
+                  Create Demand <ArrowUpRight />
+                </Link>
               </AnimatedContent>
 
               <AnimatedContent delay={0.5}>

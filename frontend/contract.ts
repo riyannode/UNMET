@@ -185,17 +185,11 @@ function requireContract(): Address {
   return DEMAND_CONTRACT;
 }
 
-let configuredWalletProvider: EthereumProvider | null | undefined;
+let reownWalletProvider: EthereumProvider | null = null;
 
-function activeWalletProvider(): EthereumProvider | null {
-  if (configuredWalletProvider !== undefined) return configuredWalletProvider;
-  return isEthereumProvider(window.ethereum) ? window.ethereum : null;
-}
-
-function injected(): EthereumProvider {
-  const provider = activeWalletProvider();
-  if (!provider) throw new Error("WALLET_NOT_FOUND");
-  return provider;
+function requireReownProvider(): EthereumProvider {
+  if (!reownWalletProvider) throw new Error("WALLET_NOT_FOUND");
+  return reownWalletProvider;
 }
 
 function isEthereumProvider(provider: unknown): provider is EthereumProvider {
@@ -203,8 +197,8 @@ function isEthereumProvider(provider: unknown): provider is EthereumProvider {
     && "request" in provider && typeof provider.request === "function";
 }
 
-export function setWalletProvider(provider: unknown): void {
-  configuredWalletProvider = isEthereumProvider(provider) ? provider : null;
+export function setReownWalletProvider(provider: unknown): void {
+  reownWalletProvider = isEthereumProvider(provider) ? provider : null;
 }
 
 export function getPublic(): PublicClient {
@@ -212,17 +206,11 @@ export function getPublic(): PublicClient {
 }
 
 export function walletClient() {
-  return createWalletClient({ chain: targetChain, transport: custom(injected() as never) });
-}
-
-export async function connectWallet(): Promise<Address> {
-  const accounts = await injected().request({ method: "eth_requestAccounts" });
-  if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) throw new Error("WALLET_NOT_FOUND");
-  return getAddress(accounts[0]);
+  return createWalletClient({ chain: targetChain, transport: custom(requireReownProvider() as never) });
 }
 
 export async function currentWallet(): Promise<Address | null> {
-  const provider = activeWalletProvider();
+  const provider = reownWalletProvider;
   if (!provider) return null;
   const accounts = await provider.request({ method: "eth_accounts" });
   if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) return null;
@@ -230,7 +218,7 @@ export async function currentWallet(): Promise<Address | null> {
 }
 
 export async function currentChainId(): Promise<number | null> {
-  const provider = activeWalletProvider();
+  const provider = reownWalletProvider;
   if (!provider) return null;
   const result = await provider.request({ method: "eth_chainId" });
   if (typeof result !== "string") return null;
@@ -238,7 +226,7 @@ export async function currentChainId(): Promise<number | null> {
 }
 
 export async function ensureChain(): Promise<void> {
-  const eth = injected();
+  const eth = requireReownProvider();
   const current = await currentChainId();
   if (current === CHAIN_ID) return;
   try {
@@ -257,18 +245,6 @@ export async function ensureChain(): Promise<void> {
       blockExplorerUrls: [targetChain.blockExplorers.default.url],
     }] });
   }
-}
-
-export function watchWallet(onChange: () => void): () => void {
-  const provider = activeWalletProvider();
-  if (!provider?.on) return () => {};
-  const listener = () => onChange();
-  provider.on("accountsChanged", listener);
-  provider.on("chainChanged", listener);
-  return () => {
-    provider.removeListener?.("accountsChanged", listener);
-    provider.removeListener?.("chainChanged", listener);
-  };
 }
 
 export function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
@@ -345,7 +321,8 @@ export async function readSupport(demandId: bigint, supporter: Address): Promise
 }
 
 async function requireAccount(): Promise<Address> {
-  const account = await connectWallet();
+  const account = await currentWallet();
+  if (!account) throw new Error("WALLET_NOT_CONNECTED");
   await ensureChain();
   return account;
 }

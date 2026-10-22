@@ -36,7 +36,7 @@ export const appKit = projectId
       defaultAccountTypes: { eip155: "eoa" },
       themeVariables: {
         "--apkt-accent": "#27764f",
-        "--apkt-font-family": "Figtree Variable, Segoe UI, sans-serif",
+        "--apkt-font-family": "Inter Tight, sans-serif",
         "--apkt-border-radius-master": "16px",
       },
       features: {

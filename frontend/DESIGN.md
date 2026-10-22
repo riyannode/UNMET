@@ -41,7 +41,7 @@ Use a compact sticky top bar for X Layer, refresh, and wallet controls. Keep the
 
 ## 4. Typography
 
-Use Figtree Variable for interface text. Use the system monospace stack only for addresses, demand IDs, transaction hashes, and tabular numeric values. Keep the scale compact and stable: section titles about 23px, body and controls 11–13px, supporting labels 10–11px. Numeric columns use tabular figures. Long capabilities and addresses wrap or truncate without pushing the grid wider.
+Use Inter Tight for app interface text to match the landing page body. Use the system monospace stack only for addresses, demand IDs, transaction hashes, and tabular numeric values. App page titles are 40px on desktop and 28px on narrow screens, body text is 16px, and supporting labels range from 13px to 15px. Numeric columns use tabular figures. Long capabilities and addresses wrap or truncate without pushing the grid wider.
 
 ## 5. Components and states
 

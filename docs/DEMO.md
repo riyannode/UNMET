@@ -13,12 +13,12 @@ The unpaid `POST /v1/opportunities` request currently returns an x402 v2 challen
 
 ## Judge path through the frontend
 
-1. **Market Requests** — compare capability, escrow, expected calls, supporting wallets, max price, and status.
+1. **Explore Market** — compare capability, escrow, expected calls, supporting wallets, max price, and status.
 2. **Open a market request** — select a row. It opens a dedicated Demand view and keeps the source page available through its back action.
 3. **Request Details** — show the request details and current market state.
 4. **Escrow & Support** — show current escrow, the connected wallet's commitment, and the amount/call inputs. The **Support This Request** and eligible refund actions stay with this demand.
 5. **Builder Proposal** — show the builder, service URL, evidence, proposal controls, commitment-weighted approval/rejection progress, and settlement actions only when eligible. When open, the **Submit Service Proposal** action is available here.
-6. **Post a Request** — show the Request, Economics, and Initial Escrow sections and the **Post Request & Commit Escrow** action.
+6. **Create Demand** — open the existing Request, Economics, and Initial Escrow form and show the **Post Request & Commit Escrow** action.
 7. **My Activity** — select a position to open its Demand view; use the back action to return to My Activity.
 
 ## Optional Testnet lifecycle walkthrough
