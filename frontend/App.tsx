@@ -502,14 +502,14 @@ export default function App() {
       } else if (previousIdentity) {
         toast.dismiss(WALLET_REQUIRED_TOAST_ID);
         toast.dismiss("wallet-disconnect-failed");
-        toast.success("Wallet Disconnected", {
+        toast.success("Wallet session disconnected", {
           id: "wallet-disconnected",
-          description: "Your wallet has been disconnected",
+          description: "Disconnected from UNMET. Wallet site permissions may remain active",
         });
       }
       const chain = kit.getChainId();
       setChainOk(chain === undefined || Number(chain) === CHAIN_ID);
-      setReownWalletProvider(kit.getWalletProvider());
+      setReownWalletProvider(nextAccount ? kit.getWalletProvider() : null);
       return;
     }
     activeWalletIdentityRef.current = null;
@@ -549,7 +549,7 @@ export default function App() {
     if (kit) {
       const stopAccount = kit.subscribeAccount(() => void syncWallet(), "eip155");
       const stopNetwork = kit.subscribeNetwork(() => void syncWallet());
-      const stopProvider = kit.subscribeProviders(() => setReownWalletProvider(kit.getWalletProvider()));
+      const stopProvider = kit.subscribeProviders(() => syncWallet(kit));
       return () => {
         stopAccount();
         stopNetwork();
@@ -643,7 +643,15 @@ export default function App() {
 
     await runDisconnectRequest(
       disconnectingRef,
-      () => setDisconnecting(true),
+      () => {
+        setDisconnecting(true);
+        toast.dismiss("wallet-disconnect-failed");
+        toast.dismiss("wallet-disconnected");
+        toast.loading("Disconnecting wallet session…", {
+          id: "wallet-disconnecting",
+          description: "Waiting for your wallet. You can keep browsing UNMET",
+        });
+      },
       async () => {
         try {
           await kit.disconnect("eip155");
@@ -658,7 +666,10 @@ export default function App() {
           });
         }
       },
-      () => setDisconnecting(false),
+      () => {
+        toast.dismiss("wallet-disconnecting");
+        setDisconnecting(false);
+      },
     );
   }
 

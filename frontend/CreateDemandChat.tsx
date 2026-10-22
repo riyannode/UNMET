@@ -214,6 +214,19 @@ export function CreateDemandChat({
   const endRef = useRef<HTMLDivElement>(null);
   const submitLock = useRef(false);
   const createLock = useRef(false);
+  const walletSessionRef = useRef({ account: account?.toLowerCase() ?? null });
+  const walletIdentity = account?.toLowerCase() ?? null;
+  if (walletSessionRef.current.account !== walletIdentity) {
+    walletSessionRef.current = { account: walletIdentity };
+    setOutcome(null);
+    setRefreshMessage("");
+    setError("");
+    setCreatePending(false);
+    setVerificationPending(false);
+    setRefreshing(false);
+    createLock.current = false;
+    refreshLock.current = false;
+  }
   const turns = buildTurns(answers, step, editingField);
   const reviewRows = buildReviewRows(answers);
   const prompt = editPrompt(editingField, step);
@@ -275,7 +288,7 @@ export function CreateDemandChat({
       return;
     }
     setOutcome((current) => current?.kind === "broadcast" || current?.kind === "unknown" ? null : current);
-  }, [pendingTransaction]);
+  }, [pendingTransaction, walletIdentity]);
 
   function handleAnswer(raw: string) {
     if (submitLock.current || (step === "review" && !editingField) || busyCreating || blocksChatInput) return;
@@ -390,6 +403,7 @@ export function CreateDemandChat({
       return;
     }
     createLock.current = true;
+    const session = walletSessionRef.current;
     setCreatePending(true);
     setOutcome(null);
     setError("");
@@ -403,22 +417,29 @@ export function CreateDemandChat({
         deadlineDays: answers.deadlineDays,
         commitment: answers.commitment,
       };
-      setOutcome(await onCreate(input));
+      const result = await onCreate(input);
+      if (walletSessionRef.current === session) setOutcome(result);
     } catch (createError) {
-      setOutcome({ kind: "failed", message: createError instanceof Error ? createError.message : "The demand could not be created" });
+      if (walletSessionRef.current === session) {
+        setOutcome({ kind: "failed", message: createError instanceof Error ? createError.message : "The demand could not be created" });
+      }
     } finally {
-      setCreatePending(false);
-      createLock.current = false;
+      if (walletSessionRef.current === session) {
+        setCreatePending(false);
+        createLock.current = false;
+      }
     }
   }
 
   async function handleRefresh() {
     if (refreshLock.current) return;
     refreshLock.current = true;
+    const session = walletSessionRef.current;
     setRefreshing(true);
     setRefreshMessage("");
     try {
       const refreshedBoard = await onRefreshBoard();
+      if (walletSessionRef.current !== session) return;
       if (refreshedBoard === null) {
         setRefreshMessage("Could not refresh market data. Try again");
         return;
@@ -435,21 +456,25 @@ export function CreateDemandChat({
       }
       setRefreshMessage("Market data refreshed. No transaction was submitted");
     } catch {
-      setRefreshMessage("Could not refresh market data. Try again");
+      if (walletSessionRef.current === session) setRefreshMessage("Could not refresh market data. Try again");
     } finally {
-      refreshLock.current = false;
-      setRefreshing(false);
+      if (walletSessionRef.current === session) {
+        refreshLock.current = false;
+        setRefreshing(false);
+      }
     }
   }
 
   async function handleVerify(outcomeToVerify: CreateDemandTransactionOutcome) {
     if (verificationPending) return;
+    const session = walletSessionRef.current;
     setVerificationPending(true);
     setRefreshMessage("");
     try {
-      setOutcome(await onVerify(outcomeToVerify));
+      const result = await onVerify(outcomeToVerify);
+      if (walletSessionRef.current === session) setOutcome(result);
     } finally {
-      setVerificationPending(false);
+      if (walletSessionRef.current === session) setVerificationPending(false);
     }
   }
 

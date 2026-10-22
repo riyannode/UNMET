@@ -109,3 +109,46 @@ describe("Reown disconnect request", () => {
     expect(events).toEqual(["start", "finish"]);
   });
 });
+
+describe("disconnect provider lifecycle", () => {
+  test("keeps wallet A until disconnect confirms, then requires a new provider for wallet B", async () => {
+    const walletA = "0x0000000000000000000000000000000000000001";
+    const walletB = "0x0000000000000000000000000000000000000002";
+    setReownWalletProvider({ request: async () => [walletA] });
+    const lock = { current: false };
+    let confirm: (() => void) | undefined;
+    const confirmation = new Promise<void>((resolve) => { confirm = resolve; });
+    const pending = runDisconnectRequest(lock, () => {}, async () => {
+      await confirmation;
+      setReownWalletProvider(null);
+    }, () => {});
+
+    expect(lock.current).toBe(true);
+    expect(await currentWallet()).toBe(walletA);
+    confirm?.();
+    await pending;
+    expect(await currentWallet()).toBeNull();
+    expect(() => walletClient()).toThrow("WALLET_NOT_FOUND");
+    setReownWalletProvider({ request: async () => [walletB] });
+    expect(await currentWallet()).toBe(walletB);
+  });
+
+  test("preserves the provider on a rejected disconnect and permits a retry", async () => {
+    const wallet = "0x0000000000000000000000000000000000000001";
+    setReownWalletProvider({ request: async () => [wallet] });
+    const lock = { current: false };
+    let reject: ((error: Error) => void) | undefined;
+    const request = new Promise<void>((_, fail) => { reject = fail; });
+    const pending = runDisconnectRequest(lock, () => {}, () => request, () => {});
+    expect(lock.current).toBe(true);
+    expect(await currentWallet()).toBe(wallet);
+    queueMicrotask(() => reject?.(new Error("SDK_REJECTED")));
+    await expect(pending).rejects.toThrow("SDK_REJECTED");
+    expect(lock.current).toBe(false);
+    expect(await currentWallet()).toBe(wallet);
+    expect(await runDisconnectRequest(lock, () => {}, async () => {
+      setReownWalletProvider(null);
+    }, () => {})).toBe(true);
+    expect(await currentWallet()).toBeNull();
+  });
+});
