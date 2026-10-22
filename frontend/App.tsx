@@ -1,5 +1,5 @@
 import { animate, stagger } from "animejs";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   Outlet,
@@ -25,7 +25,9 @@ import {
   parseUsd0,
   readBoard,
   readDemandOnChain,
+  readNewDemandsAfter,
   readSupport,
+  sortDemandsByFunding,
   refundDemand,
   rejectService,
   reopenDemand,
@@ -49,7 +51,7 @@ import {
 import { Badge } from "./components/reui/badge.tsx";
 import { AvatarGroup, AvatarGroupCount } from "./components/ui/avatar.tsx";
 import { Button } from "./components/ui/button.tsx";
-import { Card, CardContent } from "./components/ui/card.tsx";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +75,8 @@ import {
   InputGroupInput,
   InputGroupText,
 } from "./components/ui/input-group.tsx";
+import { Input } from "./components/ui/input.tsx";
+import { Textarea } from "./components/ui/textarea.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { ReuiAppShell } from "./components/examples/c-sidebar-1.tsx";
@@ -232,6 +236,7 @@ type AppOutletContext = {
   verifyCreate: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   connect: () => Promise<void>;
   refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
+  refreshNewDemands: () => Promise<void>;
   walletStatus: ReownStatus;
 };
 
@@ -243,6 +248,7 @@ export default function App() {
   const [board, setBoard] = useState<DemandView[]>([]);
   const boardRef = useRef(board);
   boardRef.current = board;
+  const marketPollInFlightRef = useRef(false);
   const [boardLoading, setBoardLoading] = useState(true);
   const [walletKit, setWalletKit] = useState<AppKit | null>(null);
   const [walletModuleLoaded, setWalletModuleLoaded] = useState(false);
@@ -423,6 +429,31 @@ export default function App() {
   const refreshBoardForCreate = useCallback(async (): Promise<readonly DemandReadbackMatch[] | null> => {
     return await refresh() ? boardRef.current : null;
   }, [refresh]);
+
+  const refreshNewDemands = useCallback(async (): Promise<void> => {
+    if (!DEMAND_CONTRACT || marketPollInFlightRef.current) return;
+    marketPollInFlightRef.current = true;
+    try {
+      const lastSeenDemandId = boardRef.current.reduce(
+        (latest, demand) => demand.demandId > latest ? demand.demandId : latest,
+        0n,
+      );
+      const newDemands = await readNewDemandsAfter(lastSeenDemandId);
+      if (newDemands.length > 0) {
+        const demandsById = new Map(boardRef.current.map((demand) => [demand.demandId.toString(), demand]));
+        for (const demand of newDemands) demandsById.set(demand.demandId.toString(), demand);
+        const latestBoard = sortDemandsByFunding([...demandsById.values()]);
+        boardRef.current = latestBoard;
+        setBoard(latestBoard);
+      }
+      setReadStatus((current) => current.boardError ? settleBoardRead(current, { kind: "success" }) : current);
+    } catch (error) {
+      const message = errorMessage(error);
+      setReadStatus((current) => current.boardError === message ? current : settleBoardRead(current, { kind: "error", message }));
+    } finally {
+      marketPollInFlightRef.current = false;
+    }
+  }, []);
 
   const syncWallet = useCallback((kit: AppKit | null = walletKit) => {
     if (kit) {
@@ -790,6 +821,7 @@ export default function App() {
     verifyCreate,
     connect,
     refreshBoard: refreshBoardForCreate,
+    refreshNewDemands,
     walletStatus,
   };
 
@@ -811,7 +843,7 @@ export default function App() {
           void Promise.all([boardReadback, supportReadback]);
         }}
       >
-        <div className={activeRoute === "create-demand" ? "legacy-content create-demand-content" : "legacy-content"}>
+        <div className={"legacy-content" + (activeRoute === "create-demand" ? " create-demand-content" : "") + (routeIsDetail ? " demand-detail-content" : "")}>
           <a className="skip-link" href="#workspace">{activeRoute === "create-demand" ? "Skip to Create Demand" : "Skip to Market Requests"}</a>
           <div className="status-stack">
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}.</div>}
@@ -826,7 +858,7 @@ export default function App() {
                 <button className="ghost" type="button" disabled={busy || !chainOk} onClick={() => void verifyPendingTransaction(record)}>Verify existing transaction</button>
               </div>
             ))}
-            {supportError && <div role="alert" aria-live="polite" className="status-line err">{supportError}</div>}
+            {supportError && !routeIsDetail && <div role="alert" aria-live="polite" className="status-line err">{supportError}</div>}
             {boardError && <div role="alert" aria-live="polite" className="status-line err">{boardError}</div>}
             {status && <div role="status" aria-live="polite" className={"status-line " + (status.includes("FAILED") ? "err" : status.includes("success") || status.includes("confirmed") ? "ok" : transactionState === "reverted" || transactionState === "cancelled" || transactionState === "unknown" ? "err" : status.includes("pending") || transactionState === "broadcast" ? "" : "err")}>{status}</div>}
             {lastTx && account?.toLowerCase() === lastTxWallet && <div className="status-line">tx <a href={explorerTx(lastTx)} target="_blank" rel="noreferrer"><code>{lastTx}</code></a></div>}
@@ -843,12 +875,31 @@ export default function App() {
 }
 
 export function MarketRoute() {
-  const { board, boardLoading, boardLoadError, selectedId } = useOutletContext<AppOutletContext>();
+  const { board, boardLoading, boardLoadError, selectedId, busy, refreshNewDemands } = useOutletContext<AppOutletContext>();
+  const pollStateRef = useRef({ boardLoading, busy });
+  useEffect(() => {
+    pollStateRef.current = { boardLoading, busy };
+  }, [boardLoading, busy]);
+  useEffect(() => {
+    const poll = () => {
+      if (
+        document.visibilityState === "visible" &&
+        !pollStateRef.current.boardLoading &&
+        !pollStateRef.current.busy
+      ) {
+        void refreshNewDemands();
+      }
+    };
+    const interval = window.setInterval(poll, 60_000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [refreshNewDemands]);
   return (
     <DemandBoard
       board={board}
-      loading={boardLoading}
-      loadError={boardLoadError}
+      loading={boardLoading && board.length === 0}
+      loadError={boardLoadError && board.length === 0}
       selectedId={selectedId}
       contractConfigured={Boolean(DEMAND_CONTRACT)}
       detailFrom={ROUTES.market.href}
@@ -948,21 +999,33 @@ export function DemandDetailRoute() {
             : "Could not read this market request from X Layer. Check the connection and retry.";
 
     return (
-      <section className="panel detail demand-page" aria-labelledby="demand-load-heading">
-        <div className="detail-title">
-          <h2 id="demand-load-heading" tabIndex={-1}>
-            {detail.kind === "loading" ? "Loading Market Request" : "Market Request Unavailable"}
-          </h2>
-          <button className="ghost" onClick={close}>
-            {returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
-          </button>
-        </div>
-        <p className="empty" role={detail.kind === "loading" ? "status" : "alert"}>{message}</p>
-        {detail.kind === "error" && (
-          <div className="actions">
-            <button className="primary" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+      <section className="panel demand-page demand-detail-state" aria-labelledby="demand-load-heading">
+        <header className="demand-detail-header">
+          <div className="demand-detail-heading-group">
+            <p className="demand-detail-kicker">Market Request</p>
+            <h1 id="demand-load-heading" className="demand-detail-heading" tabIndex={-1}>
+              {detail.kind === "loading" ? "Loading Market Request" : "Market Request Unavailable"}
+            </h1>
           </div>
-        )}
+          <Button type="button" variant="outline" className="demand-detail-action" onClick={close}>
+            {returnTo === ROUTES.myActivity.href ? "Back to My Activity" : "Back to Market Requests"}
+          </Button>
+        </header>
+        <Card className="demand-detail-card">
+          <CardContent className="demand-detail-state-content">
+            {detail.kind === "loading" && (
+              <div className="demand-detail-loading" aria-hidden="true">
+                <Skeleton className="demand-detail-skeleton demand-detail-skeleton-title" />
+                <Skeleton className="demand-detail-skeleton" />
+                <Skeleton className="demand-detail-skeleton demand-detail-skeleton-short" />
+              </div>
+            )}
+            <p className="demand-detail-state-message" role={detail.kind === "loading" ? "status" : "alert"}>{message}</p>
+            {detail.kind === "error" && (
+              <Button type="button" className="demand-detail-action" onClick={() => setAttempt((value) => value + 1)}>Retry</Button>
+            )}
+          </CardContent>
+        </Card>
       </section>
     );
   }
@@ -1274,17 +1337,11 @@ function DemandDetail({
   blockedActionIds: string[];
 }) {
   const panelRef = useRef<HTMLElement>(null);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [activeView, setActiveView] = useState<"overview" | "fund" | "build-review">("overview");
   const [supportAmount, setSupportAmount] = useState("0.05");
   const [supportCalls, setSupportCalls] = useState("1000");
   const [serviceUrl, setServiceUrl] = useState("");
   const [evidence, setEvidence] = useState("");
-  const views = [
-    { id: "overview", label: "Request Details" },
-    { id: "fund", label: "Escrow & Support" },
-    { id: "build-review", label: "Builder Proposal" },
-  ] as const;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("keydown", onKeyDown);
@@ -1292,7 +1349,7 @@ function DemandDetail({
   }, [close]);
   useEffect(() => {
     const panel = panelRef.current;
-    panel?.querySelector<HTMLHeadingElement>("h2")?.focus({ preventScroll: true });
+    panel?.querySelector<HTMLHeadingElement>("h1")?.focus({ preventScroll: true });
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !panel) return;
     const animation = animate(panel, { opacity: [0.6, 1], translateX: [12, 0], duration: 240, ease: "out(3)" });
     return () => { animation.revert(); };
@@ -1307,157 +1364,197 @@ function DemandDetail({
   const rejectionPercent = demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number((demand.rejectionWeight * 10_000n) / demand.rejectionThreshold) / 100);
   const actionBlocked = (action: string) => blockedActionIds.includes(`${action}:${demand.demandId.toString()}`);
 
-  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    const nextIndex = (index + (event.key === "ArrowRight" ? 1 : views.length - 1)) % views.length;
-    setActiveView(views[nextIndex].id);
-    tabRefs.current[nextIndex]?.focus();
-  }
-
   return (
-    <section ref={panelRef} className="panel detail demand-page" aria-label="Market Request details">
-      <div className="detail-title">
-        <div>
-          <h2 tabIndex={-1}><span className="demand-id">Market Request #{demand.demandId.toString()}</span>{demand.capability}</h2>
-          <p className="workflow-summary">A market need backed by real escrow.</p>
+    <section ref={panelRef} className="panel demand-page" aria-labelledby="demand-detail-heading">
+      <header className="demand-detail-header">
+        <div className="demand-detail-heading-group">
+          <p className="demand-detail-kicker">Market Request #{demand.demandId.toString()}</p>
+          <h1 id="demand-detail-heading" className="demand-detail-heading" tabIndex={-1}>{demand.capability}</h1>
+          <p className="demand-detail-summary">A market need backed by real escrow.</p>
         </div>
-        <button className="ghost" onClick={close}>{closeLabel}</button>
-      </div>
-      <div className="detail-tabs" role="tablist" aria-label="Market Request sections">
-        {views.map((view, index) => (
-          <button
-            key={view.id}
-            ref={(element) => { tabRefs.current[index] = element; }}
-            id={`demand-tab-${view.id}`}
-            className={`nav-item ${activeView === view.id ? "active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeView === view.id}
-            aria-controls={`demand-panel-${view.id}`}
-            tabIndex={activeView === view.id ? 0 : -1}
-            onClick={() => setActiveView(view.id)}
-            onKeyDown={(event) => handleTabKeyDown(event, index)}
-          >{view.label}</button>
-        ))}
-      </div>
-      <div className="demand-tab-panels">
-        <div id="demand-panel-overview" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-overview" tabIndex={0} hidden={activeView !== "overview"}>
-          <section className="action-block" aria-labelledby="request-heading">
-            <h3 id="request-heading">What is needed</h3>
-            <dl>
-              <dt>Capability</dt><dd>{demand.capability}</dd>
-              <dt>Specification</dt><dd>{demand.specification}</dd>
-              <dt>Creator</dt><dd>{demand.creator}</dd>
-              <dt>Deadline</dt><dd>{iso(demand.deadline)}</dd>
-            </dl>
-          </section>
-          <section className="action-block" aria-labelledby="market-heading">
-            <h3 id="market-heading">Market</h3>
-            <dl>
-              <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
-              <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
-              <dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd>
-              <dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} USD₮0</dd>
-              <dt>Status</dt><dd>{state}</dd>
-            </dl>
-          </section>
+        <div className="demand-detail-header-actions">
+          <Badge className="market-status-badge demand-detail-status" data-status={state} variant="secondary" size="lg">{state}</Badge>
+          <Button type="button" variant="outline" className="demand-detail-action" onClick={close}>{closeLabel}</Button>
         </div>
-        <div id="demand-panel-fund" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-fund" tabIndex={0} hidden={activeView !== "fund"}>
-          <section className="action-block" aria-labelledby="escrow-heading">
-            <h3 id="escrow-heading">Market backing</h3>
-            <dl>
-              <dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} USD₮0</dd>
-              <dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd>
-              <dt>Your commitment</dt><dd>{account ? `${formatUsd0(support.commitment)} USD₮0` : "connect wallet"}</dd>
-              {account && supportState === "loading" && <><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></>}
-              {account && supportState === "error" && <><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></>}
-            </dl>
+      </header>
+
+      <Tabs
+        value={activeView}
+        onValueChange={(next) => {
+          if (next === "overview" || next === "fund" || next === "build-review") setActiveView(next);
+        }}
+        className="demand-detail-tabs"
+      >
+        <TabsList variant="line" aria-label="Market Request sections">
+          <TabsTrigger value="overview">Request Details</TabsTrigger>
+          <TabsTrigger value="fund">Escrow &amp; Support</TabsTrigger>
+          <TabsTrigger value="build-review">Builder Proposal</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="demand-detail-tab-panel">
+          <div className="demand-detail-content-grid">
+            <Card className="demand-detail-card">
+              <CardHeader className="demand-detail-card-header">
+                <CardTitle className="demand-detail-section-title">What is needed</CardTitle>
+                <CardDescription className="demand-detail-card-description">Details provided by the request creator.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <dl className="demand-detail-facts">
+                  <div><dt>Capability</dt><dd>{demand.capability}</dd></div>
+                  <div><dt>Specification</dt><dd>{demand.specification}</dd></div>
+                  <div><dt>Creator</dt><dd>{demand.creator}</dd></div>
+                  <div><dt>Deadline</dt><dd>{iso(demand.deadline)}</dd></div>
+                </dl>
+              </CardContent>
+            </Card>
+            <Card className="demand-detail-card">
+              <CardHeader className="demand-detail-card-header">
+                <CardTitle className="demand-detail-section-title">Market backing</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="demand-detail-facts">
+                  <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} <span>USD₮0</span></dd></div>
+                  <div><dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd></div>
+                  <div><dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd></div>
+                  <div><dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} <span>USD₮0</span></dd></div>
+                  <div><dt>Status</dt><dd><Badge className="market-status-badge demand-detail-status" data-status={state} variant="secondary" size="lg">{state}</Badge></dd></div>
+                </dl>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="fund" className="demand-detail-tab-panel">
+          <div className="demand-detail-content-grid">
+            <Card className="demand-detail-card">
+              <CardHeader className="demand-detail-card-header">
+                <CardTitle className="demand-detail-section-title">Market backing</CardTitle>
+                <CardDescription className="demand-detail-card-description">Current escrow and wallet-specific support.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <dl className="demand-detail-facts">
+                  <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} <span>USD₮0</span></dd></div>
+                  <div><dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd></div>
+                  <div><dt>Your commitment</dt><dd>{account ? <>{formatUsd0(support.commitment)} <span>USD₮0</span></> : "connect wallet"}</dd></div>
+                  {account && supportState === "loading" && <div><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></div>}
+                  {account && supportState === "error" && <div><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding.</dd></div>}
+                </dl>
+              </CardContent>
+            </Card>
             {state === "OPEN" && (
-              <div className="action-block">
-                <h3>Support this request</h3>
-                <label>Amount (USD₮0)<input value={supportAmount} onChange={(e) => setSupportAmount(e.target.value)} /></label>
-                <label>Expected calls<input value={supportCalls} onChange={(e) => setSupportCalls(e.target.value)} /></label>
-                <button className="primary" disabled={busy || !account || actionBlocked("support")} onClick={() => void run("support", `support:${demand.demandId}`, (onUpdate) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate))}>Support This Request</button>
-              </div>
+              <Card className="demand-detail-card">
+                <CardHeader className="demand-detail-card-header">
+                  <CardTitle className="demand-detail-section-title">Support this request</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="demand-detail-form">
+                    <label htmlFor="demand-support-amount">Amount (USD₮0)
+                      <Input id="demand-support-amount" value={supportAmount} onChange={(event) => setSupportAmount(event.currentTarget.value)} className="demand-detail-input" />
+                    </label>
+                    <label htmlFor="demand-support-calls">Expected calls
+                      <Input id="demand-support-calls" value={supportCalls} onChange={(event) => setSupportCalls(event.currentTarget.value)} className="demand-detail-input" />
+                    </label>
+                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("support")} onClick={() => void run("support", `support:${demand.demandId}`, (onUpdate) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate))}>Support This Request</Button>
+                  </div>
+                </CardContent>
+              </Card>
             )}
             {supportState === "ready" && support.refundable && (
-              <div className="actions"><button className="danger" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate) => refundDemand(demand.demandId, onUpdate))}>Refund {formatUsd0(support.commitment)} USD₮0</button></div>
+              <Card className="demand-detail-card">
+                <CardHeader className="demand-detail-card-header">
+                  <CardTitle className="demand-detail-section-title">Refund</CardTitle>
+                  <CardDescription className="demand-detail-card-description">Your eligible commitment can be returned.</CardDescription>
+                </CardHeader>
+                <CardContent className="demand-detail-actions">
+                  <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate) => refundDemand(demand.demandId, onUpdate))}>Refund {formatUsd0(support.commitment)} USD₮0</Button>
+                </CardContent>
+              </Card>
             )}
-          </section>
-        </div>
-        <div id="demand-panel-build-review" className="demand-tab-panel" role="tabpanel" aria-labelledby="demand-tab-build-review" tabIndex={0} hidden={activeView !== "build-review"}>
-          <section className="action-block" aria-labelledby="builder-proposal-heading">
-            <h3 id="builder-proposal-heading">Builder Proposal</h3>
-            {!hasProposal && state === "OPEN" && <p className="workflow-summary">Built a solution? Submit the service here.</p>}
-          </section>
-          {hasProposal ? (
-            <section className="action-block" aria-labelledby="proposal-heading">
-              <h3 id="proposal-heading">Current proposal</h3>
-              <dl>
-                <dt>Builder</dt><dd>{demand.builder}</dd>
-                <dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl}</dd>
-                <dt>Evidence</dt><dd>{demand.evidenceHash}</dd>
-              </dl>
-            </section>
-          ) : state === "OPEN" ? (
-            <section className="action-block" aria-labelledby="submit-service-heading">
-              <h3 id="submit-service-heading">Submit a service</h3>
-              <div className="action-block">
-                <label>Service URL<input value={serviceUrl} onChange={(e) => setServiceUrl(e.target.value)} placeholder="https://service.example/api" /></label>
-                <label htmlFor="proposal-evidence">Evidence</label>
-                <textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(e) => setEvidence(e.target.value)} />
-                <p className="workflow-summary" id="proposal-evidence-help">Proof that the service fulfills this request.</p>
-                <button className="primary" disabled={busy || !account || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate) => submitService(demand.demandId, serviceUrl, evidence, onUpdate))}>Submit Service Proposal</button>
-              </div>
-            </section>
-          ) : null}
-          {demand.status === 1 && (
-            <section className="action-block" aria-labelledby="review-heading">
-              <h3 id="review-heading">Review</h3>
-              <dl>
-                <dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} USD₮0</dd>
-                <dt>Review end</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd>
-                <dt>Approval progress</dt>
-                <dd>
-                  {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} USD₮0
-                  <div className="progress"><span style={{ width: `${percent}%` }} /></div>
-                  <span className="muted">Only approver funds settle.</span>
-                </dd>
-                <dt>Rejection progress</dt>
-                <dd>{formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} USD₮0<div className="progress rejection"><span style={{ width: `${rejectionPercent}%` }} /></div></dd>
-              </dl>
-              <div className="actions actions-column">
-                {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
-                  <>
-                    <button className="primary" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}`, (onUpdate) => approveService(demand.demandId, onUpdate))}>Approve Proposal</button>
-                    <button className="danger" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}`, (onUpdate) => rejectService(demand.demandId, onUpdate))}>Reject Proposal</button>
-                  </>
-                )}
-                {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
-                {supportState === "ready" && support.rejected && <span className="status-line err">Proposal rejected.</span>}
-              </div>
-            </section>
-          )}
-          {(demand.status === 1 && demand.quorumReached || canReopen) && (
-            <section className="action-block" aria-labelledby="settlement-heading">
-              <h3 id="settlement-heading">Settlement</h3>
-              <div className="actions actions-column">
-                {demand.status === 1 && demand.quorumReached && (
-                  <button className="primary" disabled={busy || actionBlocked("finalize")} onClick={() => void run("finalize", `finalize:${demand.demandId}`, (onUpdate) => finalizeDemand(demand.demandId, onUpdate))}>Finalize Payout</button>
-                )}
-                {canReopen && (
-                  <button className="ghost" disabled={busy || !account || actionBlocked("reopen")} onClick={() => void run("reopen", `reopen:${demand.demandId}`, (onUpdate) => reopenDemand(demand.demandId, onUpdate))}>Reopen Demand</button>
-                )}
-              </div>
-            </section>
-          )}
-        </div>
-      </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="build-review" className="demand-detail-tab-panel">
+          <div className="demand-detail-content-grid">
+            <Card className="demand-detail-card">
+              <CardHeader className="demand-detail-card-header">
+                <CardTitle className="demand-detail-section-title">Builder Proposal</CardTitle>
+                {!hasProposal && state === "OPEN" && <CardDescription className="demand-detail-card-description">Built a solution? Submit the service here.</CardDescription>}
+              </CardHeader>
+              {hasProposal ? (
+                <CardContent>
+                  <dl className="demand-detail-facts">
+                    <div><dt>Builder</dt><dd>{demand.builder}</dd></div>
+                    <div><dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl}</dd></div>
+                    <div><dt>Evidence</dt><dd>{demand.evidenceHash}</dd></div>
+                  </dl>
+                </CardContent>
+              ) : state === "OPEN" ? (
+                <CardContent>
+                  <div className="demand-detail-form">
+                    <label htmlFor="proposal-service-url">Service URL
+                      <Input id="proposal-service-url" value={serviceUrl} onChange={(event) => setServiceUrl(event.currentTarget.value)} placeholder="https://service.example/api" className="demand-detail-input" />
+                    </label>
+                    <label htmlFor="proposal-evidence">Evidence</label>
+                    <Textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(event) => setEvidence(event.currentTarget.value)} className="demand-detail-input" />
+                    <p className="demand-detail-help" id="proposal-evidence-help">Proof that the service fulfills this request.</p>
+                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate) => submitService(demand.demandId, serviceUrl, evidence, onUpdate))}>Submit Service Proposal</Button>
+                  </div>
+                </CardContent>
+              ) : null}
+            </Card>
+            {demand.status === 1 && (
+              <Card className="demand-detail-card">
+                <CardHeader className="demand-detail-card-header">
+                  <CardTitle className="demand-detail-section-title">Review</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="demand-detail-facts">
+                    <div><dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} <span>USD₮0</span></dd></div>
+                    <div><dt>Review end</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd></div>
+                    <div><dt>Approval progress</dt><dd>
+                      {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} <span>USD₮0</span>
+                      <div className="demand-detail-progress" role="progressbar" aria-label="Approval progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: percent + "%" }} /></div>
+                      <span className="demand-detail-muted">Only approver funds settle.</span>
+                    </dd></div>
+                    <div><dt>Rejection progress</dt><dd>
+                      {formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} <span>USD₮0</span>
+                      <div className="demand-detail-progress rejection" role="progressbar" aria-label="Rejection progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rejectionPercent}><span style={{ width: rejectionPercent + "%" }} /></div>
+                    </dd></div>
+                  </dl>
+                  <div className="demand-detail-actions">
+                    {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
+                      <>
+                        <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}`, (onUpdate) => approveService(demand.demandId, onUpdate))}>Approve Proposal</Button>
+                        <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}`, (onUpdate) => rejectService(demand.demandId, onUpdate))}>Reject Proposal</Button>
+                      </>
+                    )}
+                    {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement.</span>}
+                    {supportState === "ready" && support.rejected && <span className="status-line err">Proposal rejected.</span>}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {(demand.status === 1 && demand.quorumReached || canReopen) && (
+              <Card className="demand-detail-card">
+                <CardHeader className="demand-detail-card-header">
+                  <CardTitle className="demand-detail-section-title">Settlement</CardTitle>
+                </CardHeader>
+                <CardContent className="demand-detail-actions">
+                  {demand.status === 1 && demand.quorumReached && (
+                    <Button type="button" className="demand-detail-action" disabled={busy || actionBlocked("finalize")} onClick={() => void run("finalize", `finalize:${demand.demandId}`, (onUpdate) => finalizeDemand(demand.demandId, onUpdate))}>Finalize Payout</Button>
+                  )}
+                  {canReopen && (
+                    <Button type="button" variant="outline" className="demand-detail-action" disabled={busy || !account || actionBlocked("reopen")} onClick={() => void run("reopen", `reopen:${demand.demandId}`, (onUpdate) => reopenDemand(demand.demandId, onUpdate))}>Reopen Demand</Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </section>
   );
 }
-
 
 function safeHttpsUrl(value: string): string | null {
   if (!value) return null;

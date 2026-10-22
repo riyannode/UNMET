@@ -304,6 +304,10 @@ export async function readDemandOnChain(demandId: bigint): Promise<DemandView> {
   return readDemandWithClient(getPublic(), demandId);
 }
 
+export function sortDemandsByFunding(output: DemandView[]): DemandView[] {
+  return output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
+}
+
 export async function readBoard(): Promise<DemandView[]> {
   if (!DEMAND_CONTRACT) return [];
   const client = getPublic();
@@ -314,8 +318,20 @@ export async function readBoard(): Promise<DemandView[]> {
   for (let i = 0; i < ids.length; i += 20) {
     output.push(...await Promise.all(ids.slice(i, i + 20).map((id) => readDemandWithClient(client, id))));
   }
-  output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
-  return output;
+  return sortDemandsByFunding(output);
+}
+
+export async function readNewDemandsAfter(lastSeenDemandId: bigint): Promise<DemandView[]> {
+  if (!DEMAND_CONTRACT) return [];
+  const client = getPublic();
+  const next = await client.readContract({ address: DEMAND_CONTRACT, abi: DEMAND_ABI, functionName: "nextDemandId" }) as bigint;
+  const ids: bigint[] = [];
+  for (let id = lastSeenDemandId + 1n; id < next; id += 1n) ids.push(id);
+  const output: DemandView[] = [];
+  for (let i = 0; i < ids.length; i += 20) {
+    output.push(...await Promise.all(ids.slice(i, i + 20).map((id) => readDemandWithClient(client, id))));
+  }
+  return sortDemandsByFunding(output);
 }
 
 export async function readSupport(demandId: bigint, supporter: Address): Promise<SupportView> {
