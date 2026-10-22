@@ -11,6 +11,7 @@ import {
 } from "react-router";
 import { getAddress, isAddress, type Address, type Hash } from "viem";
 import type { AppKit } from "@reown/appkit/react";
+import { ArrowUpDown, ChevronDown, CircleCheck, CircleHelp, CircleX, Clock3, MoreVertical, Search } from "lucide-react";
 import {
   CHAIN_ID,
   DEMAND_CONTRACT,
@@ -38,11 +39,42 @@ import {
 } from "./contract.ts";
 import {
   afterConfirmedTransaction,
+  deriveMarketRequests,
   readSupportForIdentity,
   settleBoardRead,
   settleSupportRead,
+  type MarketSort,
   type SupportReadResult,
 } from "./app-state.ts";
+import { Badge } from "./components/reui/badge.tsx";
+import { AvatarGroup, AvatarGroupCount } from "./components/ui/avatar.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent } from "./components/ui/card.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu.tsx";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "./components/ui/empty.tsx";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "./components/ui/input-group.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { ReuiAppShell } from "./components/examples/c-sidebar-1.tsx";
 import { CreateDemandChat, type CreateDemandRunOutcome, type CreateDemandTransactionOutcome } from "./CreateDemandChat";
 import { normalizeCapability } from "./capability";
@@ -84,6 +116,13 @@ type VerifyPendingHandler = {
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
+const MARKET_STATUSES = ["OPEN", "SUBMITTED", "READY", "EXPIRED", "REJECTED", "FULFILLED", "CLOSED"] as const;
+const MARKET_SORTS = [
+  { value: "most-funded", label: "Most Funded" },
+  { value: "least-funded", label: "Least Funded" },
+  { value: "latest-id", label: "Latest Request ID" },
+  { value: "earliest-id", label: "Earliest Request ID" },
+] as const satisfies readonly { value: MarketSort; label: string }[];
 type TransactionPersistenceState = {
   records: PendingTransactionRecord[];
   legacy: LegacyPendingCreate | null;
@@ -703,9 +742,9 @@ export default function App() {
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const rows = workspaceRef.current?.querySelectorAll(".demand-row");
-    if (!rows?.length) return;
-    const animation = animate(Array.from(rows).slice(0, 8), { opacity: [0.5, 1], translateY: [6, 0], duration: 280, delay: stagger(24), ease: "out(3)" });
+    const cards = workspaceRef.current?.querySelectorAll(".market-card");
+    if (!cards?.length) return;
+    const animation = animate(Array.from(cards).slice(0, 8), { opacity: [0.5, 1], translateY: [6, 0], duration: 280, delay: stagger(24), ease: "out(3)" });
     return () => { animation.revert(); };
   }, [location.pathname, boardLoading]);
 
@@ -950,23 +989,160 @@ function demandReturnPath(state: unknown): string {
 }
 
 function DemandBoard({ board, loading, loadError, selectedId, contractConfigured, detailFrom }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; contractConfigured: boolean; detailFrom: string }) {
+  const [search, setSearch] = useState("");
+  const [activeStatus, setActiveStatus] = useState("ALL");
+  const [sort, setSort] = useState<MarketSort>("most-funded");
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const { requests, statusCounts } = useMemo(
+    () => deriveMarketRequests(board, { search, status: activeStatus, sort }, (demand) => effectiveStatus(demand, now)),
+    [activeStatus, board, now, search, sort],
+  );
+  const statusOptions = [
+    { value: "ALL", label: "All" },
+    ...MARKET_STATUSES.map((value) => ({ value, label: value })),
+    ...(statusCounts.has("UNKNOWN") || activeStatus === "UNKNOWN" ? [{ value: "UNKNOWN", label: "UNKNOWN" }] : []),
+  ];
+  const sortLabel = MARKET_SORTS.find((option) => option.value === sort)?.label ?? "Most Funded";
+
   return (
     <section className="panel market-panel">
-      <div className="board-title"><div><h1>What the market needs<span className="count">{loading || loadError || !contractConfigured ? "—" : board.length}</span></h1><p className="workflow-summary">Requests backed by real escrow.</p></div><span className="unit">USD₮0</span></div>
-      {loading ? <div className="empty" role="status">Loading market requests…</div>
-        : !contractConfigured ? <div className="empty error" role="alert">Market data is unavailable because the demand contract is not configured.</div>
-        : loadError ? <div className="empty error" role="alert">Could not load market requests. Refresh to try again.</div>
-        : board.length === 0 ? <div className="empty">No funded market requests yet.</div>
-        : <DemandTable board={board} selectedId={selectedId} detailFrom={detailFrom} />}
+      <div className="board-title market-heading">
+        <div>
+          <h1>What the market needs<span className="count">{loading || loadError || !contractConfigured ? "—" : board.length}</span></h1>
+          <p className="workflow-summary">Requests backed by real escrow.</p>
+        </div>
+        <span className="unit">USD₮0</span>
+      </div>
+      {loading ? (
+        <div className="market-loading">
+          <p role="status">Loading market requests…</p>
+          <div className="market-skeleton-grid" aria-hidden="true">
+            {[0, 1, 2].map((item) => (
+              <Card className="market-skeleton-card" key={item}>
+                <CardContent className="market-skeleton-content">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-7 w-3/4" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ) : !contractConfigured ? (
+        <div className="market-state market-state-error" role="alert">Market data is unavailable because the demand contract is not configured.</div>
+      ) : loadError ? (
+        <div className="market-state market-state-error" role="alert">Could not load market requests. Use the refresh button to try again.</div>
+      ) : board.length === 0 ? (
+        <div className="market-state market-state-zero">No funded market requests yet.</div>
+      ) : (
+        <>
+          <div className="market-toolbar">
+            <div className="market-search">
+              <label className="market-control-label" htmlFor="market-request-search">Search capabilities or ID</label>
+              <InputGroup className="market-search-group">
+                <InputGroupAddon>
+                  <Search aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="market-request-search"
+                  type="search"
+                  aria-label="Search capabilities or ID"
+                  placeholder="Search capabilities or ID"
+                  value={search}
+                  onChange={(event) => setSearch(event.currentTarget.value)}
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText className="market-search-count">{requests.length} results</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
+            <div className="market-sort-control">
+              <span className="market-control-label" id="market-sort-label">Sort by</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="market-sort-trigger"
+                    aria-label={`Sort requests. Current order: ${sortLabel}`}
+                  />
+                }>
+                  <ArrowUpDown aria-hidden="true" />
+                  <span>{sortLabel}</span>
+                  <ChevronDown aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="market-sort-menu">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Sort requests</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={sort}
+                      onValueChange={(value) => {
+                        const selectedSort = MARKET_SORTS.find((option) => option.value === value);
+                        if (selectedSort) setSort(selectedSort.value);
+                      }}
+                    >
+                      {MARKET_SORTS.map((option) => (
+                        <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          <Tabs
+            className="market-tabs flex-col w-full"
+            value={activeStatus}
+            onValueChange={(value) => {
+              if (statusOptions.some((option) => option.value === value)) setActiveStatus(value);
+            }}
+          >
+            <TabsList variant="line" className="market-status-tabs" aria-label="Filter requests by status">
+              {statusOptions.map((option) => (
+                <TabsTrigger key={option.value} value={option.value} className="market-status-tab">
+                  {option.label}
+                  <Badge variant={activeStatus === option.value ? "primary-light" : "secondary"}>
+                    {option.value === "ALL" ? board.length : statusCounts.get(option.value) ?? 0}
+                  </Badge>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent value={activeStatus} className="market-results">
+              <p className="market-result-summary">Showing {requests.length} of {board.length} requests</p>
+              {requests.length === 0 ? (
+                <Empty className="market-no-results">
+                  <EmptyHeader>
+                    <EmptyTitle>No matching requests</EmptyTitle>
+                    <EmptyDescription>Try another search or status.</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button variant="outline" type="button" onClick={() => { setSearch(""); setActiveStatus("ALL"); }}>
+                      Clear filters
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              ) : (
+                <ul className="market-grid" aria-label="Market requests">
+                  {requests.map((demand) => (
+                    <DemandCard
+                      key={demand.demandId.toString()}
+                      demand={demand}
+                      selected={selectedId === demand.demandId}
+                      detailFrom={detailFrom}
+                      now={now}
+                    />
+                  ))}
+                </ul>
+              )}
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
     </section>
   );
-}
-
-function DemandTable({ board, selectedId, detailFrom }: { board: DemandView[]; selectedId: bigint | null; detailFrom: string }) {
-  return <table className="demand-table">
-    <thead><tr><th>Capability</th><th>Escrow</th><th>Expected calls</th><th>Wallets</th><th>Max / call</th><th>Status</th></tr></thead>
-    <tbody>{board.map((demand) => <DemandCard key={demand.demandId.toString()} demand={demand} selected={selectedId === demand.demandId} detailFrom={detailFrom} />)}</tbody>
-  </table>;
 }
 
 function ActivityLedger({ board, account, selectedId, detailFrom }: { board: DemandView[]; account: Address; selectedId: bigint | null; detailFrom: string }) {
@@ -989,27 +1165,98 @@ function ActivityLedger({ board, account, selectedId, detailFrom }: { board: Dem
   </ol>;
 }
 
-function DemandCard({ demand, selected, detailFrom }: { demand: DemandView; selected: boolean; detailFrom: string }) {
-  const state = effectiveStatus(demand);
+function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView; selected: boolean; detailFrom: string; now: bigint }) {
+  const [copyMessage, setCopyMessage] = useState("");
+  const state = effectiveStatus(demand, now);
+  const requestId = demand.demandId.toString();
+  const capability = demand.capability.trim() ? demand.capability : "Capability not provided";
+  const specification = demand.specification.trim() ? demand.specification : "No details provided.";
+  const StatusIcon = state === "READY" || state === "FULFILLED"
+    ? CircleCheck
+    : state === "OPEN" || state === "SUBMITTED"
+      ? Clock3
+      : state === "EXPIRED" || state === "REJECTED" || state === "CLOSED"
+        ? CircleX
+        : CircleHelp;
+
+  async function copyRequestLink() {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        setCopyMessage("Clipboard access is unavailable.");
+        return;
+      }
+      await navigator.clipboard.writeText(new URL(demandHref(demand.demandId), window.location.origin).toString());
+      setCopyMessage("Request link copied.");
+    } catch {
+      setCopyMessage("Could not copy request link.");
+    }
+  }
+
   return (
-    <tr className={"demand-row " + (selected ? "selected" : "")}>
-      <td className="capability">
-        <Link
-          to={demandHref(demand.demandId)}
-          state={{ from: detailFrom }}
-          aria-label={"View Market Request #" + demand.demandId.toString() + ": " + demand.capability}
-        >
-          <span className="demand-id">#{demand.demandId.toString().padStart(3, "0")}</span>
-          <strong>{demand.capability}</strong>
-          <span className="row-open" aria-hidden="true">View</span>
-        </Link>
-      </td>
-      <td data-label="Escrow" className="number">{formatUsd0(demand.committed)}</td>
-      <td data-label="Expected calls" className="number">{demand.expectedCalls.toLocaleString("en-US")}</td>
-      <td data-label="Wallets" className="number">{demand.supporterCount}</td>
-      <td data-label="Max / call" className="number">{formatUsd0(demand.maxUnitPrice)}</td>
-      <td data-label="Status"><span className={"badge " + state}>{state}</span></td>
-    </tr>
+    <li className="market-grid-item">
+      <Card className="market-card" data-selected={selected || undefined}>
+        <CardContent className="market-card-content">
+          <div className="market-card-header">
+            <Badge variant="secondary" className="market-status-badge" data-status={state}>
+              <StatusIcon aria-hidden="true" />
+              {state}
+            </Badge>
+            <span className="market-card-id">Request #{requestId}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={
+                <Button variant="ghost" size="icon" className="market-card-menu-trigger" aria-label={`More actions for request #${requestId}`} />
+              }>
+                <MoreVertical aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="market-card-menu">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => void copyRequestLink()}>Copy link</DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="market-card-body">
+            <div className="market-card-title-row">
+              <h2 className="market-card-title">{capability}</h2>
+            </div>
+            <p className="market-card-description">{specification}</p>
+            <div className="market-card-escrow">
+              <span className="market-card-metric-label">Escrow</span>
+              <p><strong>{formatUsd0(demand.committed)}</strong><span>USD₮0</span></p>
+            </div>
+            <dl className="market-card-metrics">
+              <div>
+                <dt>Wallets</dt>
+                <dd>
+                  <AvatarGroup role="img" aria-label={`${demand.supporterCount.toLocaleString("en-US")} wallets`}>
+                    <AvatarGroupCount className="market-wallet-count" aria-hidden="true">{demand.supporterCount.toLocaleString("en-US")}</AvatarGroupCount>
+                  </AvatarGroup>
+                </dd>
+              </div>
+              <div>
+                <dt>Expected calls</dt>
+                <dd>{demand.expectedCalls.toLocaleString("en-US")}</dd>
+              </div>
+              <div>
+                <dt>Max / call</dt>
+                <dd>{formatUsd0(demand.maxUnitPrice)} <small>USD₮0</small></dd>
+              </div>
+            </dl>
+          </div>
+          <div className="market-card-footer">
+            <Button
+              variant="outline"
+              className="market-view-request"
+              render={<Link to={demandHref(demand.demandId)} state={{ from: detailFrom }} aria-label={`View request #${requestId}: ${capability}`} />}
+              nativeButton={false}
+            >
+              View Request
+            </Button>
+          </div>
+          <span className="sr-only" role="status">{copyMessage}</span>
+        </CardContent>
+      </Card>
+    </li>
   );
 }
 
