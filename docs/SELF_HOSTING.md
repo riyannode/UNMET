@@ -108,22 +108,36 @@ Validation, rate limiting and admission precede official x402. Rejected inputs r
 - Structured logs contain generated request IDs, registered method/route, status/duration and stable error codes. Application handlers omit raw bodies, payment headers, query strings and upstream exception text. The pinned official SDK lacks transport/log injection options: an async-local scope bounds its unchanged signed HTTP calls and replaces its warning/error diagnostics with a stable PAYMENT_SDK_DIAGNOSTIC record. Fetch and console calls outside that scope retain their original behavior.
 - Compose rotates JSON logs at 10 MiB, three files/container. The restart policy restarts exited containers; Docker does not automatically restart a merely unhealthy live process.
 
+The automated smoke script accepts only local HTTP origins (`localhost`, `127.0.0.1` or `[::1]`). For the default localhost configuration with HTTP_PORT=80:
+
 ~~~bash
-curl -fsS http://localhost/live
-curl -fsS http://localhost/ready
-curl -fsS http://localhost/health
-curl -fsS http://localhost/v1/demands
-curl -i -H 'Content-Type: application/json' -d '{}' http://localhost/v1/opportunities
-# Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
 BASE_URL=http://localhost bun scripts/smoke-unpaid.ts
 ~~~
 
-Refresh /docs, /market, /market/1, /create-demand, /analytics and /my-activity directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
-
-The local-only bounded probe sends **no PAYMENT-SIGNATURE**:
+For the custom local HTTP_PORT=18080 configuration above, use its actual origin instead:
 
 ~~~bash
-BASE_URL=http://localhost REQUESTS=60 CONCURRENCY=4 bun scripts/load-unpaid.ts
+BASE_URL=http://localhost:18080 bun scripts/smoke-unpaid.ts
+~~~
+
+For manual verification, choose the actual configured browser origin, including scheme and any nondefault port: for example `http://localhost:18080` locally or your configured `https://` domain publicly. Use one origin from FRONTEND_ORIGIN, not its entire comma-separated list. A public Caddy hostname requires requests to that hostname; `http://localhost` is not a substitute. The smoke/load scripts do not accept public domains or HTTPS, so use these curl checks for a separately authorized public deployment:
+
+~~~bash
+read -r -p 'Configured browser origin (no trailing slash): ' app_origin
+curl -fsS "$app_origin/live"
+curl -fsS "$app_origin/ready"
+curl -fsS "$app_origin/health"
+curl -fsS "$app_origin/v1/demands"
+curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/opportunities"
+# Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
+~~~
+
+Refresh /docs, /market, /market/1, /create-demand, /analytics and /my-activity at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
+
+The local-only bounded probe sends **no PAYMENT-SIGNATURE**. This example uses HTTP_PORT=18080; use `http://localhost` instead only for the default port 80. Do not point it at a public HTTPS origin:
+
+~~~bash
+BASE_URL=http://localhost:18080 REQUESTS=60 CONCURRENCY=4 bun scripts/load-unpaid.ts
 docker stats --no-stream
 ~~~
 
@@ -137,7 +151,7 @@ This PR deploys nothing publicly. Before separately authorized deployment:
 2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmet.example.com, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmet.example.com, replacing the example hostname.
 3. Configure real Reown origin/project, public browser RPC and private provider quotas. Review independent payment network/recipient.
 4. Rebuild/start the same stack. Public Caddy certificates require valid domain/DNS and reachable ports. The caddy_data/caddy_config volumes preserve certificate state.
-5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting. Paid settlement/replay requires separate authorization/evidence.
+5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting at the configured HTTPS origin using the [manual verification commands](#health-smoke-checks-and-logs). Paid settlement/replay requires separate authorization/evidence.
 
 Local validation changes no DNS, production certificates, Vercel environment or production configuration.
 
@@ -153,10 +167,11 @@ git switch --detach "$release_commit"
 docker compose build --pull
 docker compose up -d --no-build
 docker compose ps
-BASE_URL=http://localhost bun scripts/smoke-unpaid.ts
 ~~~
 
-Rollback: restore the previous reviewed source/config combination, set IMAGE_TAG to its retained known-good tag, then run docker compose up -d --no-build. If missing, rebuild that commit first. Public frontend settings must match its build. Recheck health and 402. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
+After update or rollback, repeat the [health and unpaid verification](#health-smoke-checks-and-logs) against the actual configured origin. Use the automated smoke script only for a local HTTP origin with its configured port; use the manual curl checks for public HTTPS.
+
+Rollback: restore the previous reviewed source/config combination, set IMAGE_TAG to its retained known-good tag, then run docker compose up -d --no-build. If missing, rebuild that commit first. Public frontend settings must match its build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
 
 Use docker compose stop for graceful stop, or docker compose down to remove this stack's containers/network. **Do not remove volumes** during update/rollback: retain certificates and private configuration. API drains for 20 seconds, then closes remaining connections and exits nonzero; Compose allows 25 seconds. Do not assume an interrupted paid request was unsettled.
 

@@ -18,4 +18,18 @@ Legacy selectors still style active demand content. A legacy-looking selector or
 
 Preserve responsive sidebar/sheet behavior, keyboard focus, semantic labels, announced transaction states, and access to every demand tab/action on narrow screens. Respect reduced-motion handling in existing animations. MagicRings and landing anime.js/framer-motion animations remain active; there is no optional GLB scene setting.
 
+## Responsive acceptance
+
+- Check desktop layouts at 1440px and 1920px, tablet, and mobile at 320–430px. Prevent page-level horizontal overflow at 320px; wrap or truncate long capabilities and addresses within their cells.
+- Preserve the responsive sidebar/sheet navigation and stack fields or controls where needed on narrow screens. Keep all demand tabs, actions and explorer links reachable, and retain visible labels for market values in mobile rows.
+- Maintain 44px minimum touch targets for main navigation and mobile actions. State, error and recovery information must remain readable without relying on hover.
+
+## Accessibility acceptance
+
+Retain WCAG 2.2 AA as an acceptance target, not a claim of verified compliance. Normal body text and control labels should have at least 4.5:1 contrast. Keep visible keyboard focus, semantic headings/tables, persistent field labels, accessible button names, live status announcements, keyboard-operable navigation/actions and a skip link. Communicate status with text as well as color.
+
+Decorative backgrounds must not capture pointer or keyboard input. Reduced-motion mode must suppress ornamental motion while preserving usable state feedback; animations must not delay controls or imply invented market activity.
+
+Acceptance checks should cover keyboard-only navigation, focus visibility, contrast, field labels and announced loading/error/transaction states on desktop and mobile. These rules preserve the earlier accessibility/mobile requirements without restoring its obsolete renderer, theme or layout.
+
 Frontend changes should verify desktop and mobile layout, keyboard access, loading/error/empty states and wallet receipt/recovery behavior. The [contributor guide](../CONTRIBUTING.md) lists automated tests and the real React session-race fixture. Visual checks alone do not prove signing or production wallet acceptance.

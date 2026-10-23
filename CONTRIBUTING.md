@@ -2,7 +2,9 @@
 
 ## Tools and installation
 
-Work in Ubuntu WSL2 on its native Linux filesystem, for example `/home/acer/projects/UNMET`, not `/mnt/c`. Use Bun `1.4.2` (manifest and Docker version), Git, Foundry/Forge (verified version `1.8.3`), and Docker Engine with Compose for container checks. Foundry selects Solidity `0.8.37` from `backend/foundry.toml`. Bun `1.4.3` also passed the cleanup checks.
+Use Bun `1.4.2` (manifest and Docker version), Git, Foundry/Forge (verified version `1.8.3`), and Docker Engine with Compose for container checks. Foundry selects Solidity `0.8.37` from `backend/foundry.toml`. Bun `1.4.3` also passed the cleanup checks.
+
+Ubuntu WSL2 is the verified Windows development environment. On Windows, keep the checkout in WSL's native Linux filesystem, for example `~/projects/UNMET`, rather than `/mnt/c`. The commands below use a POSIX shell; WSL2 is not a requirement for every operating system. Other platform setups were not verified by the recorded cleanup checks.
 
 From the repository root:
 
