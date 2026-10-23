@@ -47,23 +47,41 @@
   user-select: none;
 }
 
+.unmet-docs-page {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #fff;
+  color: #192800;
+  font-family: "Inter Tight", sans-serif;
+  isolation: isolate;
+  user-select: none;
+}
+
 .unmet-landing *,
 .unmet-landing *::before,
-.unmet-landing *::after {
+.unmet-landing *::after,
+.unmet-docs-page *,
+.unmet-docs-page *::before,
+.unmet-docs-page *::after {
   box-sizing: border-box;
 }
 
-.unmet-landing a {
+.unmet-landing a,
+.unmet-docs-page a {
   color: inherit;
   text-decoration: none;
 }
 
 .unmet-landing button,
-.unmet-landing input {
+.unmet-landing input,
+.unmet-docs-page button,
+.unmet-docs-page input {
   font: inherit;
 }
 
-.unmet-landing button {
+.unmet-landing button,
+.unmet-docs-page button {
   border: 0;
 }
 
@@ -214,15 +232,15 @@
   transform: translateY(-100%);
 }
 
-.unmet-landing .unmet-book {
+:is(.unmet-landing, .unmet-docs-page) .unmet-book {
   display: none;
-  width: 144px;
+  width: 164px;
   flex-shrink: 0;
-  height: 44px;
+  height: 48px;
   align-items: center;
   justify-content: center;
-  gap: 13px;
-  border-radius: 8px;
+  gap: 14px;
+  border-radius: 10px;
   background: #192800;
   color: white;
   font-size: 15px;
@@ -232,7 +250,7 @@
     color 300ms cubic-bezier(0.2, 1, 0.2, 1);
 }
 
-.unmet-landing .unmet-book:hover {
+:is(.unmet-landing, .unmet-docs-page) .unmet-book:hover {
   background: #DBFFA6;
   color: #192800;
 }
@@ -809,7 +827,7 @@
     display: flex;
   }
 
-  .unmet-landing .unmet-book {
+  :is(.unmet-landing, .unmet-docs-page) .unmet-book {
     display: flex;
   }
 
@@ -998,15 +1016,7 @@
 }
 
 .unmet-problem-eyebrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
   margin-bottom: 16px;
-  color: #66734f;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 2px;
 }
 
 .unmet-problem-header h2 {
@@ -1265,4 +1275,41 @@
   .unmet-market-infrastructure {
     margin-left: -13px;
   }
+}
+html:has(.unmet-landing),
+body:has(.unmet-landing) {
+  min-width: 0;
+  background: #fff;
+}
+
+html:has(.unmet-landing) {
+  color-scheme: light;
+}
+
+#root:has(.unmet-landing) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  padding: 0;
+  background: #fff;
+}
+
+#root:has(.unmet-landing) > .unmet-landing,
+#root:has(.unmet-landing) > .unmet-problem,
+#root:has(.unmet-landing) > .unmet-market-infrastructure,
+#root:has(.unmet-landing) > .unmet-how,
+#root:has(.unmet-landing) > .unmet-footer {
+  box-sizing: border-box;
+  width: 100%;
+  margin-left: 0;
+}
+
+#root:has(.unmet-landing) > .unmet-landing,
+#root:has(.unmet-landing) > .unmet-footer {
+  margin-bottom: 0;
+}
+
+#root:has(.unmet-landing) > .unmet-landing {
+  overflow-x: clip;
 }

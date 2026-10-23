@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import './MagicRings.css';
 
 type MagicRingsProps = {
@@ -921,4 +921,4 @@ const MagicRings = ({
   );
 };
 
-export default MagicRings;
+export default memo(MagicRings);

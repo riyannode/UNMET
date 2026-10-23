@@ -2,7 +2,9 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  decodeEventLog,
   defineChain,
+  encodeFunctionData,
   formatUnits,
   getAddress,
   http,
@@ -13,9 +15,18 @@ import {
   type Abi,
   type Address,
   type Hash,
+  type Log,
   type PublicClient,
 } from "viem";
 import { normalizeCapability } from "./capability";
+import {
+  waitForTransaction,
+  type ObservedTransaction,
+  type TransactionIntent,
+  type TransactionStage,
+  type TransactionUpdateHandler,
+} from "./transaction-lifecycle";
+import { deadlineDurationSeconds } from "./create-demand-chat-model";
 
 export const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || "1952");
 if (CHAIN_ID !== 1952 && CHAIN_ID !== 196) throw new Error("VITE_CHAIN_ID must be 1952 or 196");
@@ -28,6 +39,19 @@ const DEFAULT_TOKEN = CHAIN_ID === 196
 export const RPC_URL = import.meta.env.VITE_XLAYER_RPC_URL || DEFAULT_RPC;
 export const DEMAND_CONTRACT = parseConfiguredAddress(import.meta.env.VITE_DEMAND_CONTRACT, "VITE_DEMAND_CONTRACT");
 export const PAYMENT_TOKEN = getAddress(import.meta.env.VITE_PAYMENT_TOKEN || DEFAULT_TOKEN);
+
+const DEFAULT_MARKET_SYNC_INTERVAL_MS = 60_000;
+const MARKET_SYNC_LOG_RANGE = 100n;
+const MARKET_SYNC_MAX_LOG_RANGES_PER_POLL = 10n;
+const BOARD_READ_BATCH_SIZE = 20;
+
+export function parseMarketSyncInterval(value: string | undefined): number {
+  if (!value?.trim()) return DEFAULT_MARKET_SYNC_INTERVAL_MS;
+  const interval = Number(value);
+  return Number.isSafeInteger(interval) && interval > 0 ? interval : DEFAULT_MARKET_SYNC_INTERVAL_MS;
+}
+
+export const MARKET_SYNC_INTERVAL_MS = parseMarketSyncInterval(import.meta.env.VITE_MARKET_SYNC_INTERVAL_MS);
 
 export const targetChain = defineChain({
   id: CHAIN_ID,
@@ -129,6 +153,92 @@ export const DEMAND_ABI = [
     inputs: [{ name: "demandId", type: "uint256" }, { name: "supporter", type: "address" }],
     outputs: [{ name: "", type: "bool" }],
   },
+  {
+    type: "event", name: "DemandCreated", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "demandKey", type: "bytes32", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "capability", type: "string", indexed: false },
+      { name: "maxUnitPrice", type: "uint96", indexed: false },
+      { name: "expectedCalls", type: "uint64", indexed: false },
+      { name: "deadline", type: "uint64", indexed: false },
+      { name: "initialCommitment", type: "uint96", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "DemandSupported", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "amount", type: "uint96", indexed: false },
+      { name: "expectedCalls", type: "uint64", indexed: false },
+      { name: "committedTotal", type: "uint128", indexed: false },
+      { name: "supporterCount", type: "uint32", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "ServiceSubmitted", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "builder", type: "address", indexed: true },
+      { name: "serviceUrl", type: "string", indexed: false },
+      { name: "evidenceHash", type: "bytes32", indexed: false },
+      { name: "reviewEndsAt", type: "uint64", indexed: false },
+      { name: "reviewCommitted", type: "uint128", indexed: false },
+      { name: "approvalRequired", type: "uint128", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "ServiceApproved", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "weight", type: "uint96", indexed: false },
+      { name: "approvalWeight", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "ServiceRejected", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "weight", type: "uint96", indexed: false },
+      { name: "rejectionWeight", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "SubmissionRejected", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "submissionNonce", type: "uint256", indexed: true },
+      { name: "builder", type: "address", indexed: true },
+      { name: "approvalWeight", type: "uint256", indexed: false },
+      { name: "rejectionWeight", type: "uint256", indexed: false },
+      { name: "approvalRequired", type: "uint128", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "DemandFulfilled", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "builder", type: "address", indexed: true },
+      { name: "treasury", type: "address", indexed: true },
+      { name: "approvedAmount", type: "uint128", indexed: false },
+      { name: "fee", type: "uint128", indexed: false },
+      { name: "payout", type: "uint128", indexed: false },
+      { name: "remainingRefundable", type: "uint128", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "Refunded", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "supporter", type: "address", indexed: true },
+      { name: "amount", type: "uint96", indexed: false },
+    ],
+  },
+  {
+    type: "event", name: "DemandClosed", inputs: [
+      { name: "demandId", type: "uint256", indexed: true },
+      { name: "demandKey", type: "bytes32", indexed: true },
+    ],
+  },
 ] as const satisfies Abi;
 
 export const ERC20_ABI = [
@@ -174,6 +284,12 @@ type EthereumProvider = {
   removeListener?(event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void): void;
 };
 
+export type WalletSession = {
+  readonly provider: EthereumProvider;
+  readonly generation: number;
+  readonly account: Address | null;
+};
+
 function parseConfiguredAddress(value: string | undefined, name: string): Address | undefined {
   if (!value) return undefined;
   if (!isAddress(value)) throw new Error(`${name} is not a valid EVM address`);
@@ -185,17 +301,13 @@ function requireContract(): Address {
   return DEMAND_CONTRACT;
 }
 
-let configuredWalletProvider: EthereumProvider | null | undefined;
+let reownWalletProvider: EthereumProvider | null = null;
+let walletProviderGeneration = 0;
+let reownWalletAccount: Address | null = null;
 
-function activeWalletProvider(): EthereumProvider | null {
-  if (configuredWalletProvider !== undefined) return configuredWalletProvider;
-  return isEthereumProvider(window.ethereum) ? window.ethereum : null;
-}
-
-function injected(): EthereumProvider {
-  const provider = activeWalletProvider();
-  if (!provider) throw new Error("WALLET_NOT_FOUND");
-  return provider;
+function requireReownProvider(): EthereumProvider {
+  if (!reownWalletProvider) throw new Error("WALLET_NOT_FOUND");
+  return reownWalletProvider;
 }
 
 function isEthereumProvider(provider: unknown): provider is EthereumProvider {
@@ -203,26 +315,42 @@ function isEthereumProvider(provider: unknown): provider is EthereumProvider {
     && "request" in provider && typeof provider.request === "function";
 }
 
-export function setWalletProvider(provider: unknown): void {
-  configuredWalletProvider = isEthereumProvider(provider) ? provider : null;
+export function setReownWalletProvider(provider: unknown, account: Address | null = null): void {
+  const nextProvider = isEthereumProvider(provider) ? provider : null;
+  const nextAccount = nextProvider ? account : null;
+  if (nextProvider !== reownWalletProvider || nextAccount?.toLowerCase() !== reownWalletAccount?.toLowerCase()) {
+    walletProviderGeneration += 1;
+  }
+  reownWalletProvider = nextProvider;
+  reownWalletAccount = nextAccount;
+}
+
+export function captureWalletSession(account: Address | null = null): WalletSession | null {
+  return reownWalletProvider
+    ? { provider: reownWalletProvider, generation: walletProviderGeneration, account: account ?? reownWalletAccount }
+    : null;
 }
 
 export function getPublic(): PublicClient {
   return createPublicClient({ chain: targetChain, transport: http(RPC_URL, { timeout: 15_000, retryCount: 2 }) }) as PublicClient;
 }
 
-export function walletClient() {
-  return createWalletClient({ chain: targetChain, transport: custom(injected() as never) });
-}
-
-export async function connectWallet(): Promise<Address> {
-  const accounts = await injected().request({ method: "eth_requestAccounts" });
-  if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) throw new Error("WALLET_NOT_FOUND");
-  return getAddress(accounts[0]);
+export function walletClient(session?: WalletSession) {
+  const provider = session?.provider ?? requireReownProvider();
+  return createWalletClient({ chain: targetChain, transport: custom({
+    request: async (request: { method: string; params?: readonly unknown[] }) => {
+      if (session && (request.method === "eth_sendTransaction" || request.method === "wallet_sendTransaction")) {
+        if (!session.account) throw new Error("WALLET_NOT_CONNECTED");
+        await assertWalletSession(session, session.account);
+        assertProviderSession(session);
+      }
+      return provider.request(request);
+    },
+  }) });
 }
 
 export async function currentWallet(): Promise<Address | null> {
-  const provider = activeWalletProvider();
+  const provider = reownWalletProvider;
   if (!provider) return null;
   const accounts = await provider.request({ method: "eth_accounts" });
   if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) return null;
@@ -230,26 +358,70 @@ export async function currentWallet(): Promise<Address | null> {
 }
 
 export async function currentChainId(): Promise<number | null> {
-  const provider = activeWalletProvider();
+  const provider = reownWalletProvider;
   if (!provider) return null;
   const result = await provider.request({ method: "eth_chainId" });
   if (typeof result !== "string") return null;
   return Number.parseInt(result, 16);
 }
 
-export async function ensureChain(): Promise<void> {
-  const eth = injected();
-  const current = await currentChainId();
+function assertProviderSession(session: WalletSession): void {
+  if (session.provider !== reownWalletProvider || session.generation !== walletProviderGeneration) {
+    throw new Error("WALLET_CHANGED");
+  }
+}
+
+async function sessionWallet(session: WalletSession): Promise<Address | null> {
+  assertProviderSession(session);
+  const accounts = await session.provider.request({ method: "eth_accounts" });
+  assertProviderSession(session);
+  if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) return null;
+  return getAddress(accounts[0]);
+}
+
+async function sessionChainId(session: WalletSession): Promise<number | null> {
+  assertProviderSession(session);
+  const result = await session.provider.request({ method: "eth_chainId" });
+  assertProviderSession(session);
+  return typeof result === "string" ? Number.parseInt(result, 16) : null;
+}
+
+async function assertWalletSession(session: WalletSession, expectedAccount: Address): Promise<void> {
+  const account = await sessionWallet(session);
+  if (!account) throw new Error("WALLET_NOT_CONNECTED");
+  if (account.toLowerCase() !== expectedAccount.toLowerCase() || session.account && account.toLowerCase() !== session.account.toLowerCase()) {
+    throw new Error("WALLET_CHANGED");
+  }
+  if (await sessionChainId(session) !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
+}
+
+async function requireWalletSession(session?: WalletSession): Promise<WalletSession> {
+  const current = session ?? captureWalletSession();
+  if (!current) throw new Error("WALLET_NOT_CONNECTED");
+  assertProviderSession(current);
+  return current;
+}
+
+export async function ensureChain(session?: WalletSession, expectedAccount?: Address): Promise<void> {
+  const currentSession = await requireWalletSession(session);
+  const account = expectedAccount ?? currentSession.account ?? await sessionWallet(currentSession);
+  if (!account) throw new Error("WALLET_NOT_CONNECTED");
+  if (currentSession.account && account.toLowerCase() !== currentSession.account.toLowerCase()) throw new Error("WALLET_CHANGED");
+  if ((await sessionWallet(currentSession))?.toLowerCase() !== account.toLowerCase()) throw new Error("WALLET_CHANGED");
+  const current = await sessionChainId(currentSession);
   if (current === CHAIN_ID) return;
+  assertProviderSession(currentSession);
   try {
-    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }] });
+    await currentSession.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }] });
   } catch (error) {
     const code = (error as { code?: number }).code;
     if (code !== 4902) {
       if (code === 4001) throw new Error("WALLET_REJECTED");
       throw new Error("CHAIN_WRONG_NETWORK");
     }
-    await eth.request({ method: "wallet_addEthereumChain", params: [{
+    assertProviderSession(currentSession);
+    if ((await sessionWallet(currentSession))?.toLowerCase() !== account.toLowerCase()) throw new Error("WALLET_CHANGED");
+    await currentSession.provider.request({ method: "wallet_addEthereumChain", params: [{
       chainId: `0x${CHAIN_ID.toString(16)}`,
       chainName: targetChain.name,
       nativeCurrency: targetChain.nativeCurrency,
@@ -257,18 +429,7 @@ export async function ensureChain(): Promise<void> {
       blockExplorerUrls: [targetChain.blockExplorers.default.url],
     }] });
   }
-}
-
-export function watchWallet(onChange: () => void): () => void {
-  const provider = activeWalletProvider();
-  if (!provider?.on) return () => {};
-  const listener = () => onChange();
-  provider.on("accountsChanged", listener);
-  provider.on("chainChanged", listener);
-  return () => {
-    provider.removeListener?.("accountsChanged", listener);
-    provider.removeListener?.("chainChanged", listener);
-  };
+  await assertWalletSession({ ...currentSession, account }, account);
 }
 
 export function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
@@ -291,12 +452,17 @@ export function effectiveStatus(demand: DemandView, now = BigInt(Math.floor(Date
   return base;
 }
 
-async function readDemandWithClient(client: PublicClient, demandId: bigint): Promise<DemandView> {
-  const contract = requireContract();
+async function readDemandWithClient(
+  client: PublicClient,
+  demandId: bigint,
+  blockNumber?: bigint,
+  contract: Address = requireContract(),
+): Promise<DemandView> {
+  const atBlock = blockNumber === undefined ? {} : { blockNumber };
   const [raw, progress, rejection] = await Promise.all([
-    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "getDemand", args: [demandId] }),
-    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "approvalProgress", args: [demandId] }),
-    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "rejectionProgress", args: [demandId] }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "getDemand", args: [demandId], ...atBlock }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "approvalProgress", args: [demandId], ...atBlock }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "rejectionProgress", args: [demandId], ...atBlock }),
   ]);
   const d = raw as Omit<DemandView, "demandId" | "approvalWeight" | "quorumReached" | "rejectionWeight" | "rejectionThreshold" | "candidateRejected">;
   const p = progress as readonly [bigint, bigint, boolean];
@@ -319,18 +485,112 @@ export async function readDemandOnChain(demandId: bigint): Promise<DemandView> {
   return readDemandWithClient(getPublic(), demandId);
 }
 
-export async function readBoard(): Promise<DemandView[]> {
-  if (!DEMAND_CONTRACT) return [];
-  const client = getPublic();
-  const next = await client.readContract({ address: DEMAND_CONTRACT, abi: DEMAND_ABI, functionName: "nextDemandId" }) as bigint;
+export function sortDemandsByFunding(output: DemandView[]): DemandView[] {
+  return output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
+}
+
+export type MarketSyncCursor = { blockNumber: bigint; blockHash: Hash };
+export type MarketBoardSnapshot = { demands: DemandView[]; cursor: MarketSyncCursor | null };
+export type MarketSyncResult = MarketBoardSnapshot & { changed: boolean; reorgRecovered: boolean };
+
+async function readBoardAt(client: PublicClient, contract: Address, blockNumber: bigint): Promise<DemandView[]> {
+  const next = await client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "nextDemandId", blockNumber }) as bigint;
   const ids: bigint[] = [];
   for (let id = 1n; id < next; id += 1n) ids.push(id);
   const output: DemandView[] = [];
-  for (let i = 0; i < ids.length; i += 20) {
-    output.push(...await Promise.all(ids.slice(i, i + 20).map((id) => readDemandWithClient(client, id))));
+  for (let i = 0; i < ids.length; i += BOARD_READ_BATCH_SIZE) {
+    output.push(...await Promise.all(ids.slice(i, i + BOARD_READ_BATCH_SIZE).map((id) => readDemandWithClient(client, id, blockNumber, contract))));
   }
-  output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
-  return output;
+  return sortDemandsByFunding(output);
+}
+
+async function readBoardSnapshotWithClient(client: PublicClient, contract: Address): Promise<MarketBoardSnapshot> {
+  const block = await client.getBlock({ blockTag: "latest" });
+  const demands = await readBoardAt(client, contract, block.number);
+  const canonicalBlock = await client.getBlock({ blockNumber: block.number });
+  if (canonicalBlock.hash !== block.hash) throw new Error("MARKET_SNAPSHOT_REORGED");
+  return { demands, cursor: { blockNumber: block.number, blockHash: block.hash } };
+}
+
+export async function readBoardSnapshot(): Promise<MarketBoardSnapshot> {
+  if (!DEMAND_CONTRACT) return { demands: [], cursor: null };
+  return readBoardSnapshotWithClient(getPublic(), DEMAND_CONTRACT);
+}
+
+export async function readBoard(): Promise<DemandView[]> {
+  return (await readBoardSnapshot()).demands;
+}
+
+export function demandIdsFromLogs(logs: readonly Pick<Log, "data" | "topics">[]): Set<bigint> {
+  const demandIds = new Set<bigint>();
+  for (const log of logs) {
+    try {
+      const decoded = decodeEventLog({ abi: DEMAND_ABI, data: log.data, topics: log.topics, strict: false });
+      if (typeof decoded.args.demandId === "bigint") demandIds.add(decoded.args.demandId);
+    } catch {
+      // Ignore logs from events outside the AgentDemand ABI.
+    }
+  }
+  return demandIds;
+}
+
+export async function synchronizeMarketBoard(
+  client: PublicClient,
+  contract: Address,
+  currentBoard: readonly DemandView[],
+  cursor: MarketSyncCursor,
+): Promise<MarketSyncResult> {
+  const head = await client.getBlockNumber();
+  if (head < cursor.blockNumber) {
+    return { ...(await readBoardSnapshotWithClient(client, contract)), changed: true, reorgRecovered: true };
+  }
+
+  const checkpoint = await client.getBlock({ blockNumber: cursor.blockNumber });
+  if (checkpoint.hash !== cursor.blockHash) {
+    return { ...(await readBoardSnapshotWithClient(client, contract)), changed: true, reorgRecovered: true };
+  }
+  if (head === cursor.blockNumber) {
+    return { demands: [...currentBoard], cursor, changed: false, reorgRecovered: false };
+  }
+
+  const maximumBlocks = MARKET_SYNC_LOG_RANGE * MARKET_SYNC_MAX_LOG_RANGES_PER_POLL;
+  const lastBlock = head < cursor.blockNumber + maximumBlocks ? head : cursor.blockNumber + maximumBlocks;
+  const target = await client.getBlock({ blockNumber: lastBlock });
+  const changedIds = new Set<bigint>();
+  for (let fromBlock = cursor.blockNumber + 1n; fromBlock <= lastBlock;) {
+    const rangeEnd = fromBlock + MARKET_SYNC_LOG_RANGE - 1n;
+    const toBlock = rangeEnd < lastBlock ? rangeEnd : lastBlock;
+    const logs = await client.getLogs({ address: contract, fromBlock, toBlock });
+    for (const demandId of demandIdsFromLogs(logs)) changedIds.add(demandId);
+    fromBlock = toBlock + 1n;
+  }
+
+  const ids = [...changedIds];
+  const updates: DemandView[] = [];
+  for (let i = 0; i < ids.length; i += BOARD_READ_BATCH_SIZE) {
+    updates.push(...await Promise.all(
+      ids.slice(i, i + BOARD_READ_BATCH_SIZE).map((demandId) => readDemandWithClient(client, demandId, lastBlock, contract)),
+    ));
+  }
+
+  const canonicalTarget = await client.getBlock({ blockNumber: lastBlock });
+  if (canonicalTarget.hash !== target.hash) throw new Error("MARKET_SYNC_REORGED_DURING_SCAN");
+
+  if (updates.length === 0) return {
+    demands: [...currentBoard],
+    cursor: { blockNumber: lastBlock, blockHash: target.hash },
+    changed: false,
+    reorgRecovered: false,
+  };
+
+  const demandsById = new Map(currentBoard.map((demand) => [demand.demandId.toString(), demand]));
+  for (const demand of updates) demandsById.set(demand.demandId.toString(), demand);
+  return {
+    demands: sortDemandsByFunding([...demandsById.values()]),
+    cursor: { blockNumber: lastBlock, blockHash: target.hash },
+    changed: true,
+    reorgRecovered: false,
+  };
 }
 
 export async function readSupport(demandId: bigint, supporter: Address): Promise<SupportView> {
@@ -344,47 +604,109 @@ export async function readSupport(demandId: bigint, supporter: Address): Promise
   return { commitment: value[0], expectedCalls: value[1], approved: value[2], rejected: value[3], refundable: Boolean(refundable) };
 }
 
-async function requireAccount(): Promise<Address> {
-  const account = await connectWallet();
-  await ensureChain();
-  return account;
+async function requireAccount(session?: WalletSession): Promise<{ account: Address; session: WalletSession }> {
+  const currentSession = await requireWalletSession(session);
+  const account = await sessionWallet(currentSession);
+  if (!account) throw new Error("WALLET_NOT_CONNECTED");
+  if (currentSession.account && account.toLowerCase() !== currentSession.account.toLowerCase()) throw new Error("WALLET_CHANGED");
+  const boundSession = { ...currentSession, account };
+  await ensureChain(boundSession, account);
+  await assertWalletSession(boundSession, account);
+  return { account, session: boundSession };
 }
 
-async function wait(hash: Hash): Promise<Hash> {
-  const receipt = await getPublic().waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("CHAIN_RECEIPT_FAILED");
-  return hash;
+async function readTransactionByHash(hash: Hash): Promise<ObservedTransaction> {
+  const transaction = await getPublic().getTransaction({ hash });
+  return {
+    hash: transaction.hash,
+    from: transaction.from,
+    to: transaction.to,
+    data: transaction.input,
+    value: transaction.value,
+  };
+}
+
+export async function readTransactionOnChain(hash: Hash): Promise<ObservedTransaction> {
+  return readTransactionByHash(hash);
+}
+
+async function wait(
+  hash: Hash,
+  intent: TransactionIntent,
+  stage: TransactionStage,
+  wallet: Address,
+  chainId: number,
+  onUpdate?: TransactionUpdateHandler,
+  verifyExisting = false,
+): Promise<Hash> {
+  return waitForTransaction({
+    stage,
+    hash,
+    intent,
+    wallet,
+    chainId,
+    onUpdate,
+    ...(verifyExisting ? { readTransaction: readTransactionByHash } : {}),
+    waitForReceipt: ({ hash: receiptHash, onReplaced }) => getPublic().waitForTransactionReceipt({
+      hash: receiptHash,
+      onReplaced: (replacement) => onReplaced?.({
+        reason: replacement.reason,
+        transaction: {
+          hash: replacement.transaction.hash,
+          from: replacement.transaction.from,
+          to: replacement.transaction.to,
+          data: replacement.transaction.input,
+          value: replacement.transaction.value,
+        },
+        transactionReceipt: {
+          transactionHash: replacement.transactionReceipt.transactionHash,
+          status: replacement.transactionReceipt.status,
+        },
+      }),
+    }),
+  });
 }
 
 async function writeDemand(
   account: Address,
   functionName: "createDemand" | "supportDemand" | "submitService" | "approveService" | "rejectService" | "finalize" | "reopen" | "refund",
   args: readonly unknown[],
+  session: WalletSession,
+  stage: TransactionStage = "action",
+  onUpdate?: TransactionUpdateHandler,
 ): Promise<Hash> {
-  const hash = await walletClient().writeContract({
-    address: requireContract(),
+  const address = requireContract();
+  const data = encodeFunctionData({ abi: DEMAND_ABI, functionName, args: args as never });
+  const intent: TransactionIntent = { to: address, data, value: 0n };
+  await assertWalletSession(session, account);
+  const hash = await walletClient(session).writeContract({
+    address,
     abi: DEMAND_ABI,
     functionName,
     args: args as never,
     account,
     chain: targetChain,
   }) as Hash;
-  return wait(hash);
+  return wait(hash, intent, stage, account, CHAIN_ID, onUpdate);
 }
 
-async function ensureAllowance(owner: Address, amount: bigint): Promise<void> {
+async function ensureAllowance(owner: Address, amount: bigint, session: WalletSession, onUpdate?: TransactionUpdateHandler): Promise<void> {
   if (amount <= 0n) throw new Error("SUPPORT_TOO_SMALL");
   const client = getPublic();
   const contract = requireContract();
   const current = await client.readContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "allowance", args: [owner, contract] }) as bigint;
   if (current >= amount) return;
-  const wallet = walletClient();
+  const wallet = walletClient(session);
   if (current > 0n) {
+    const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, 0n] });
+    await assertWalletSession(session, owner);
     const reset = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, 0n], account: owner, chain: targetChain });
-    await wait(reset);
+    await wait(reset, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
   }
+  const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, amount] });
+  await assertWalletSession(session, owner);
   const approval = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, amount], account: owner, chain: targetChain });
-  await wait(approval);
+  await wait(approval, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
 }
 
 function parsePositiveUint(value: string, bits: 64 | 96, code: string): bigint {
@@ -401,8 +723,9 @@ export async function createDemand(input: {
   expectedCalls: string;
   deadlineDays: string;
   commitment: string;
-}): Promise<Hash> {
-  const account = await requireAccount();
+}, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const durationSeconds = deadlineDurationSeconds(input.deadlineDays);
+  const { account, session } = await requireAccount(originatingSession);
   const capability = normalizeCapability(input.capability);
   const specification = input.specification.trim();
   if (!specification || new TextEncoder().encode(specification).length > 2048) throw new Error("DEMAND_INVALID_SPEC");
@@ -410,24 +733,22 @@ export async function createDemand(input: {
   const maxPrice = parseUsd0(input.maxPrice);
   if (commitment <= 0n || commitment > (1n << 96n) - 1n || maxPrice <= 0n || maxPrice > (1n << 96n) - 1n) throw new Error("DEMAND_INVALID_AMOUNT");
   const calls = parsePositiveUint(input.expectedCalls, 64, "DEMAND_INVALID_CALLS");
-  const days = Number(input.deadlineDays);
-  if (!Number.isFinite(days) || days <= 0 || days > 3650) throw new Error("DEMAND_INVALID_DEADLINE");
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + Math.floor(days * 86400));
-  await ensureAllowance(account, commitment);
-  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment]);
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + durationSeconds);
+  await ensureAllowance(account, commitment, session, onUpdate);
+  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment], session, "demand", onUpdate);
 }
 
-export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string): Promise<Hash> {
-  const account = await requireAccount();
+export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
   const atomic = parseUsd0(amount);
   if (atomic <= 0n || atomic > (1n << 96n) - 1n) throw new Error("SUPPORT_TOO_SMALL");
   const calls = parsePositiveUint(expectedCalls, 64, "DEMAND_INVALID_CALLS");
-  await ensureAllowance(account, atomic);
-  return writeDemand(account, "supportDemand", [demandId, atomic, calls]);
+  await ensureAllowance(account, atomic, session, onUpdate);
+  return writeDemand(account, "supportDemand", [demandId, atomic, calls], session, "action", onUpdate);
 }
 
-export async function submitService(demandId: bigint, serviceUrl: string, evidence: string): Promise<Hash> {
-  const account = await requireAccount();
+export async function submitService(demandId: bigint, serviceUrl: string, evidence: string, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
   let parsedUrl: URL;
   try { parsedUrl = new URL(serviceUrl.trim()); } catch { throw new Error("SUBMISSION_INVALID_URL"); }
   if (parsedUrl.protocol !== "https:") throw new Error("SUBMISSION_INVALID_URL");
@@ -436,23 +757,44 @@ export async function submitService(demandId: bigint, serviceUrl: string, eviden
   const evidenceHash = /^0x[0-9a-fA-F]{64}$/.test(evidenceValue)
     ? evidenceValue as `0x${string}`
     : keccak256(toBytes(evidenceValue));
-  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash]);
+  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash], session, "action", onUpdate);
 }
 
-export async function approveService(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "approveService", [demandId]);
+export async function approveService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "approveService", [demandId], session, "action", onUpdate);
 }
-export async function rejectService(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "rejectService", [demandId]);
+export async function rejectService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "rejectService", [demandId], session, "action", onUpdate);
 }
-export async function finalizeDemand(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "finalize", [demandId]);
+export async function finalizeDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "finalize", [demandId], session, "action", onUpdate);
 }
-export async function reopenDemand(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "reopen", [demandId]);
+export async function reopenDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "reopen", [demandId], session, "action", onUpdate);
 }
-export async function refundDemand(demandId: bigint): Promise<Hash> {
-  return writeDemand(await requireAccount(), "refund", [demandId]);
+export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "refund", [demandId], session, "action", onUpdate);
+}
+
+export async function verifyTransaction(
+  stage: TransactionStage,
+  hash: Hash,
+  intent: TransactionIntent,
+  expectedWallet: Address,
+  expectedChainId: number,
+  onUpdate?: TransactionUpdateHandler,
+  originatingSession?: WalletSession,
+): Promise<Hash> {
+  const session = await requireWalletSession(originatingSession ?? captureWalletSession(expectedWallet) ?? undefined);
+  if (expectedChainId !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
+  await assertWalletSession({ ...session, account: expectedWallet }, expectedWallet);
+  const wallet = expectedWallet;
+  return wait(hash, intent, stage, wallet, expectedChainId, onUpdate, true);
 }
 
 export function formatUsd0(value: bigint): string { return formatUnits(value, 6); }

@@ -1,57 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
 import "./unmet-footer.css";
 
-type FormStatus = "idle" | "error" | "valid";
-
 export default function UnmetFooter() {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<FormStatus>("idle");
-  const timeoutRef = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
-  }, []);
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
-
-    const nextStatus = email.includes("@") ? "valid" : "error";
-    setStatus(nextStatus);
-    timeoutRef.current = window.setTimeout(() => {
-      setStatus("idle");
-      timeoutRef.current = null;
-    }, nextStatus === "valid" ? 2000 : 1500);
-  }
-
   return (
     <footer className="unmet-footer">
       <div className="unmet-footer-panel">
-        <section className="unmet-footer-waitlist" aria-labelledby="unmet-footer-title">
-          <h2 id="unmet-footer-title">Join Waitlist</h2>
-          <form className="unmet-footer-form" onSubmit={submit} noValidate>
-            <label className="unmet-footer-sr-only" htmlFor="unmet-waitlist-email">
-              Enter your email
-            </label>
-            <input
-              id="unmet-waitlist-email"
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              className={status === "error" ? "is-error" : ""}
-              onChange={(event) => setEmail(event.target.value)}
-              aria-invalid={status === "error"}
-              aria-describedby="unmet-waitlist-status"
-            />
-            <button type="submit" className={status === "valid" ? "is-valid" : ""}>
-              {status === "valid" ? "✓ Email valid" : "Join"}
-            </button>
-            <span className="unmet-footer-sr-only" id="unmet-waitlist-status" aria-live="polite">
-              {status === "error" ? "Enter a valid email address." : status === "valid" ? "Email format is valid. It has not been saved." : ""}
-            </span>
-          </form>
-        </section>
-
         <nav className="unmet-footer-directory" aria-label="Footer navigation">
           <div className="unmet-footer-group">
             <h3>Explore</h3>
@@ -74,7 +26,7 @@ export default function UnmetFooter() {
           <a className="unmet-footer-logo" href="/" aria-label="UNMET Home">
             <img src="/logos/unmet.png" alt="UNMET" />
           </a>
-          <p>© 2026 UNMET. All rights reserved.</p>
+          <p>© 2026 UNMET. All rights reserved</p>
           <div className="unmet-footer-socials" aria-label="Social links">
             <span
               className="unmet-footer-social"

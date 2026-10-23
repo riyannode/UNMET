@@ -200,7 +200,8 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- Global navigation: **Market Requests**, **Post a Request**, and **My Activity**.
+- Routes: / is the standalone landing page; /market, /market/:demandId, /create-demand, and /my-activity share the application shell.
+- Global navigation: **Explore Market**, **Create Demand**, and **My Activity**; Demand Details keeps **Explore Market** active.
 - Selecting a market request from **Market Requests** or **My Activity** opens its dedicated Demand view; the back action returns to the originating view.
 - Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).
 - **Post a Request** groups inputs into Request, Economics, and Initial Escrow; its final action is **Post Request & Commit Escrow**.

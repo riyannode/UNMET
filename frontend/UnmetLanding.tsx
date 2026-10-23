@@ -9,6 +9,9 @@ import {
   type FormEvent,
 } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
+import { Link } from "react-router";
+import { ROUTES } from "./routing.ts";
+import UnmetNavigation, { MiniBars, RollText } from "./UnmetNavigation.tsx";
 import MagicRings from "./MagicRings.tsx";
 import UnmetHowItWorks from "./UnmetHowItWorks.tsx";
 import UnmetFooter from "./UnmetFooter.tsx";
@@ -50,7 +53,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#11a37f",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Chat.svg",
     query: "How can an agent signal a capability it needs but cannot buy yet?",
-    answer: "UNMET lets the agent publish a market request with a specification, max unit price, expected calls, deadline, and escrow. Other supporters can add commitments before any builder is selected.",
+    answer: "UNMET lets the agent publish a market request with a specification, max unit price, expected calls, deadline, and escrow. Other supporters can add commitments before any builder is selected",
     placeholder: "Ask about funded demand...",
     latest: "Demand flow explained",
   },
@@ -59,7 +62,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#D97657",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Claude.svg",
     query: "How does a builder know which AI-agent capability is worth building?",
-    answer: "UNMET makes demand visible before supply exists. Builders compare requests backed by onchain escrow, then submit a service proposal against a funded need.",
+    answer: "UNMET makes demand visible before supply exists. Builders compare requests backed by onchain escrow, then submit a service proposal against a funded need",
     placeholder: "Ask what builders can discover...",
     latest: "Builder path explained",
   },
@@ -68,7 +71,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#3186FE",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Google.svg",
     query: "What happens after a builder submits a service?",
-    answer: "Supporters review the proposal with commitment-weighted voting. If quorum is reached, explicit approver funds settle to the builder and treasury; other eligible commitments remain refundable.",
+    answer: "Supporters review the proposal with commitment-weighted voting. If quorum is reached, explicit approver funds settle to the builder and treasury; other eligible commitments remain refundable",
     placeholder: "Ask about review and settlement...",
     latest: "Review flow summarized",
   },
@@ -77,7 +80,7 @@ const MODELS: Record<ModelKey, ModelConfig> = {
     iconColor: "#8F75FF",
     iconUrl: "https://cdn.jiro.build/AI%20SEO/Images/Gemini.svg",
     query: "Why is UNMET different from a normal agent marketplace?",
-    answer: "Most marketplaces start with supply. UNMET starts with funded unmet demand, giving builders a credible signal for what agents already want.",
+    answer: "Most marketplaces start with supply. UNMET starts with funded unmet demand, giving builders a credible signal for what agents already want",
     placeholder: "Ask how UNMET works...",
     latest: "Market model compared",
   },
@@ -118,7 +121,7 @@ function replyFor(value: string): string {
     || input.includes("need")
     || input.includes("request")
   ) {
-    return "UNMET makes unmet demand visible as funded onchain market requests, so builders can evaluate credible demand before they build.";
+    return "UNMET makes unmet demand visible as funded onchain market requests, so builders can evaluate credible demand before they build";
   }
 
   if (
@@ -127,49 +130,10 @@ function replyFor(value: string): string {
     || input.includes("commit")
     || input.includes("support")
   ) {
-    return "Supporters back a request with independent commitments. The aggregate escrow makes the demand signal credible before a builder is selected.";
+    return "Supporters back a request with independent commitments. The aggregate escrow makes the demand signal credible before a builder is selected";
   }
 
-  return "Builders can inspect funded requests, submit a service proposal, and move through commitment-weighted supporter review before eligible settlement.";
-}
-
-function RollText({
-  text,
-  variant = "nav",
-}: {
-  text: string;
-  variant?: "nav" | "dark";
-}) {
-  const chars = Array.from(text);
-  return (
-    <span className={"unmet-roll-text " + (variant === "dark" ? "unmet-roll-dark" : "")} aria-label={text}>
-      <span className="unmet-roll-layer unmet-roll-top" aria-hidden="true">
-        {chars.map((char, index) => (
-          <span key={"top-" + index} style={{ transitionDelay: String(index * 15) + "ms" }}>
-            {char === " " ? "\u00A0" : char}
-          </span>
-        ))}
-      </span>
-      <span className="unmet-roll-layer unmet-roll-bottom" aria-hidden="true">
-        {chars.map((char, index) => (
-          <span key={"bottom-" + index} style={{ transitionDelay: String(index * 15) + "ms" }}>
-            {char === " " ? "\u00A0" : char}
-          </span>
-        ))}
-      </span>
-    </span>
-  );
-}
-
-function MiniBars() {
-  return (
-    <span className="unmet-bars" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-      <span />
-    </span>
-  );
+  return "Builders can inspect funded requests, submit a service proposal, and move through commitment-weighted supporter review before eligible settlement";
 }
 
 function HeadlineLine({
@@ -207,15 +171,6 @@ function HeadlineLine({
   );
 }
 
-function BrandChip() {
-  return (
-    <a className="unmet-brand-chip" href="/" aria-label="UNMET Home">
-      <img src="/logos/unmet.png" alt="" width="32" height="32" />
-      <span className="unmet-wordmark">unmet</span>
-    </a>
-  );
-}
-
 type ProblemIconName = "git-merge" | "hand-coins" | "circle-help" | "store";
 type ProblemAnimationName = "shield-check" | "eye-off" | "wallet" | "globe";
 
@@ -224,25 +179,25 @@ const PROBLEM_ITEMS: Array<{ icon: ProblemIconName; animation: ProblemAnimationN
     icon: "git-merge",
     animation: "shield-check",
     title: "Requests Aren't Connected",
-    description: "Agents need the same things, but their requests stay separate.",
+    description: "Agents need the same things, but their requests stay separate",
   },
   {
     icon: "hand-coins",
     animation: "eye-off",
     title: "Interest isn't funding",
-    description: "A request doesn't prove someone is willing to pay.",
+    description: "A request doesn't prove someone is willing to pay",
   },
   {
     icon: "circle-help",
     animation: "wallet",
     title: "Builders are guessing",
-    description: "Without demand signals, builders don't know what to build.",
+    description: "Without demand signals, builders don't know what to build",
   },
   {
     icon: "store",
     animation: "globe",
     title: "Marketplaces to many Supply",
-    description: "They show what's available, not what AI agents still need.",
+    description: "They show what's available, not what AI agents still need",
   },
 ];
 
@@ -323,7 +278,11 @@ function ProblemSection() {
             ease: [0.25, 0.1, 0.25, 1],
           }}
         >
-          <div className="unmet-problem-eyebrow">
+          <div className="unmet-how-eyebrow unmet-problem-eyebrow">
+            <div className="unmet-how-eyebrow-mark" aria-hidden="true">
+              <span />
+              <span />
+            </div>
             <span>Problem</span>
           </div>
           <h2>What AI Agents Need?</h2>
@@ -358,7 +317,6 @@ function ProblemSection() {
 
 export default function UnmetLanding() {
   const [loaded, setLoaded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [activeModel, setActiveModel] = useState<ModelKey>("chatgpt");
   const [chatByModel, setChatByModel] = useState<Record<ModelKey, ChatState>>(() => ({
     chatgpt: initialChatState("chatgpt"),
@@ -487,13 +445,6 @@ export default function UnmetLanding() {
     setInput("");
   }
 
-  const navItems = [
-    { label: "Market" },
-    { label: "How It Works" },
-    { label: "Builders" },
-    { label: "Docs" },
-  ];
-
   return (
     <>
     <section id="unmet-landing" className="unmet-landing">
@@ -516,62 +467,7 @@ export default function UnmetLanding() {
       </div>
 
       <div className="unmet-content">
-        <header className="unmet-nav">
-          <BrandChip />
-
-          <div className="unmet-nav-cluster">
-            <nav className="unmet-nav-capsule" aria-label="Landing navigation">
-              {navItems.map((item) => (
-                <a
-                  className="unmet-nav-link"
-                  role="link"
-                  aria-disabled="true"
-                  key={item.label}
-                >
-                  <RollText text={item.label} />
-                </a>
-              ))}
-            </nav>
-
-            <a className="unmet-book" role="link" aria-disabled="true">
-              <RollText text="Soon" variant="dark" />
-              <MiniBars />
-            </a>
-
-            <button
-              className="unmet-menu-button"
-              type="button"
-              aria-label={menuOpen ? "Close navigation" : "Open navigation"}
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((current) => !current)}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                {menuOpen ? (
-                  <path d="M6 6l12 12M18 6L6 18" />
-                ) : (
-                  <path d="M4 7h16M4 12h16M4 17h16" />
-                )}
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        {menuOpen && (
-          <div className="unmet-mobile-menu">
-            {navItems.map((item) => (
-              <a
-                role="link"
-                aria-disabled="true"
-                key={item.label}
-              >
-                {item.label}
-              </a>
-            ))}
-            <a className="unmet-mobile-cta" role="link" aria-disabled="true">
-              Soon
-            </a>
-          </div>
-        )}
+        <UnmetNavigation />
 
         <div className="unmet-hero">
           <div className="unmet-left">
@@ -591,10 +487,10 @@ export default function UnmetLanding() {
               ))}
             </p>
 
-            <a className="unmet-primary-cta" role="link" aria-disabled="true">
-              <RollText text="Coming Soon" variant="dark" />
+            <Link className="unmet-primary-cta" to={ROUTES.market.href}>
+              <RollText text="Explore Market" variant="dark" />
               <MiniBars />
-            </a>
+            </Link>
 
             <div className="unmet-marquee" aria-label="UNMET ecosystem">
               <div className="unmet-marquee-track jr-animate-marquee">
