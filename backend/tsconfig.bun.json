@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["bun"]
   },
-  "include": ["start.ts", "admin.ts", "payment-debug.ts", "server.test.ts", "hardening.test.ts", "../scripts/*.ts"],
+  "include": ["start.ts", "admin.ts", "payment-debug.ts", "server.test.ts", "hardening.test.ts", "payment-*.ts", "durable-payment*.ts", "../scripts/*.ts"],
   "exclude": []
 }

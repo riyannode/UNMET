@@ -1,3 +1,5 @@
+import { durablePayment } from "./durable-payment.ts";
+import type { PaymentStore } from "./payment-store.ts";
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
 import { admittedWork, concurrencyGate, rateLimiter } from "./admission.ts";
 import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
@@ -105,7 +107,7 @@ function cors(req: Request, res: Response, next: NextFunction) {
     res.setHeader("vary", "Origin");
   }
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type,payment-signature,payment-required,payment-response");
+  res.setHeader("access-control-allow-headers", "content-type,payment-signature,payment-required,payment-response,idempotency-key");
   res.setHeader("access-control-expose-headers", "payment-required,payment-response");
   if (req.method === "OPTIONS") {
     res.status(204).end();
@@ -472,7 +474,20 @@ async function facilitatorCall<T>(task: () => Promise<T>): Promise<T> {
   catch { throw new Error("PAYMENT_UPSTREAM_UNAVAILABLE"); }
 }
 
-export async function createPaymentMiddleware(): Promise<RequestHandler> {
+let paymentStore: PaymentStore | undefined;
+let storageInitialization: Promise<PaymentStore> | undefined;
+async function initializePaymentStorage() {
+  if (!operations.paymentDbPath) return undefined;
+  return storageInitialization ??= import("./payment-store.ts").then(({ PaymentStore }) => {
+    const store = new PaymentStore(operations.paymentDbPath!, operations.paymentMaxRecords);
+    store.recoverInterrupted();
+    store.cleanup(operations.paymentRetentionDays * 86_400_000);
+    paymentStore = store;
+    return store;
+  });
+}
+
+export function createOfficialFacilitator() {
   const pay = requirePaymentEnv();
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: pay.apiKey,
@@ -480,7 +495,7 @@ export async function createPaymentMiddleware(): Promise<RequestHandler> {
     passphrase: pay.passphrase,
     syncSettle: true,
   });
-  const boundedFacilitator = {
+  return {
     getSupported: () => facilitatorCall(() => facilitatorClient.getSupported()),
     verify: (...args: Parameters<typeof facilitatorClient.verify>) =>
       facilitatorCall(() => facilitatorClient.verify(...args)),
@@ -489,7 +504,14 @@ export async function createPaymentMiddleware(): Promise<RequestHandler> {
     getSettleStatus: (...args: Parameters<typeof facilitatorClient.getSettleStatus>) =>
       facilitatorCall(() => facilitatorClient.getSettleStatus(...args)),
   };
-  const resourceServer = new x402ResourceServer(boundedFacilitator).register(pay.network, new ExactEvmScheme());
+}
+
+export async function createPaymentMiddleware(): Promise<RequestHandler> {
+  const store = await initializePaymentStorage();
+  const pay = requirePaymentEnv();
+  const boundedFacilitator = createOfficialFacilitator();
+  const durable = store ? durablePayment(store, boundedFacilitator) : undefined;
+  const resourceServer = new x402ResourceServer(durable?.client || boundedFacilitator).register(pay.network, new ExactEvmScheme());
   await resourceServer.initialize();
 
   const middleware = paymentMiddleware({
@@ -504,8 +526,9 @@ export async function createPaymentMiddleware(): Promise<RequestHandler> {
       mimeType: "application/json",
     },
   }, resourceServer, undefined, undefined, false);
+  const protectedMiddleware = durable ? durable.wrap(middleware) : middleware;
   return (req, res, next) => {
-    return withBoundedFetch(facilitatorFetch, async () => { await middleware(req, res, next); }).catch(next);
+    return withBoundedFetch(facilitatorFetch, async () => { await protectedMiddleware(req, res, next); }).catch(next);
   };
 }
 
@@ -584,7 +607,13 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   });
   app.get("/ready", (_req, res, next) => {
     void (async () => {
-      try { await payment.ready?.(); }
+      try {
+        if (operations.paymentDbPath) {
+          const store = await initializePaymentStorage();
+          store?.get("readiness");
+        }
+        await payment.ready?.();
+      }
       catch {
         res.status(503).json({ ok: false, error: { code: "PAYMENT_UNAVAILABLE", message: "Payment service unavailable" } });
         return;
@@ -697,6 +726,7 @@ export async function startServer() {
     deadline.unref();
     server.close((error) => {
       clearTimeout(deadline);
+      paymentStore?.close();
       process.exit(error ? 1 : 0);
     });
     server.closeIdleConnections();

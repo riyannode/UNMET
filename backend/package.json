@@ -7,8 +7,9 @@
     "dev": "bun run server.ts",
     "start": "bun run start.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.bun.json",
-    "test": "bun test server.test.ts hardening.test.ts",
-    "admin": "bun run admin.ts"
+    "test": "bun test server.test.ts hardening.test.ts && bun test payment-store.test.ts durable-payment.test.ts",
+    "admin": "bun run admin.ts",
+    "payment:ops": "bun run payment-ops.ts"
   },
   "dependencies": {
     "@okxweb3/x402-core": "0.1.0",

@@ -25,3 +25,7 @@ outputs
 **/.ssh
 **/id_rsa*
 **/.DS_Store
+
+**/*.sqlite*
+**/*.db*
+**/payment-data/

@@ -6,6 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
+      PAYMENT_DB_PATH: /data/payments.sqlite
+      PAYMENT_RETENTION_DAYS: ${PAYMENT_RETENTION_DAYS:-30}
+      PAYMENT_MAX_RECORDS: ${PAYMENT_MAX_RECORDS:-100000}
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "8787"
@@ -38,6 +41,8 @@ services:
       DEPENDENCY_CACHE_MS: ${DEPENDENCY_CACHE_MS:-5000}
       FACILITATOR_TIMEOUT_MS: ${FACILITATOR_TIMEOUT_MS:-15000}
       SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-20000}
+    volumes:
+      - payment_data:/data
     expose:
       - "8787"
     networks:
@@ -116,5 +121,6 @@ networks:
       config:
         - subnet: ${APP_SUBNET:-172.30.80.0/24}
 volumes:
+  payment_data:
   caddy_data:
   caddy_config:
