@@ -1016,15 +1016,7 @@
 }
 
 .unmet-problem-eyebrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
   margin-bottom: 16px;
-  color: #66734f;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 2px;
 }
 
 .unmet-problem-header h2 {

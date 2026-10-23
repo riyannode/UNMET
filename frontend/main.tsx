@@ -32,6 +32,7 @@ function DocsRoute() {
   return (
     <main className="unmet-docs-page" aria-label="Documentation">
       <UnmetNavigation />
+      <h1 className="unmet-docs-soon">Coming Soon</h1>
     </main>
   );
 }

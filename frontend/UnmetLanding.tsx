@@ -278,7 +278,11 @@ function ProblemSection() {
             ease: [0.25, 0.1, 0.25, 1],
           }}
         >
-          <div className="unmet-problem-eyebrow">
+          <div className="unmet-how-eyebrow unmet-problem-eyebrow">
+            <div className="unmet-how-eyebrow-mark" aria-hidden="true">
+              <span />
+              <span />
+            </div>
             <span>Problem</span>
           </div>
           <h2>What AI Agents Need?</h2>

@@ -87,8 +87,8 @@ export default function UnmetNavigation() {
 
   const navItems = [
     { label: "Market", href: ROUTES.market.href },
-    { label: "How It Works", href: sectionHref("#how-it-works") },
-    { label: "Builders", href: sectionHref("#problem") },
+    { label: "How It works", href: sectionHref("#how-it-works") },
+    { label: "Analytics", href: ROUTES.analytics.href },
     { label: "Docs", href: ROUTES.docs.href },
   ];
 
