@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "bun run server.ts",
-    "start": "bun run server.ts",
+    "start": "bun run start.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.bun.json",
-    "test": "bun test server.test.ts",
+    "test": "bun test server.test.ts hardening.test.ts",
     "admin": "bun run admin.ts"
   },
   "dependencies": {

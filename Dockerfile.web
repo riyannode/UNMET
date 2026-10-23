@@ -1,0 +1,24 @@
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS build
+WORKDIR /app
+COPY package.json bun.lock ./
+COPY backend/package.json backend/package.json
+COPY frontend/package.json frontend/package.json
+RUN bun install --frozen-lockfile
+COPY frontend ./frontend
+ARG VITE_CHAIN_ID=1952
+ARG VITE_XLAYER_RPC_URL
+ARG VITE_DEMAND_CONTRACT
+ARG VITE_PAYMENT_TOKEN
+ARG VITE_REOWN_PROJECT_ID
+ARG VITE_MARKET_SYNC_INTERVAL_MS=60000
+ARG VITE_NETWORK_SCENE_URL
+RUN test -n "$VITE_XLAYER_RPC_URL" && test -n "$VITE_DEMAND_CONTRACT" && test -n "$VITE_PAYMENT_TOKEN" && test -n "$VITE_REOWN_PROJECT_ID"
+RUN bun run --cwd frontend build
+
+FROM caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d AS runtime
+RUN setcap -r /usr/bin/caddy && addgroup -g 10001 web && adduser -D -H -u 10001 -G web web \
+    && mkdir -p /data/caddy /config/caddy && chown -R web:web /data /config
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/frontend/dist /srv
+USER web
+EXPOSE 8080 8443

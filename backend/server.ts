@@ -1,3 +1,6 @@
+import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
+import { concurrencyGate, rateLimiter } from "./admission.ts";
+import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
@@ -19,6 +22,7 @@ import {
 } from "./contract.ts";
 
 const cfg = loadConfig();
+const operations = loadOperationalConfig();
 
 type IndexEntry = {
   demandId: bigint;
@@ -119,13 +123,13 @@ function secureHeaders(_req: Request, res: Response, next: NextFunction) {
 
 function requestLog(req: Request, res: Response, next: NextFunction) {
   const start = performance.now();
-  const requestId = req.get("x-request-id") || crypto.randomUUID();
+  const requestId = crypto.randomUUID();
   res.setHeader("x-request-id", requestId);
   res.on("finish", () => {
     log({
       level: "info",
       requestId,
-      route: `${req.method} ${req.path}`,
+      route: `${req.method} ${req.route?.path || "unmatched"}`,
       status: res.statusCode,
       durationMs: Math.round(performance.now() - start),
     });
@@ -133,55 +137,78 @@ function requestLog(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-async function readEntry(client: PublicClient, contract: Address, demandId: bigint): Promise<IndexEntry> {
-  const [data, progress, rejection] = await Promise.all([
-    readDemand(client, contract, demandId),
-    readApprovalProgress(client, contract, demandId),
-    readRejectionProgress(client, contract, demandId),
+async function readEntry(client: PublicClient, contract: Address, demandId: bigint, blockNumber: bigint): Promise<IndexEntry> {
+  const [data, progress, rejection] = await Promise.allSettled([
+    readDemand(client, contract, demandId, blockNumber),
+    readApprovalProgress(client, contract, demandId, blockNumber),
+    readRejectionProgress(client, contract, demandId, blockNumber),
   ]);
+  if (data.status === "rejected") throw data.reason;
+  if (progress.status === "rejected") throw progress.reason;
+  if (rejection.status === "rejected") throw rejection.reason;
   return {
     demandId,
-    data,
-    approvalWeight: progress[0],
-    approvalRequired: progress[1],
-    quorumReached: progress[2],
-    rejectionWeight: rejection[0],
-    rejectionThreshold: rejection[1],
-    candidateRejected: rejection[2],
+    data: data.value,
+    approvalWeight: progress.value[0],
+    approvalRequired: progress.value[1],
+    quorumReached: progress.value[2],
+    rejectionWeight: rejection.value[0],
+    rejectionThreshold: rejection.value[1],
+    candidateRejected: rejection.value[2],
   };
 }
 
 async function mapInChunks(ids: bigint[], size: number, task: (id: bigint) => Promise<void>) {
   for (let i = 0; i < ids.length; i += size) {
-    await Promise.all(ids.slice(i, i + size).map(task));
+    const results = await Promise.allSettled(ids.slice(i, i + size).map(task));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
   }
 }
 
-async function rebuildIndex(client: PublicClient, contract: Address, state: DemandIndexState) {
-  const [nextId, block] = await Promise.all([readNextDemandId(client, contract), client.getBlock()]);
+function indexBudget(config: OperationalConfig) {
+  const deadline = performance.now() + config.indexBudgetMs;
+  return () => {
+    if (performance.now() >= deadline) throw new Error("INDEX_BUDGET_EXCEEDED");
+  };
+}
+
+async function rebuildIndex(client: PublicClient, contract: Address, state: DemandIndexState, config: OperationalConfig, check: () => void) {
+  check();
+  const block = await client.getBlock();
+  check();
+  const nextId = await readNextDemandId(client, contract, block.number);
+  check();
+  if (nextId < 1n || nextId - 1n > BigInt(config.indexMaxDemands)) throw new Error("INDEX_CAPACITY");
   const fresh = new Map<string, IndexEntry>();
-  const ids: bigint[] = [];
-  for (let id = 1n; id < nextId; id += 1n) ids.push(id);
-
-  await mapInChunks(ids, 20, async (id) => {
-    const entry = await readEntry(client, contract, id);
-    fresh.set(id.toString(), entry);
-  });
-
-  state.entries.clear();
-  for (const [key, value] of fresh) state.entries.set(key, value);
+  for (let first = 1n; first < nextId; first += BigInt(config.indexBatchSize)) {
+    check();
+    const ids: bigint[] = [];
+    for (let id = first; id < nextId && ids.length < config.indexBatchSize; id++) ids.push(id);
+    await mapInChunks(ids, config.indexBatchSize, async (id) => {
+      fresh.set(id.toString(), await readEntry(client, contract, id, block.number));
+    });
+  }
+  check();
+  const canonical = await client.getBlock({ blockNumber: block.number });
+  if (canonical.hash !== block.hash) throw new Error("INDEX_REORG");
+  check();
+  state.entries = fresh;
   state.lastIndexedBlock = block.number;
   state.lastIndexedBlockHash = block.hash;
   state.ready = true;
   log({ level: "info", event: "index_rebuilt", demands: state.entries.size, block: block.number.toString(), blockHash: block.hash });
 }
 
-export async function changedDemandIds(client: PublicClient, contract: Address, fromBlock: bigint, toBlock: bigint): Promise<Set<bigint>> {
+export async function changedDemandIds(client: PublicClient, contract: Address, fromBlock: bigint, toBlock: bigint, config = operations, check: () => void = () => {}): Promise<Set<bigint>> {
   if (fromBlock > toBlock) return new Set();
+  if ((toBlock - fromBlock) / 100n + 1n > BigInt(config.indexMaxLogWindows)) throw new Error("INDEX_BUDGET_EXCEEDED");
   const ids = new Set<bigint>();
   for (let start = fromBlock; start <= toBlock;) {
+    check();
     const end = start + 99n > toBlock ? toBlock : start + 99n;
     const logs = await client.getLogs({ address: contract, fromBlock: start, toBlock: end });
+    if (logs.length > config.indexMaxDemands * 10) throw new Error("INDEX_CAPACITY");
     for (const entry of logs) {
       try {
         const decoded = decodeEventLog({ abi: AGENT_DEMAND_ABI, data: entry.data, topics: entry.topics, strict: false });
@@ -192,51 +219,53 @@ export async function changedDemandIds(client: PublicClient, contract: Address, 
         // Unknown event from a future contract version: force a full read on next restart, but do not corrupt current state.
       }
     }
+    if (ids.size > config.indexMaxDemands) throw new Error("INDEX_CAPACITY");
     start = end + 1n;
   }
   return ids;
 }
 
-export async function refreshIndex(client: PublicClient, contract: Address, state: DemandIndexState) {
-  if (!state.ready) {
-    await rebuildIndex(client, contract, state);
-    return;
-  }
-
+export async function refreshIndex(client: PublicClient, contract: Address, state: DemandIndexState, config = operations) {
+  const check = indexBudget(config);
+  if (!state.ready) return rebuildIndex(client, contract, state, config, check);
   const current = await client.getBlock();
-  const currentBlock = current.number;
-  if (currentBlock < state.lastIndexedBlock) {
-    await rebuildIndex(client, contract, state);
-    return;
+  check();
+  if (current.number < state.lastIndexedBlock ||
+      current.number - state.lastIndexedBlock > BigInt(config.indexMaxLogWindows) * 100n) {
+    return rebuildIndex(client, contract, state, config, check);
   }
-  if (state.lastIndexedBlock > 0n && state.lastIndexedBlockHash) {
+  if (state.lastIndexedBlockHash) {
     const indexed = await client.getBlock({ blockNumber: state.lastIndexedBlock });
-    if (indexed.hash !== state.lastIndexedBlockHash) {
-      await rebuildIndex(client, contract, state);
-      return;
-    }
+    if (indexed.hash !== state.lastIndexedBlockHash) return rebuildIndex(client, contract, state, config, check);
   }
-  if (currentBlock === state.lastIndexedBlock) return;
-
-  const ids = await changedDemandIds(client, contract, state.lastIndexedBlock + 1n, currentBlock);
-  const nextId = await readNextDemandId(client, contract);
-  for (let id = 1n; id < nextId; id += 1n) {
-    if (!state.entries.has(id.toString())) ids.add(id);
-  }
-
-  await mapInChunks([...ids], 20, async (id) => {
-    state.entries.set(id.toString(), await readEntry(client, contract, id));
+  if (current.number === state.lastIndexedBlock) return;
+  const ids = await changedDemandIds(client, contract, state.lastIndexedBlock + 1n, current.number, config, check);
+  const nextId = await readNextDemandId(client, contract, current.number);
+  check();
+  if (nextId < 1n || nextId - 1n > BigInt(config.indexMaxDemands)) throw new Error("INDEX_CAPACITY");
+  for (let id = 1n; id < nextId; id++) if (!state.entries.has(id.toString())) ids.add(id);
+  const updates = new Map<string, IndexEntry>();
+  await mapInChunks([...ids], config.indexBatchSize, async (id) => {
+    check();
+    updates.set(id.toString(), await readEntry(client, contract, id, current.number));
   });
-  state.lastIndexedBlock = currentBlock;
+  check();
+  const canonical = await client.getBlock({ blockNumber: current.number });
+  if (canonical.hash !== current.hash) throw new Error("INDEX_REORG");
+  check();
+  for (const [key, value] of updates) state.entries.set(key, value);
+  state.lastIndexedBlock = current.number;
   state.lastIndexedBlockHash = current.hash;
 }
 
-async function ensureIndex(client: PublicClient) {
-  if (!cfg.contract) throw new Error("DEMAND_CONTRACT not configured");
+let lastRefresh = 0;
+async function ensureIndex(client: PublicClient, contract = cfg.contract) {
+  if (!contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
   if (refreshPromise) return refreshPromise;
-  refreshPromise = refreshIndex(client, cfg.contract, demandIndex).finally(() => {
-    refreshPromise = null;
-  });
+  if (demandIndex.ready && Date.now() - lastRefresh < operations.indexRefreshMs) return;
+  refreshPromise = refreshIndex(client, contract, demandIndex).then(() => {
+    lastRefresh = Date.now();
+  }).finally(() => { refreshPromise = null; });
   return refreshPromise;
 }
 
@@ -320,6 +349,10 @@ export function validateOpportunitiesInput(body: unknown): { ok: true; value: Qu
     return { ok: false, code: "INVALID_JSON", message: "Body must be a JSON object" };
   }
   const input = body as Record<string, unknown>;
+  const fields = new Set(["minBounty", "minSupporters", "status", "sort", "limit"]);
+  if (Object.keys(input).some((key) => !fields.has(key))) {
+    return { ok: false, code: "INVALID_JSON", message: "Unknown filter field" };
+  }
   let minBounty = 0n;
   if (input.minBounty !== undefined) {
     if (typeof input.minBounty !== "string") return { ok: false, code: "INVALID_JSON", message: "minBounty must be a decimal string" };
@@ -406,24 +439,40 @@ export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, core
 }
 
 function requirePaymentEnv() {
-  const apiKey = process.env.OKX_API_KEY;
-  const secretKey = process.env.OKX_SECRET_KEY;
-  const passphrase = process.env.OKX_PASSPHRASE;
+  const apiKey = process.env.OKX_API_KEY?.trim();
+  const secretKey = process.env.OKX_SECRET_KEY?.trim();
+  const passphrase = process.env.OKX_PASSPHRASE?.trim();
   const payToRaw = process.env.OKX_PAY_TO || process.env.PAY_TO_ADDRESS;
   if (!apiKey || !secretKey || !passphrase || !payToRaw) {
     throw new Error("OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE and OKX_PAY_TO are required");
   }
+  let payTo: Address;
+  try {
+    payTo = getAddress(payToRaw);
+    if (/^0x0{40}$/i.test(payTo)) throw new Error();
+  } catch { throw new Error("CONFIG_INVALID: OKX_PAY_TO"); }
   const payment = resolveX402PaymentConfig();
   return {
     apiKey,
     secretKey,
     passphrase,
-    payTo: getAddress(payToRaw),
+    payTo,
     ...payment,
   };
 }
 
-async function createPaymentMiddleware(): Promise<RequestHandler> {
+const facilitatorFetch = createBoundedFetch({
+  maxInFlight: operations.maxInFlight,
+  timeoutMs: operations.facilitatorTimeoutMs,
+  maxBytes: operations.upstreamMaxBytes,
+});
+
+async function facilitatorCall<T>(task: () => Promise<T>): Promise<T> {
+  try { return await withBoundedFetch(facilitatorFetch, task); }
+  catch { throw new Error("PAYMENT_UPSTREAM_UNAVAILABLE"); }
+}
+
+export async function createPaymentMiddleware(): Promise<RequestHandler> {
   const pay = requirePaymentEnv();
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: pay.apiKey,
@@ -431,10 +480,19 @@ async function createPaymentMiddleware(): Promise<RequestHandler> {
     passphrase: pay.passphrase,
     syncSettle: true,
   });
-  const resourceServer = new x402ResourceServer(facilitatorClient).register(pay.network, new ExactEvmScheme());
+  const boundedFacilitator = {
+    getSupported: () => facilitatorCall(() => facilitatorClient.getSupported()),
+    verify: (...args: Parameters<typeof facilitatorClient.verify>) =>
+      facilitatorCall(() => facilitatorClient.verify(...args)),
+    settle: (...args: Parameters<typeof facilitatorClient.settle>) =>
+      facilitatorCall(() => facilitatorClient.settle(...args)),
+    getSettleStatus: (...args: Parameters<typeof facilitatorClient.getSettleStatus>) =>
+      facilitatorCall(() => facilitatorClient.getSettleStatus(...args)),
+  };
+  const resourceServer = new x402ResourceServer(boundedFacilitator).register(pay.network, new ExactEvmScheme());
   await resourceServer.initialize();
 
-  return paymentMiddleware({
+  const middleware = paymentMiddleware({
     "POST /v1/opportunities": {
       accepts: [{
         scheme: "exact",
@@ -445,72 +503,122 @@ async function createPaymentMiddleware(): Promise<RequestHandler> {
       description: "Rank funded AI-agent capabilities that still need builders",
       mimeType: "application/json",
     },
-  }, resourceServer);
+  }, resourceServer, undefined, undefined, false);
+  return (req, res, next) => {
+    void withBoundedFetch(facilitatorFetch, async () => { await middleware(req, res, next); }).catch(next);
+  };
 }
 
 let vercelPaymentMiddlewarePromise: Promise<RequestHandler> | null = null;
 const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
-  const pending = vercelPaymentMiddlewarePromise ??= createPaymentMiddleware();
-  void pending.then((middleware) => middleware(req, res, next)).catch((error: unknown) => {
-    if (vercelPaymentMiddlewarePromise === pending) vercelPaymentMiddlewarePromise = null;
-    next(error);
-  });
+  void initializedPayment().then((middleware) => middleware(req, res, next)).catch(next);
 };
 
-export function createApp(payment: { middleware: RequestHandler } | null = null) {
+type Payment = { middleware: RequestHandler; ready?: () => Promise<unknown> };
+
+let paymentRetryAt = 0;
+function initializedPayment() {
+  if (Date.now() < paymentRetryAt) return Promise.reject(new Error("PAYMENT_UNAVAILABLE"));
+  return vercelPaymentMiddlewarePromise ??= createPaymentMiddleware().catch((error: unknown) => {
+    vercelPaymentMiddlewarePromise = null;
+    paymentRetryAt = Date.now() + operations.dependencyCacheMs;
+    throw error;
+  });
+}
+
+export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware, ready: initializedPayment }, options: {
+  config?: OperationalConfig;
+  client?: PublicClient;
+  market?: ReturnType<typeof loadConfig>;
+  now?: () => number;
+} = {}) {
+  const config = options.config || operations;
+  const market = options.market || cfg;
   const app = express();
+  let client = options.client;
+  const rpc = () => client ??= getPublicClient();
+  const limiter = rateLimiter(config, options.now);
+  const gate = concurrencyGate(config.maxInFlight);
   app.disable("x-powered-by");
-  app.set("trust proxy", 1);
+  app.set("trust proxy", config.trustedProxies.length ? config.trustedProxies : false);
   app.use(requestLog);
   app.use(secureHeaders);
   app.use(cors);
   app.use(express.json({ limit: "32kb", strict: true }));
 
-  app.get("/health", async (_req, res) => {
-    if (!cfg.contract) {
-      res.status(503).json({ ok: false, error: { code: "CHAIN_CONTRACT_UNCONFIGURED", message: "DEMAND_CONTRACT not configured" } });
-      return;
-    }
-    try {
-      const client = getPublicClient();
-      const [latestBlock, bytecode] = await Promise.all([
-        client.getBlockNumber(),
-        client.getBytecode({ address: cfg.contract }),
-      ]);
-      if (!bytecode || bytecode === "0x") throw new Error("contract bytecode missing");
-      res.json({ ok: true, name: "UNMET", chainId: cfg.chainId, contract: cfg.contract, latestBlock: latestBlock.toString() });
-    } catch {
-      res.status(503).json({ ok: false, error: { code: "CHAIN_RPC_UNAVAILABLE", message: "RPC or contract unavailable" } });
-    }
+  type Health = { status: number; body: Record<string, unknown> };
+  let healthCache: { until: number; result: Health } | undefined;
+  let healthPending: Promise<Health> | undefined;
+  const health = (): Promise<Health> => {
+    if (healthCache && Date.now() < healthCache.until) return Promise.resolve(healthCache.result);
+    if (healthPending) return healthPending;
+    healthPending = (async (): Promise<Health> => {
+      if (!market.contract) return { status: 503, body: { ok: false, error: { code: "CHAIN_CONTRACT_UNCONFIGURED", message: "DEMAND_CONTRACT not configured" } } };
+      try {
+        const [latestBlock, bytecode, chainId] = await Promise.all([
+          rpc().getBlockNumber({ cacheTime: 0 }),
+          rpc().getBytecode({ address: market.contract }),
+          rpc().getChainId(),
+        ]);
+        if (!bytecode || bytecode === "0x" || chainId !== market.chainId) throw new Error("CHAIN_RPC_UNAVAILABLE");
+        return { status: 200, body: { ok: true, name: "UNMET", chainId: market.chainId, contract: market.contract, latestBlock: latestBlock.toString() } };
+      } catch {
+        return { status: 503, body: { ok: false, error: { code: "CHAIN_RPC_UNAVAILABLE", message: "RPC or contract unavailable" } } };
+      }
+    })().then((result) => {
+      healthCache = { until: Date.now() + config.dependencyCacheMs, result };
+      return result;
+    }).finally(() => { healthPending = undefined; });
+    return healthPending;
+  };
+  app.get("/live", (_req, res) => { res.json({ ok: true, name: "UNMET" }); });
+  app.get("/health", (_req, res, next) => {
+    void health().then(({ status, body }) => res.status(status).json(body)).catch(next);
+  });
+  app.get("/ready", (_req, res, next) => {
+    void (async () => {
+      try { await payment.ready?.(); }
+      catch {
+        res.status(503).json({ ok: false, error: { code: "PAYMENT_UNAVAILABLE", message: "Payment service unavailable" } });
+        return;
+      }
+      const result = await health();
+      res.status(result.status).json(result.body);
+    })().catch(next);
   });
 
-  app.get("/v1/demands", async (_req, res, next) => {
+  app.get("/v1/demands", limiter("demands", config.demandsPerWindow), gate, async (_req, res, next) => {
     try {
-      if (!cfg.contract) throw new Error("DEMAND_CONTRACT not configured");
-      const client = getPublicClient();
-      await ensureIndex(client);
+      if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+      await ensureIndex(rpc(), market.contract);
       const entries = [...demandIndex.entries.values()];
       const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 });
-      res.json({ chainId: cfg.chainId, contract: cfg.contract, blockNumber: demandIndex.lastIndexedBlock.toString(), generatedAt: new Date().toISOString(), demands });
+      res.json({ chainId: market.chainId, contract: market.contract, blockNumber: demandIndex.lastIndexedBlock.toString(), generatedAt: new Date().toISOString(), demands });
     } catch (error) { next(error); }
   });
 
-  if (payment) app.post("/v1/opportunities", payment.middleware);
-
-  app.post("/v1/opportunities", async (req, res, next) => {
+  const validate: RequestHandler = (req, res, next) => {
+    if (!req.is("application/json")) {
+      res.status(415).json({ error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "Use application/json" } });
+      return;
+    }
+    const parsed = validateOpportunitiesInput(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: { code: parsed.code, message: parsed.message } });
+      return;
+    }
+    res.locals.opportunityInput = parsed.value;
+    next();
+  };
+  app.post("/v1/opportunities", validate, limiter("opportunities", config.opportunitiesPerWindow), gate, payment.middleware, async (_req, res, next) => {
     try {
-      const parsed = validateOpportunitiesInput(req.body);
-      if (!parsed.ok) {
-        res.status(400).json({ error: { code: parsed.code, message: parsed.message } });
-        return;
-      }
-      if (!cfg.contract) throw new Error("DEMAND_CONTRACT not configured");
-      const client = getPublicClient();
-      await ensureIndex(client);
-      const opportunities = filterAndSort([...demandIndex.entries.values()], parsed.value);
+      if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+      await ensureIndex(rpc(), market.contract);
+      const input: QueryInput = res.locals.opportunityInput;
+      const opportunities = filterAndSort([...demandIndex.entries.values()], input);
       res.json({
-        chainId: cfg.chainId,
-        contract: cfg.contract,
+        chainId: market.chainId,
+        contract: market.contract,
         blockNumber: demandIndex.lastIndexedBlock.toString(),
         generatedAt: new Date().toISOString(),
         opportunities,
@@ -523,37 +631,62 @@ export function createApp(payment: { middleware: RequestHandler } | null = null)
   });
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    log({ level: "error", event: "request_error", error: error instanceof Error ? error.message : String(error) });
-    if (error instanceof SyntaxError && "body" in error) {
-      res.status(400).json({ error: { code: "INVALID_JSON", message: "Request body is not valid JSON" } });
-      return;
-    }
-    res.status(503).json({ error: { code: "CHAIN_RPC_UNAVAILABLE", message: "Service temporarily unavailable" } });
+    if (res.headersSent || res.destroyed) return;
+    const parserStatus = typeof error === "object" && error !== null && "status" in error ? error.status : undefined;
+    const code = parserStatus === 413 ? "BODY_TOO_LARGE"
+      : parserStatus === 415 ? "UNSUPPORTED_MEDIA_TYPE"
+      : error instanceof SyntaxError && "body" in error ? "INVALID_JSON"
+      : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
+      : "CHAIN_RPC_UNAVAILABLE";
+    const status = code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    log({ level: "error", event: "request_error", requestId: res.getHeader("x-request-id"), code });
+    res.status(status).json({ error: { code, message: status >= 500 ? "Service temporarily unavailable" : "Invalid request body" } });
   });
   return app;
 }
 
-export const app = createApp({ middleware: lazyPaymentMiddleware });
+export const app = createApp();
 export default app;
 
 export async function startServer() {
-  if (!cfg.contract) throw new Error("DEMAND_CONTRACT is required before server start");
+  if (!cfg.contract) throw new Error("CONFIG_INVALID: DEMAND_CONTRACT");
   const pay = requirePaymentEnv();
+  if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_ORIGIN?.trim()) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
   const middleware = await createPaymentMiddleware();
-  const app = createApp({ middleware });
-  const port = Number(process.env.PORT || 8787);
+  const application = createApp({ middleware });
+  const port = operations.port;
   const host = process.env.HOST || "0.0.0.0";
-  const server = app.listen(port, host, () => {
+  const server = application.listen(port, host, () => {
     log({ level: "info", event: "listen", host, port, chainId: cfg.chainId, contract: cfg.contract, paymentNetwork: pay.network });
   });
-
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 10_000;
+  let draining = false;
   const shutdown = (signal: string) => {
+    if (draining) return;
+    draining = true;
     log({ level: "info", event: "shutdown", signal });
-    server.close((error) => process.exit(error ? 1 : 0));
+    const deadline = setTimeout(() => {
+      log({ level: "error", event: "shutdown_timeout", code: "DRAIN_TIMEOUT" });
+      server.closeAllConnections();
+      process.exit(1);
+    }, operations.shutdownTimeoutMs);
+    deadline.unref();
+    server.close((error) => {
+      clearTimeout(deadline);
+      process.exit(error ? 1 : 0);
+    });
+    server.closeIdleConnections();
   };
   process.once("SIGTERM", () => shutdown("SIGTERM"));
   process.once("SIGINT", () => shutdown("SIGINT"));
   return server;
 }
 
-if (import.meta.main) await startServer();
+if (import.meta.main) {
+  try { await startServer(); }
+  catch {
+    log({ level: "error", event: "startup_failed", code: "STARTUP_UNAVAILABLE" });
+    process.exitCode = 1;
+  }
+}

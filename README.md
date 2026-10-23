@@ -50,6 +50,10 @@ The current public endpoint's unpaid challenge was read on 2026-09-24 and return
 
 On 2026-09-24, the frontend returned HTTP 200, `/health` and `/v1/demands` returned HTTP 200 on chain `1952`, and an unpaid opportunities request returned the Mainnet x402 challenge. See [Demo](docs/DEMO.md) for the current frontend path and [STATUS](docs/STATUS.md) for verification limits.
 
+## Self-hosting
+
+Run the production frontend/Caddy and Bun API with one Docker Compose stack using your own OKX and Reown configuration. See [Self-hosting](docs/SELF_HOSTING.md) for WSL2 setup, localhost HTTP, future domain/HTTPS configuration, API limits, health and rollback. Local startup does not authorize a public deployment or signed x402 payment.
+
 ## Verified evidence
 
 [STATUS](docs/STATUS.md) is the canonical record for deployment readbacks, contract receipts, historical paid Testnet evidence, current unpaid Mainnet challenge checks, and known verification gaps. The contract has not been independently audited, and the demand market is not production-ready.
