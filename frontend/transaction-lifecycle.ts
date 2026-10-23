@@ -4,8 +4,8 @@ import type { CreatedDemandVerification } from "./create-demand-chat-model";
 
 export type TransactionStage = "approval" | "demand" | "action";
 export type TransactionState = "broadcast" | "confirmed" | "reverted" | "cancelled" | "unknown";
-export type TransactionFailureState = Extract<TransactionState, "reverted" | "cancelled" | "unknown">;
-export type PendingTransactionState = Extract<TransactionState, "broadcast" | "unknown">;
+type TransactionFailureState = Extract<TransactionState, "reverted" | "cancelled" | "unknown">;
+type PendingTransactionState = Extract<TransactionState, "broadcast" | "unknown">;
 
 export type TransactionIntent = {
   to: Address;
@@ -13,7 +13,7 @@ export type TransactionIntent = {
   value: bigint;
 };
 
-export type TransactionUpdate = {
+type TransactionUpdate = {
   stage: TransactionStage;
   state: TransactionState;
   hash: Hash;
@@ -196,7 +196,7 @@ function parsePendingTransaction(value: unknown): PendingTransactionRecord | nul
   };
 }
 
-export function transactionStorageKey(wallet: Address, chainId: number, actionId: string): string {
+function transactionStorageKey(wallet: Address, chainId: number, actionId: string): string {
   return PENDING_TRANSACTION_PREFIX + chainId + ":" + wallet.toLowerCase() + ":" + encodeURIComponent(actionId);
 }
 

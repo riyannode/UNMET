@@ -1,5 +1,7 @@
 # SQLite payment verification — 2026-10-23
 
+> Historical PR #14 validation report. Counts below belong to the recorded implementation stage; the final baseline includes later logical-key regression tests. See [cleanup audit](CLEANUP_AUDIT.md) for the separate before/after run.
+
 Base: origin/main 448c949 (merged PR #13). Checkout: /home/acer/projects/UNMET inside Ubuntu-24.04 WSL2. No Windows source checkout was changed.
 
 Tools: Bun 1.4.3, Docker 29.7.2, Compose 5.5.1, Git 2.43.0, Foundry 1.8.3. Production API image remains Bun 1.4.2; its native SQLite reports 3.53.2.

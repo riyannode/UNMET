@@ -11,7 +11,7 @@ export type CreateDemandAnswers = {
   deadlineDays: string;
 };
 
-export type PricingAnswer =
+type PricingAnswer =
   | { kind: "complete"; maxPrice: string; expectedCalls: string }
   | { kind: "missing"; field: "maxPrice"; expectedCalls: string }
   | { kind: "missing"; field: "expectedCalls"; maxPrice: string };
@@ -34,7 +34,7 @@ export type DemandReadbackMatch = {
   committed: bigint;
 };
 
-export type CreatedDemandMatch = {
+type CreatedDemandMatch = {
   creator: string;
   capability: string;
   specification: string;

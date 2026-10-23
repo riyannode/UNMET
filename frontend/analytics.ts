@@ -2,9 +2,9 @@ import { effectiveStatus, type DemandView } from "./contract";
 
 const STATUS_ORDER = ["OPEN", "SUBMITTED", "READY", "EXPIRED", "REJECTED", "FULFILLED", "CLOSED", "UNKNOWN"];
 
-export type AnalyticsStatusCount = { status: string; count: number };
+type AnalyticsStatusCount = { status: string; count: number };
 
-export type GlobalAnalytics = {
+type GlobalAnalytics = {
   totalRequests: number;
   fulfilledRequests: number;
   escrowLocked: bigint;

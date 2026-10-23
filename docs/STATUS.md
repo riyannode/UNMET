@@ -1,5 +1,19 @@
 # Verification Status
 
+## Current implementation (cleanup baseline: merged PR #14)
+
+The repository implements Testnet demand/escrow state and an independent production Mainnet x402 rail. Docker runs Caddy plus one Bun API with WAL/FULL SQLite payment records; Vercel retains its non-durable payment path. See [Architecture](ARCHITECTURE.md), [Self-hosting](SELF_HOSTING.md), and [Payment recovery](PAYMENT_RECOVERY.md).
+
+Local PR #13 evidence is in [SELF_HOSTING_VALIDATION](SELF_HOSTING_VALIDATION.md); local PR #14 evidence is in [PAYMENT_VERIFICATION](PAYMENT_VERIFICATION.md). The [cleanup audit](CLEANUP_AUDIT.md) records its own baseline/post-change checks separately. These are local build/test/container results, not latest-release paid or public-deployment acceptance.
+
+Outstanding production gates include an independent contract audit, interactive wallet/provider acceptance (including the documented [native disconnect gap](WALLET_DISCONNECT.md)), separately authorized live paid settlement/finality/resource delivery, and current hosting/TLS/backup/restore acceptance. No current endpoint availability or OKX listing approval is asserted here.
+
+Cleanup link check on **2026-10-23**: HTTP HEAD requests to `frontend-omega-beige-33.vercel.app`, `unmet-ai.vercel.app`, and `unmet-api.vercel.app` returned **404**. The September URLs below are retained for provenance and must not be used as current working deployment instructions.
+
+## Historical verification — 2026-09-24
+
+The following records are preserved for their original dates and deployed versions. Words such as “current,” “live,” and “production” below refer to those observations, not to the cleanup release. Endpoints have not been revalidated as live by this documentation update.
+
 Date: 2026-09-24
 
 Status: **PARTIAL — THE DEMAND MARKET REMAINS ON X LAYER TESTNET; THE A2MCP x402 RAIL ADVERTISES X LAYER MAINNET. An unpaid Mainnet challenge was rechecked on 2026-09-24; paid-Mainnet replay and settlement remain unverified. The latest recorded OKX.AI listing/review status is from 2026-09-23. Wallet-provider E2E and an independent contract audit remain outstanding.**

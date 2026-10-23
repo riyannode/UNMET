@@ -402,7 +402,7 @@ async function requireWalletSession(session?: WalletSession): Promise<WalletSess
   return current;
 }
 
-export async function ensureChain(session?: WalletSession, expectedAccount?: Address): Promise<void> {
+async function ensureChain(session?: WalletSession, expectedAccount?: Address): Promise<void> {
   const currentSession = await requireWalletSession(session);
   const account = expectedAccount ?? currentSession.account ?? await sessionWallet(currentSession);
   if (!account) throw new Error("WALLET_NOT_CONNECTED");
@@ -432,7 +432,7 @@ export async function ensureChain(session?: WalletSession, expectedAccount?: Add
   await assertWalletSession({ ...currentSession, account }, account);
 }
 
-export function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
+function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
   if (status === 0) return "OPEN";
   if (status === 1) return "SUBMITTED";
   if (status === 2) return "FULFILLED";
@@ -481,17 +481,13 @@ async function readDemandWithClient(
   };
 }
 
-export async function readDemandOnChain(demandId: bigint): Promise<DemandView> {
-  return readDemandWithClient(getPublic(), demandId);
-}
-
-export function sortDemandsByFunding(output: DemandView[]): DemandView[] {
+function sortDemandsByFunding(output: DemandView[]): DemandView[] {
   return output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
 }
 
 export type MarketSyncCursor = { blockNumber: bigint; blockHash: Hash };
-export type MarketBoardSnapshot = { demands: DemandView[]; cursor: MarketSyncCursor | null };
-export type MarketSyncResult = MarketBoardSnapshot & { changed: boolean; reorgRecovered: boolean };
+type MarketBoardSnapshot = { demands: DemandView[]; cursor: MarketSyncCursor | null };
+type MarketSyncResult = MarketBoardSnapshot & { changed: boolean; reorgRecovered: boolean };
 
 async function readBoardAt(client: PublicClient, contract: Address, blockNumber: bigint): Promise<DemandView[]> {
   const next = await client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "nextDemandId", blockNumber }) as bigint;
@@ -515,10 +511,6 @@ async function readBoardSnapshotWithClient(client: PublicClient, contract: Addre
 export async function readBoardSnapshot(): Promise<MarketBoardSnapshot> {
   if (!DEMAND_CONTRACT) return { demands: [], cursor: null };
   return readBoardSnapshotWithClient(getPublic(), DEMAND_CONTRACT);
-}
-
-export async function readBoard(): Promise<DemandView[]> {
-  return (await readBoardSnapshot()).demands;
 }
 
 export function demandIdsFromLogs(logs: readonly Pick<Log, "data" | "topics">[]): Set<bigint> {
@@ -800,4 +792,3 @@ export async function verifyTransaction(
 export function formatUsd0(value: bigint): string { return formatUnits(value, 6); }
 export function parseUsd0(value: string): bigint { return parseUnits(value.trim(), 6); }
 export function explorerTx(hash: string): string { return `${targetChain.blockExplorers.default.url}/tx/${hash}`; }
-export function explorerAddress(address: string): string { return `${targetChain.blockExplorers.default.url}/address/${address}`; }

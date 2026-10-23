@@ -1,5 +1,7 @@
 # UNMET submission
 
+> Historical September 2026 hackathon submission. Deployment/database descriptions below reflect that version, before PR #14 added operational SQLite payment records. See [Architecture](ARCHITECTURE.md) and [documentation index](README.md) for the current implementation. URLs are preserved as evidence, not revalidated live endpoints.
+
 ## Project
 
 UNMET

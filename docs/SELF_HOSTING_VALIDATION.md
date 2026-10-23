@@ -1,5 +1,7 @@
 # Local self-hosting validation — 2026-10-23
 
+> Historical PR #13 local validation report, before durable SQLite was added in PR #14. No-database statements describe that scope. See [Self-hosting](SELF_HOSTING.md), [Payment recovery](PAYMENT_RECOVERY.md) and [cleanup audit](CLEANUP_AUDIT.md) for current implementation and later checks.
+
 Scope: Docker/API hardening on main 54b863d6edae59b0ee5397cfbfe2fd68274b02b2 (merged PR #12). No public deployment, signed x402 payment, or onchain write occurred.
 
 ## Environment

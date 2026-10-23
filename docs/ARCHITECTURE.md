@@ -1,22 +1,25 @@
 # Architecture
 
-## System boundary
+## Production paths
 
-```text
-Agent / browser wallet
-        |
-        | ERC-20 approve + contract writes
-        v
-AgentDemand.sol on X Layer
-        |                 ^
-        | storage/events  | direct reads
-        v                 |
-Bun + Express API      React frontend
-        |
-        | official OKX x402 middleware
-        v
-OKX.AI / A2MCP buyer
+```mermaid
+flowchart TD
+    U[Browser / AI Agent] -->|wallet / contract calls via RPC| X[X Layer Testnet: AgentDemand.sol]
+    X --- E[Demand, escrow, voting, settlement, refund]
+    U -->|HTTP: UI and API| C[Caddy]
+    C -->|static files / SPA fallback| F[React / Vite build]
+    C -->|API paths| B[Bun / Express API]
+    B -->|pinned demand reads and logs| R[X Layer Testnet RPC]
+    B -->|operation records| S[SQLite WAL/FULL: payment_data volume]
+    S --- I[x402 idempotency and settlement records]
+    B -->|official verify / settle / status| O[Official OKX x402: Mainnet billing rail]
 ```
+
+The browser's demand actions use `frontend/contract.ts` directly, not the Bun API. `frontend/main.tsx` lazy-loads app routes; `/` is the landing page, `/docs` a placeholder, `/market`, `/market/:demandId`, `/create-demand`, `/analytics` are app routes and `/my-activity` redirects to Analytics.
+
+Docker starts `backend/start.ts` through `Dockerfile.api`; Caddy serves the web image and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready`. One **Bun API replica** owns a local payment volume. Indexes, quotas and admission limits are process-local. SQLite and OKX do not share an atomic transaction; no distributed exactly-once guarantee is made. See [Self-hosting](SELF_HOSTING.md) and [Payment recovery](PAYMENT_RECOVERY.md).
+
+Vercel instead imports the default Express app from `backend/server.ts`, initializes payment middleware lazily and uses platform ingress identity. `PAYMENT_DB_PATH` must be unset there: ephemeral function storage is not durable. Its static frontend rewrites are in `frontend/vercel.json`. Caddy/Compose are not used on that path. The configuration supports this entrypoint; no live deployment is implied.
 
 ## Independent network contexts
 
@@ -24,7 +27,7 @@ The demand market is configured by `CHAIN_ID` and remains on X Layer Testnet (`1
 
 Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`), matching the registered A2MCP fee token and yielding the mainnet USD₮0 challenge. This payment setting is never used by `backend/contract.ts` or demand-market clients. Local/test environments can omit it to inherit `CHAIN_ID`.
 
-`AgentDemand.sol` is the only canonical application state. No Supabase, PostgreSQL, Redis, Firebase or hidden persistence is used.
+`AgentDemand.sol` is canonical for demand and escrow state. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
 
 ## Contract state
 
@@ -116,18 +119,17 @@ The cache is never used as proof. API results include chain ID, contract and ind
 `POST /v1/opportunities` is the only paid route.
 
 ```text
-request without valid payment
-        -> official paymentMiddleware
-        -> HTTP 402 + standard PAYMENT-REQUIRED challenge
-buyer signs/pays
-        -> replay with PAYMENT-SIGNATURE
-        -> OKX facilitator verify/settle
-        -> route executes
-        -> HTTP 200 + chain-derived result
-        -> PAYMENT-RESPONSE as produced by middleware
+validated request -> route/IP quota -> admission -> official x402 middleware
+  unpaid -> HTTP 402 + PAYMENT-REQUIRED
+  PAYMENT-SIGNATURE -> official verify
+    -> durable SQLite reservation (self-hosted only)
+    -> buffered chain-derived execution
+    -> durable SETTLEMENT_IN_FLIGHT before official settle
+    -> confirmed SETTLED -> release result + PAYMENT-RESPONSE
+    -> ambiguous outcome -> UNKNOWN, withhold content, HTTP 409
 ```
 
-There is no fake payment header or local bypass.
+The official Express SDK buffers execution **before settlement** and skips settlement on failed execution. There is no custom proof or local bypass. Durable mode wraps the official facilitator and preserves its signing/verification/settlement; it withholds the SDK's optimistic pending response. Duplicate/conflicting reservations return 409. Optional `Idempotency-Key` binds a logical request but never enables original paid-response replay. Status-only operator reconciliation never resubmits settlement; a missing hash can require manual investigation.
 
 ## Trust model
 
@@ -156,7 +158,7 @@ This prevents a majority from seizing minority deposits while preserving the ori
 
 ## Why the core escrow is not ERC-8183
 
-[ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) is currently a **Draft** standard. This comparison describes the core abstractions in the current specification; it does not claim incompatibility or superiority. ERC-8183 solves a neighboring problem at a different abstraction layer.
+[ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) was compared as a **Draft** in the original design rationale below. This retained comparison describes the specification inspected then; it does not claim incompatibility, superiority or a current standards review. ERC-8183 solves a neighboring problem at a different abstraction layer.
 
 At a high level, ERC-8183 models a job:
 

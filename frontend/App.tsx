@@ -33,7 +33,6 @@ import {
   refundDemand,
   rejectService,
   reopenDemand,
-  statusName,
   submitService,
   supportDemand,
   verifyTransaction,
@@ -1027,7 +1026,7 @@ export function DemandDetailRoute() {
   const demandId = parseDemandId(rawDemandId);
   const location = useLocation();
   const navigate = useNavigate();
-  const { board, boardLoading, boardLoadError, refreshBoard, account, support, supportState, busy, lastTx, run, blockedActionIds } = useOutletContext<AppOutletContext>();
+  const { board, boardLoading, boardLoadError, refreshBoard, account, support, supportState, busy, run, blockedActionIds } = useOutletContext<AppOutletContext>();
   const demand = demandId === null ? undefined : board.find((candidate) => candidate.demandId === demandId);
   const detail: DemandDetailLoad = demandId === null
     ? { kind: "invalid" }
@@ -1607,4 +1606,3 @@ function iso(value: bigint): string {
     ? "Outside displayable date range"
     : new Date(Number(millis)).toISOString();
 }
-function short(value: string): string { return `${value.slice(0, 6)}…${value.slice(-4)}`; }

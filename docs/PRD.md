@@ -94,7 +94,7 @@ Secondary revenue: paid `POST /v1/opportunities`, recommended demo price `$0.01/
 
 ## Canonical storage
 
-No persistent application DB.
+No offchain escrow/demand database. Self-hosted `bun:sqlite` persists operational x402 idempotency and settlement records; it does not replace contract state. See [Payment recovery](PAYMENT_RECOVERY.md).
 
 Current economic state: `AgentDemand.sol`.  
 History: contract events.  
@@ -200,11 +200,11 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- Routes: / is the standalone landing page; /market, /market/:demandId, /create-demand, and /my-activity share the application shell.
-- Global navigation: **Explore Market**, **Create Demand**, and **My Activity**; Demand Details keeps **Explore Market** active.
-- Selecting a market request from **Market Requests** or **My Activity** opens its dedicated Demand view; the back action returns to the originating view.
+- Routes: / is the standalone landing page; /market, /market/:demandId, /create-demand, and /analytics share the application shell. /my-activity redirects to /analytics; /docs is a Coming Soon page.
+- Global navigation: **Explore Market**, **Create Demand**, and **Analytics**; Demand Details keeps **Explore Market** active.
+- Selecting a market request from **Market Requests** or **Analytics** opens its dedicated Demand view; the back action returns to the originating view.
 - Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).
-- **Post a Request** groups inputs into Request, Economics, and Initial Escrow; its final action is **Post Request & Commit Escrow**.
+- **Create Demand** uses a deterministic six-term guided chat with review/edit and **Create & Fund Demand** controls; see [frontend product](../frontend/PRODUCT.md).
 - User-facing action labels: **Support This Request**, **Submit Service Proposal**, **Approve Proposal**, **Reject Proposal**, and **Finalize Payout**. Contract function names remain unchanged.
 - **Refund** and **Reopen Demand** remain in the selected demand context and appear only when their current contract conditions allow them.
 - Keep the demand board, wallet flow, chain/network state, transaction status/readback, explorer links, and eligible lifecycle actions.
@@ -220,11 +220,12 @@ Wallet behavior:
 
 ## Repository constraints
 
-Only source directories:
+Main source and support directories:
 
 ```text
 backend/
 frontend/
+scripts/
 docs/
 ```
 
