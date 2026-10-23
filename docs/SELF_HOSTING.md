@@ -37,6 +37,8 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | Input | Required / visibility | Meaning |
 | --- | --- | --- |
 | SITE_ADDRESS | Public, default http://localhost | Caddy site address; future public hostname enables TLS |
+| WWW_SITE_ADDRESS | Public, default http://localhost:8081 | Alias serving a permanent 308 redirect; default port is not published |
+| CANONICAL_ORIGIN | Public, default http://localhost | Redirect destination origin, without trailing slash; preserves path and query |
 | WEB_BIND_IP, HTTP_PORT, HTTPS_PORT | Public, defaults 127.0.0.1, 80, 443 | Host ingress binding |
 | IMAGE_TAG | Public, default local | Set to an immutable release/commit identifier when updating |
 | APP_SUBNET, CADDY_INTERNAL_IP, API_INTERNAL_IP | Public, defaults 172.30.80.0/24, 172.30.80.2, 172.30.80.3 | Choose a nonconflicting subnet and unused addresses inside it, changing all three together |
@@ -150,7 +152,7 @@ At most 200 requests / 16 concurrent clients are permitted. The default unpaid o
 This PR deploys nothing publicly. Before separately authorized deployment:
 
 1. Prepare Linux; allow only needed SSH and TCP 80/443, restrict SSH and Docker socket access. Do not expose 8787.
-2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmet.example.com, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmet.example.com, replacing the example hostname.
+2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmetxyz.my.id, WWW_SITE_ADDRESS=www.unmetxyz.my.id, CANONICAL_ORIGIN=https://unmetxyz.my.id, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmetxyz.my.id. Caddy obtains certificates for both names, redirects HTTP to HTTPS and sends alias requests to the canonical origin with HTTP 308, preserving paths and queries. Keep both DNS records DNS-only and pointed at the same host. Use your own hostnames for another deployment.
 3. Configure real Reown origin/project, public browser RPC and private provider quotas. Review independent payment network/recipient.
 4. Rebuild/start the same stack. Public Caddy certificates require valid domain/DNS and reachable ports. The caddy_data/caddy_config volumes preserve certificate state.
 5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting at the configured HTTPS origin using the [manual verification commands](#health-smoke-checks-and-logs). Paid settlement/replay requires separate authorization/evidence.

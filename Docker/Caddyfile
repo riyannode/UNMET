@@ -29,6 +29,10 @@
 	}
 }
 
+{$WWW_SITE_ADDRESS:http://localhost:8081} {
+	redir {$CANONICAL_ORIGIN:http://localhost}{uri} 308
+}
+
 http://:8090 {
 	respond /live "ok" 200
 }
