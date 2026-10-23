@@ -1,13 +1,13 @@
 # Documentation
 
-Repository setup and validation start in [CONTRIBUTING](../CONTRIBUTING.md). The website's `/docs` route is currently a Coming Soon page; the technical documentation lives here.
+Coding agents start with [AGENTS](../AGENTS.md). Repository setup and validation start in [CONTRIBUTING](../CONTRIBUTING.md). The website's `/docs` route is currently a Coming Soon page; the technical documentation lives here.
 
 ## Current reference
 
 - [Product requirements](PRD.md): implemented demand model and explicitly future roadmap.
 - [Architecture](ARCHITECTURE.md): chain authority, index, two network contexts and deployment paths.
 - [API](API.md): public/paid routes, schemas and response behavior.
-- [Frontend product](../frontend/PRODUCT.md) and [design conventions](../frontend/DESIGN.md).
+- [Frontend product](PRODUCT.md) and [design conventions](DESIGN.md).
 - [Cleanup audit](CLEANUP_AUDIT.md): removal evidence, retained candidates and validation for the October cleanup.
 
 ## Operations and security

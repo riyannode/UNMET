@@ -1,5 +1,7 @@
 # Contributing
 
+Coding agents should read the repository [AGENTS.md](AGENTS.md) before choosing a subsystem or editing files.
+
 ## Tools and installation
 
 Use Bun `1.4.2` (manifest and Docker version), Git, Foundry/Forge (verified version `1.8.3`), and Docker Engine with Compose for container checks. Foundry selects Solidity `0.8.37` from `backend/foundry.toml`. Bun `1.4.3` also passed the cleanup checks.

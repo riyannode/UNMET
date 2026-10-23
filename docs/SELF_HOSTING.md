@@ -2,6 +2,8 @@
 
 One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
 
+Run Compose from the repository root. It keeps `context: .` and builds with `Docker/Dockerfile.api` and `Docker/Dockerfile.web`; the web image copies `Docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
+
 ## WSL2 prerequisites
 
 On Windows, enable Ubuntu WSL2 and Docker Desktop integration for that distribution. Alternatively use a compatible Docker Engine and Compose plugin inside Linux; do not start a second daemon alongside working Docker Desktop integration.

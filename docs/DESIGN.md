@@ -1,6 +1,6 @@
 # Frontend design conventions
 
-The current sources are `main.tsx`, `App.tsx`, `CreateDemandChat.tsx`, `components/examples/c-sidebar-1.tsx` and their styles. This reference replaces the older dark workspace / Three.js network-background brief; that renderer is no longer mounted.
+The current sources are `frontend/main.tsx`, `frontend/App.tsx`, `frontend/CreateDemandChat.tsx`, `frontend/components/examples/c-sidebar-1.tsx` and their styles. This reference replaces the older dark workspace / Three.js network-background brief; that renderer is no longer mounted.
 
 ## Routes and structure
 
@@ -10,7 +10,7 @@ Demand details keep Request Details, Escrow & Support, and Builder Proposal toge
 
 ## Tokens and components
 
-`app.css` scopes the light app theme to `.unmet-app-shell`: white background/card/sidebar, `#192800` foreground/primary, `#dbffa6` accent and `#52663b` muted foreground. Reuse existing semantic variables, ReUI/Base UI primitives and components. Inter Tight is the app text font; addresses and transaction values use existing numeric/monospace styles. Landing typography/styles live in the `unmet-*.css` files.
+`frontend/app.css` scopes the light app theme to `.unmet-app-shell`: white background/card/sidebar, `#192800` foreground/primary, `#dbffa6` accent and `#52663b` muted foreground. Reuse existing semantic variables, ReUI/Base UI primitives and components. Inter Tight is the app text font; addresses and transaction values use existing numeric/monospace styles. Landing typography/styles live in the `frontend/unmet-*.css` files.
 
 Legacy selectors still style active demand content. A legacy-looking selector or filename is not evidence that it can be removed.
 

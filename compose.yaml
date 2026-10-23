@@ -4,7 +4,7 @@ services:
     image: unmet-api:${IMAGE_TAG:-local}
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Docker/Dockerfile.api
     environment:
       PAYMENT_DB_PATH: /data/payments.sqlite
       PAYMENT_RETENTION_DAYS: ${PAYMENT_RETENTION_DAYS:-30}
@@ -73,7 +73,7 @@ services:
     image: unmet-web:${IMAGE_TAG:-local}
     build:
       context: .
-      dockerfile: Dockerfile.web
+      dockerfile: Docker/Dockerfile.web
       args:
         VITE_CHAIN_ID: ${VITE_CHAIN_ID:-1952}
         VITE_XLAYER_RPC_URL: ${VITE_XLAYER_RPC_URL:?Configure public VITE_XLAYER_RPC_URL}

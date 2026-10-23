@@ -204,7 +204,7 @@ Screens/actions:
 - Global navigation: **Explore Market**, **Create Demand**, and **Analytics**; Demand Details keeps **Explore Market** active.
 - Selecting a market request from **Market Requests** or **Analytics** opens its dedicated Demand view; the back action returns to the originating view.
 - Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).
-- **Create Demand** uses a deterministic six-term guided chat with review/edit and **Create & Fund Demand** controls; see [frontend product](../frontend/PRODUCT.md).
+- **Create Demand** uses a deterministic six-term guided chat with review/edit and **Create & Fund Demand** controls; see [frontend product](PRODUCT.md).
 - User-facing action labels: **Support This Request**, **Submit Service Proposal**, **Approve Proposal**, **Reject Proposal**, and **Finalize Payout**. Contract function names remain unchanged.
 - **Refund** and **Reopen Demand** remain in the selected demand context and appear only when their current contract conditions allow them.
 - Keep the demand board, wallet flow, chain/network state, transaction status/readback, explorer links, and eligible lifecycle actions.

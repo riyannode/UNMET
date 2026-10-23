@@ -1,5 +1,7 @@
 # UNMET frontend
 
+Current frontend behavior is described here. See [PRD](PRD.md) for the demand model and future roadmap, and [Design](DESIGN.md) for UI conventions and acceptance targets.
+
 UNMET is a market for unmet AI-agent demand. Supporters commit test USD₮0 to capabilities; builders submit services for weighted approval or rejection. Only explicit approver funds settle. Other eligible commitments remain refundable.
 
 This interface serves demand funders and builders comparing capability, escrow, calls, price and review state. Phase 1 adds route navigation and a shared app shell; Phase 2 replaces the Create Demand form with a deterministic guided chat and six-term review. The wizard preserves the existing Reown wallet, receipt, readback and action rules and uses the canonical contract path only after explicit create intent. Its responses are local UI prompts, not AI-generated content.
