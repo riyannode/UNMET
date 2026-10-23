@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Pencil, RefreshCw } from "lucide-react";
 import type { Hash } from "viem";
@@ -205,7 +205,7 @@ export function CreateDemandChat({
   const [error, setError] = useState("");
   const [editingField, setEditingField] = useState<EditableDemandField | null>(null);
   const [editChoicesOpen, setEditChoicesOpen] = useState(false);
-  const [outcome, setOutcome] = useState<CreateDemandRunOutcome | { kind: "message"; text: string } | null>(null);
+  const [storedOutcome, setOutcome] = useState<CreateDemandRunOutcome | { kind: "message"; text: string } | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [verificationPending, setVerificationPending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -214,23 +214,34 @@ export function CreateDemandChat({
   const endRef = useRef<HTMLDivElement>(null);
   const submitLock = useRef(false);
   const createLock = useRef(false);
-  const walletSessionRef = useRef({ account: account?.toLowerCase() ?? null });
   const walletIdentity = account?.toLowerCase() ?? null;
-  if (walletSessionRef.current.account !== walletIdentity) {
+  const [committedWalletIdentity, setCommittedWalletIdentity] = useState(walletIdentity);
+  const sessionMatchesCommittedWallet = committedWalletIdentity === walletIdentity;
+  const walletSessionRef = useRef({ account: walletIdentity });
+  useLayoutEffect(() => {
+    if (committedWalletIdentity === walletIdentity) return;
     walletSessionRef.current = { account: walletIdentity };
+    setCommittedWalletIdentity(walletIdentity);
     setOutcome(null);
     setRefreshMessage("");
     setError("");
     setCreatePending(false);
     setVerificationPending(false);
     setRefreshing(false);
+    submitLock.current = false;
     createLock.current = false;
     refreshLock.current = false;
-  }
+  }, [committedWalletIdentity, walletIdentity]);
+  const outcome = sessionMatchesCommittedWallet ? storedOutcome : null;
+  const sessionCreatePending = sessionMatchesCommittedWallet && createPending;
+  const sessionVerificationPending = sessionMatchesCommittedWallet && verificationPending;
+  const sessionRefreshing = sessionMatchesCommittedWallet && refreshing;
+  const sessionRefreshMessage = sessionMatchesCommittedWallet ? refreshMessage : "";
+  const sessionError = sessionMatchesCommittedWallet ? error : "";
   const turns = buildTurns(answers, step, editingField);
   const reviewRows = buildReviewRows(answers);
   const prompt = editPrompt(editingField, step);
-  const busyCreating = busy || createPending;
+  const busyCreating = busy || sessionCreatePending;
   const unresolvedTransaction = outcome?.kind === "broadcast" || outcome?.kind === "unknown"
     || pendingTransaction?.kind === "broadcast" || pendingTransaction?.kind === "unknown";
   const unresolvedOutcome = outcome?.kind === "broadcast" || outcome?.kind === "unknown"
@@ -466,7 +477,7 @@ export function CreateDemandChat({
   }
 
   async function handleVerify(outcomeToVerify: CreateDemandTransactionOutcome) {
-    if (verificationPending) return;
+    if (sessionVerificationPending) return;
     const session = walletSessionRef.current;
     setVerificationPending(true);
     setRefreshMessage("");
@@ -516,9 +527,9 @@ export function CreateDemandChat({
               ? "The USD₮0 approval may still be pending. Verify it before submitting the demand"
               : "The demand transaction may still be pending. Do not submit it again until this transaction is verified"}</p>
             <a href={explorerTx(unresolvedOutcome.hash)} target="_blank" rel="noreferrer">View transaction</a>
-            <Button type="button" variant="outline" disabled={verificationPending || busy} onClick={() => void handleVerify(unresolvedOutcome)}>
+            <Button type="button" variant="outline" disabled={sessionVerificationPending || busy} onClick={() => void handleVerify(unresolvedOutcome)}>
               <RefreshCw aria-hidden="true" />
-              {verificationPending || busy ? "Checking transaction..." : "Verify existing transaction"}
+              {sessionVerificationPending || busy ? "Checking transaction..." : "Verify existing transaction"}
             </Button>
           </div>
         )}
@@ -609,9 +620,9 @@ export function CreateDemandChat({
                 {outcome.demandId !== null && <Link to={demandHref(outcome.demandId)}>Open demand details</Link>}
                 {outcome.demandId === null && (
                   <>
-                    <Button type="button" variant="outline" disabled={refreshing} onClick={() => void handleRefresh()}>
+                    <Button type="button" variant="outline" disabled={sessionRefreshing} onClick={() => void handleRefresh()}>
                       <RefreshCw aria-hidden="true" />
-                      {refreshing ? "Verifying..." : "Refresh / verify market"}
+                      {sessionRefreshing ? "Verifying..." : "Refresh / verify market"}
                     </Button>
                     <Link to="/market">Explore Market</Link>
                   </>
@@ -624,9 +635,9 @@ export function CreateDemandChat({
                 <strong>Transaction confirmed; chain readback unavailable</strong>
                 <p>{outcome.message ?? "The demand may be onchain, but its current state could not be read. Do not resubmit until you verify it"}</p>
                 <a href={explorerTx(outcome.hash)} target="_blank" rel="noreferrer">View confirmed transaction</a>
-                <Button type="button" variant="outline" disabled={refreshing} onClick={() => void handleRefresh()}>
+                <Button type="button" variant="outline" disabled={sessionRefreshing} onClick={() => void handleRefresh()}>
                   <RefreshCw aria-hidden="true" />
-                  {refreshing ? "Verifying..." : "Refresh / verify market"}
+                  {sessionRefreshing ? "Verifying..." : "Refresh / verify market"}
                 </Button>
               </div>
             )}
@@ -660,7 +671,7 @@ export function CreateDemandChat({
               </div>
             )}
 
-            {refreshMessage && <p className="create-demand-refresh-message" role="status" aria-live="polite">{refreshMessage}</p>}
+            {sessionRefreshMessage && <p className="create-demand-refresh-message" role="status" aria-live="polite">{sessionRefreshMessage}</p>}
 
             {completedReview && !editChoicesOpen && !editing && outcome?.kind !== "confirmed" && outcome?.kind !== "readback-failed" && !unresolvedTransaction && (
               <div className="create-demand-actions">
@@ -738,7 +749,7 @@ export function CreateDemandChat({
             placeholder={prompt.placeholder}
             maxRows={6}
             submitLabel={editing ? "Save edited answer" : "Send answer"}
-            error={error}
+            error={sessionError}
             className="create-demand-composer"
             actions={editing ? <Button type="button" variant="ghost" className="create-demand-cancel-edit" onClick={cancelEdit}>Cancel edit</Button> : null}
           />

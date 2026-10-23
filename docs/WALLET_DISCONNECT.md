@@ -35,3 +35,25 @@ The adapter awaits permission handling, catches its errors and can still clear
 the SDK session. Neither the permission query nor revocation is bypassed.
 Draft answers and wallet-scoped pending transaction recovery are preserved;
 results from an earlier wallet session are excluded from the current chat UI.
+
+## Wallet session transitions
+
+Create Demand compares wallet identities in render using state. Its layout
+effect renews the callback token and resets operation locks only after a wallet
+change commits. A suspended render cannot invalidate the previous committed
+wallet. Committed disconnect/reconnect transitions renew the session even when
+the same address reconnects. Draft answers and pricing inputs remain intact.
+
+App transaction entry points capture the originating provider, account and
+session generation. Account/provider changes invalidate unsigned stages. The
+operation's viem transport validates the current account and chain immediately
+before forwarding each signing request, including viem's alternate send method.
+Already-forwarded requests cannot be recalled; broadcast receipt monitoring and
+wallet-scoped recovery records continue independently of wallet changes. This
+does not detect native disconnect pending before the SDK reports a change.
+
+Run `bun run test:frontend` for mocked wallet/RPC regressions. With the frontend
+dev server running, open `/tests/create-demand-chat-race.html` for the real
+component Suspense/startTransition and committed-session regression. Its final
+result must say PASS. The browser fixture uses synthetic outcomes and submits
+no wallet transactions.

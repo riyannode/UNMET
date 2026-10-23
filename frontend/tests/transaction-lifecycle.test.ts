@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import type { Address, Hash, Hex } from "viem";
-import { createDemand, setReownWalletProvider, verifyTransaction } from "../contract";
+import { captureWalletSession, createDemand, setReownWalletProvider, submitService, supportDemand, verifyTransaction } from "../contract";
 import { errorMessage } from "../errors";
 import {
   isTransactionIntentMatch,
@@ -23,6 +23,80 @@ import {
   type TransactionIntent,
 } from "../transaction-lifecycle";
 
+type Gate<T> = { promise: Promise<T>; resolve: (value: T) => void };
+function deferred<T>(): Gate<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
+const transactionHash = `0x${"9".repeat(64)}` as Hash;
+let allowanceValue = 0n;
+let allowanceGate: Gate<void> | null = null;
+let receiptGate: Gate<void> | null = null;
+let receiptRequested: (() => void) | null = null;
+let allowanceRequested: (() => void) | null = null;
+let receiptReads = 0;
+const mockBlockHash = `0x${"b".repeat(64)}`;
+const rpcServer = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 18545,
+  async fetch(request) {
+    const rpc = await request.json() as { id: number; method: string; params?: unknown[] };
+    let result: unknown = null;
+    if (rpc.method === "eth_call") {
+      allowanceRequested?.();
+      if (allowanceGate) await allowanceGate.promise;
+      result = `0x${allowanceValue.toString(16).padStart(64, "0")}`;
+    } else if (rpc.method === "eth_getTransactionReceipt") {
+      receiptReads += 1;
+      receiptRequested?.();
+      if (receiptGate) await receiptGate.promise;
+      result = {
+        transactionHash,
+        transactionIndex: "0x0",
+        blockHash: mockBlockHash,
+        blockNumber: "0x1",
+        from: wallet,
+        to,
+        cumulativeGasUsed: "0x5208",
+        gasUsed: "0x5208",
+        contractAddress: null,
+        logs: [],
+        logsBloom: `0x${"0".repeat(512)}`,
+        status: "0x1",
+        effectiveGasPrice: "0x1",
+        type: "0x0",
+      };
+    } else if (rpc.method === "eth_blockNumber") {
+      result = "0x1";
+    } else if (rpc.method === "eth_getBlockByHash" || rpc.method === "eth_getBlockByNumber") {
+      result = {
+        hash: mockBlockHash,
+        parentHash: `0x${"0".repeat(64)}`,
+        number: "0x1",
+        timestamp: "0x1",
+        nonce: `0x${"0".repeat(16)}`,
+        sha3Uncles: `0x${"0".repeat(64)}`,
+        logsBloom: `0x${"0".repeat(512)}`,
+        transactionsRoot: `0x${"0".repeat(64)}`,
+        stateRoot: `0x${"0".repeat(64)}`,
+        receiptsRoot: `0x${"0".repeat(64)}`,
+        miner: to,
+        difficulty: "0x0",
+        totalDifficulty: "0x0",
+        extraData: "0x",
+        size: "0x1",
+        gasLimit: "0x100000",
+        gasUsed: "0x5208",
+        transactions: [],
+        uncles: [],
+        baseFeePerGas: "0x1",
+      };
+    }
+    return Response.json({ jsonrpc: "2.0", id: rpc.id, result });
+  },
+});
 const wallet = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Address;
 const otherWallet = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as Address;
 const originalHash = `0x${"1".repeat(64)}` as Hash;
@@ -34,10 +108,54 @@ const data = "0x1234" as Hex;
 const otherData = "0xabcd" as Hex;
 const intent: TransactionIntent = { to, data, value: 0n };
 
-afterEach(() => setReownWalletProvider(null));
+afterEach(() => {
+  allowanceGate?.resolve();
+  receiptGate?.resolve();
+  setReownWalletProvider(null);
+  allowanceValue = 0n;
+  allowanceGate = null;
+  receiptGate = null;
+  receiptRequested = null;
+  allowanceRequested = null;
+  receiptReads = 0;
+});
+afterAll(() => rpcServer.stop(true));
 
 function successReceipt(transactionHash: Hash = originalHash) {
   return { transactionHash, status: "success" as const };
+}
+
+function testProvider(
+  accounts: () => Promise<unknown> | unknown = () => [wallet],
+  chain: () => Promise<unknown> | unknown = () => "0x7a0",
+  signRequests: string[] = [],
+) {
+  return {
+    request: async ({ method }: { method: string }) => {
+      if (method === "eth_accounts") return accounts();
+      if (method === "eth_chainId") return chain();
+      if (method === "eth_sendTransaction") {
+        signRequests.push(method);
+        return transactionHash;
+      }
+      if (method === "eth_estimateGas") return "0x5208";
+      if (method === "eth_gasPrice") return "0x1";
+      if (method === "eth_getTransactionCount") return "0x0";
+      if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return null;
+      throw new Error(`Unexpected wallet request: ${method}`);
+    },
+  };
+}
+
+function validCreateInput() {
+  return {
+    capability: "vendor-kyb-api",
+    specification: "Verify a business.",
+    maxPrice: "0.02",
+    expectedCalls: "1000",
+    deadlineDays: "14",
+    commitment: "20",
+  };
 }
 
 describe("transaction lifecycle", () => {
@@ -281,7 +399,7 @@ describe("transaction lifecycle", () => {
       },
     });
     await expect(verifyTransaction("demand", originalHash, intent, wallet, 1952)).rejects.toThrow("WALLET_CHANGED");
-    expect(requested).toEqual(["eth_accounts", "eth_chainId"]);
+    expect(requested).toEqual(["eth_accounts"]);
     expect(requested).not.toContain("eth_sendTransaction");
 
     requested.length = 0;
@@ -379,6 +497,221 @@ describe("transaction lifecycle", () => {
       commitment: "20",
     })).rejects.toThrow("DEMAND_DEADLINE_TOO_SHORT");
     expect(walletRequests).toBe(0);
+  });
+
+  test("rejects a deferred account read when its provider session changes before signing", async () => {
+    const accountRead = deferred<unknown>();
+    const accountRequestStarted = deferred<void>();
+    const reads: string[] = [];
+    const signingRequests: string[] = [];
+    const providerA = {
+      request: async ({ method }: { method: string }) => {
+        reads.push(method);
+        if (method === "eth_accounts") { accountRequestStarted.resolve(); return accountRead.promise; }
+        if (method === "eth_chainId") return "0x7a0";
+        if (method === "eth_sendTransaction") { signingRequests.push(method); return transactionHash; }
+        return null;
+      },
+    };
+    setReownWalletProvider(providerA);
+    const session = captureWalletSession(wallet);
+    const pending = createDemand(validCreateInput(), undefined, session ?? undefined);
+    await accountRequestStarted.promise;
+    setReownWalletProvider(testProvider());
+    accountRead.resolve([wallet]);
+
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(reads).toEqual(["eth_accounts"]);
+    expect(signingRequests).toEqual([]);
+  });
+
+  test("rejects a deferred chain read after the provider session changes", async () => {
+    const chainRead = deferred<unknown>();
+    const chainRequestStarted = deferred<void>();
+    const reads: string[] = [];
+    const signingRequests: string[] = [];
+    const providerA = {
+      request: async ({ method }: { method: string }) => {
+        reads.push(method);
+        if (method === "eth_accounts") return [wallet];
+        if (method === "eth_chainId") { chainRequestStarted.resolve(); return chainRead.promise; }
+        if (method === "eth_sendTransaction") { signingRequests.push(method); return transactionHash; }
+        return null;
+      },
+    };
+    setReownWalletProvider(providerA);
+    const session = captureWalletSession(wallet);
+    const pending = createDemand(validCreateInput(), undefined, session ?? undefined);
+    await chainRequestStarted.promise;
+    setReownWalletProvider(testProvider());
+    chainRead.resolve("0x7a0");
+
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(reads).toEqual(["eth_accounts", "eth_accounts", "eth_chainId"]);
+    expect(signingRequests).toEqual([]);
+  });
+
+  test("does not sign after the allowance read resolves for a replaced provider", async () => {
+    const allowanceRead = deferred<void>();
+    const signingRequests: string[] = [];
+    allowanceGate = deferred<void>();
+    allowanceRequested = () => allowanceRead.resolve();
+    const providerA = testProvider(() => [wallet], () => "0x7a0", signingRequests);
+    setReownWalletProvider(providerA);
+    const session = captureWalletSession(wallet);
+    const pending = supportDemand(1n, "1", "1", undefined, session ?? undefined);
+    await allowanceRead.promise;
+    setReownWalletProvider(testProvider());
+    allowanceGate.resolve();
+
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(signingRequests).toEqual([]);
+  });
+
+  test("does not sign after the allowance read when the same wallet changes chain", async () => {
+    const allowanceRead = deferred<void>();
+    const signingRequests: string[] = [];
+    let chainId = "0x7a0";
+    allowanceRequested = () => allowanceRead.resolve();
+    allowanceGate = deferred<void>();
+    const provider = testProvider(() => [wallet], () => chainId, signingRequests);
+    setReownWalletProvider(provider);
+    const session = captureWalletSession(wallet);
+    const pending = supportDemand(1n, "1", "1", undefined, session ?? undefined);
+    await allowanceRead.promise;
+    chainId = "0x1";
+    allowanceGate.resolve();
+
+    await expect(pending).rejects.toThrow("CHAIN_WRONG_NETWORK");
+    expect(signingRequests).toEqual([]);
+  });
+
+  test.each(["switch", "disconnect"])("invalidates an old session after same-provider A to %s to A", async (transition) => {
+    const allowanceRead = deferred<void>();
+    const signingRequests: string[] = [];
+    allowanceRequested = () => allowanceRead.resolve();
+    allowanceGate = deferred<void>();
+    const provider = testProvider(() => [wallet], () => "0x7a0", signingRequests);
+    setReownWalletProvider(provider, wallet);
+    const pending = supportDemand(1n, "1", "1");
+    await allowanceRead.promise;
+    if (transition === "disconnect") setReownWalletProvider(null);
+    else setReownWalletProvider(provider, otherWallet);
+    setReownWalletProvider(provider, wallet);
+    allowanceGate.resolve();
+
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(signingRequests).toEqual([]);
+  });
+
+  test("checks the session again after a reset approval receipt before sending the amount approval", async () => {
+    allowanceValue = 1n;
+    const allowanceRead = deferred<void>();
+    const receiptRead = deferred<void>();
+    const signingRequests: string[] = [];
+    const updates: Array<{ stage: string; state: string }> = [];
+    allowanceRequested = () => allowanceRead.resolve();
+    receiptRequested = () => receiptRead.resolve();
+    receiptGate = deferred<void>();
+    const providerA = testProvider(() => [wallet], () => "0x7a0", signingRequests);
+    setReownWalletProvider(providerA);
+    const session = captureWalletSession(wallet);
+    const pending = supportDemand(1n, "1", "1", ({ stage, state }) => updates.push({ stage, state }), session ?? undefined);
+    await allowanceRead.promise;
+    await receiptRead.promise;
+    setReownWalletProvider(testProvider());
+    receiptGate.resolve();
+
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(signingRequests).toEqual(["eth_sendTransaction"]);
+    expect(updates).toEqual([
+      { stage: "approval", state: "broadcast" },
+      { stage: "approval", state: "confirmed" },
+    ]);
+  });
+
+  test("continues monitoring and records an already-broadcast transaction after wallet changes", async () => {
+    const signingRequests: string[] = [];
+    const updates: Array<{ state: string; hash: Hash }> = [];
+    const providerB = testProvider(() => [otherWallet]);
+    const providerA = testProvider(() => [wallet], () => "0x7a0", signingRequests);
+    setReownWalletProvider(providerA);
+    const session = captureWalletSession(wallet);
+    const result = await submitService(1n, "https://service.example/api", "evidence", ({ state, hash }) => {
+      updates.push({ state, hash });
+      if (state === "broadcast") setReownWalletProvider(providerB);
+    }, session ?? undefined);
+
+    expect(result).toBe(transactionHash);
+    expect(signingRequests).toEqual(["eth_sendTransaction"]);
+    expect(receiptReads).toBeGreaterThan(0);
+    expect(updates).toEqual([
+      { state: "broadcast", hash: transactionHash },
+      { state: "confirmed", hash: transactionHash },
+    ]);
+  });
+
+  test("does not sign if the session changes during viem's final chain check", async () => {
+    const chainRead = deferred<unknown>();
+    const chainStarted = deferred<void>();
+    const signingRequests: string[] = [];
+    let chainReads = 0;
+    const provider = testProvider(() => [wallet], () => {
+      if (++chainReads === 4) { chainStarted.resolve(); return chainRead.promise; }
+      return "0x7a0";
+    }, signingRequests);
+    setReownWalletProvider(provider);
+    const pending = submitService(1n, "https://service.example/api", "evidence");
+    await chainStarted.promise;
+    setReownWalletProvider(testProvider(() => [otherWallet]));
+    chainRead.resolve("0x7a0");
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(signingRequests).toEqual([]);
+  });
+
+  test("uses the same session for a successful approval and support action", async () => {
+    const signingRequests: string[] = [];
+    const updates: Array<{ stage: string; state: string }> = [];
+    setReownWalletProvider(testProvider(() => [wallet], () => "0x7a0", signingRequests));
+    const session = captureWalletSession(wallet);
+    const result = await supportDemand(1n, "1", "1", ({ stage, state }) => updates.push({ stage, state }), session ?? undefined);
+
+    expect(result).toBe(transactionHash);
+    expect(signingRequests).toEqual(["eth_sendTransaction", "eth_sendTransaction"]);
+    expect(updates).toEqual([
+      { stage: "approval", state: "broadcast" },
+      { stage: "approval", state: "confirmed" },
+      { stage: "action", state: "broadcast" },
+      { stage: "action", state: "confirmed" },
+    ]);
+  });
+
+  test("does not use viem's alternate send method after the originating session changes", async () => {
+    const signingRequests: string[] = [];
+    const fallbackStarted = deferred<void>();
+    const fallbackGate = deferred<void>();
+    const provider = {
+      request: async ({ method }: { method: string }) => {
+        if (method === "eth_accounts") return [wallet];
+        if (method === "eth_chainId") return "0x7a0";
+        if (method === "eth_sendTransaction") {
+          signingRequests.push(method);
+          fallbackStarted.resolve();
+          await fallbackGate.promise;
+          throw Object.assign(new Error("Unsupported method"), { code: -32601 });
+        }
+        if (method === "wallet_sendTransaction") { signingRequests.push(method); return transactionHash; }
+        return null;
+      },
+    };
+    setReownWalletProvider(provider, wallet);
+    const pending = submitService(1n, "https://service.example/api", "evidence");
+    await fallbackStarted.promise;
+    setReownWalletProvider(testProvider(), otherWallet);
+    fallbackGate.resolve();
+
+    await expect(pending).rejects.toThrow("WALLET_CHANGED");
+    expect(signingRequests).toEqual(["eth_sendTransaction"]);
   });
 });
 

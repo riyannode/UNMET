@@ -18,6 +18,7 @@ import {
   DEMAND_CONTRACT,
   MARKET_SYNC_INTERVAL_MS,
   approveService,
+  captureWalletSession,
   createDemand,
   getPublic,
   readTransactionOnChain,
@@ -40,6 +41,7 @@ import {
   type DemandView,
   type MarketSyncCursor,
   type SupportView,
+  type WalletSession,
 } from "./contract.ts";
 import {
   afterConfirmedTransaction,
@@ -114,8 +116,8 @@ type CreateDemandPendingTransactionRecord = PendingTransactionRecord & {
 };
 type AppTransactionOutcome = CreateDemandRunOutcome | TransactionFailureOutcome;
 type RunHandler = {
-  (label: "create", actionId: typeof CREATE_DEMAND_ACTION_ID, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<CreateDemandRunOutcome>;
-  (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<AppTransactionOutcome>;
+  (label: "create", actionId: typeof CREATE_DEMAND_ACTION_ID, fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<CreateDemandRunOutcome>;
+  (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<AppTransactionOutcome>;
 };
 type VerifyPendingHandler = {
   (record: CreateDemandPendingTransactionRecord): Promise<CreateDemandRunOutcome>;
@@ -509,7 +511,7 @@ export default function App() {
       }
       const chain = kit.getChainId();
       setChainOk(chain === undefined || Number(chain) === CHAIN_ID);
-      setReownWalletProvider(nextAccount ? kit.getWalletProvider() : null);
+      setReownWalletProvider(nextAccount ? kit.getWalletProvider() : null, nextAccount);
       return;
     }
     activeWalletIdentityRef.current = null;
@@ -676,25 +678,27 @@ export default function App() {
   function run(
     label: "create",
     actionId: typeof CREATE_DEMAND_ACTION_ID,
-    fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
+    fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>,
     createdDemand?: CreateDemandInput,
   ): Promise<CreateDemandRunOutcome>;
   function run(
     label: string,
     actionId: string,
-    fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
+    fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>,
     createdDemand?: CreateDemandInput,
   ): Promise<AppTransactionOutcome>;
   async function run(
     label: string,
     actionId: string,
-    fn: (onUpdate: TransactionUpdateHandler) => Promise<Hash>,
+    fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>,
     createdDemand?: CreateDemandInput,
   ): Promise<AppTransactionOutcome> {
     if (disconnectingRef.current) return { kind: "failed", message: "Wallet is disconnecting" };
     if (!account || activeWalletIdentityRef.current !== account.toLowerCase()) {
       return { kind: "failed", message: "Connect your wallet before continuing" };
     }
+    const originatingSession = captureWalletSession(account);
+    if (!originatingSession) return { kind: "failed", message: "Connect your wallet before continuing" };
     const lockKey = `${account?.toLowerCase() ?? "disconnected"}:${CHAIN_ID}:${actionId}`;
     const storagePending = account
       ? findPendingTransaction(readPendingTransactions(transactionStorage()).records, account, CHAIN_ID, actionId)
@@ -742,7 +746,7 @@ export default function App() {
         : undefined;
       const onUpdate = createTransactionUpdateHandler(label, actionId, verification, undefined, "transaction");
       const readback = await afterConfirmedTransaction(
-        () => fn(onUpdate),
+        () => fn(onUpdate, originatingSession),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
@@ -798,6 +802,8 @@ export default function App() {
     if (!chainOk || record.chainId !== CHAIN_ID) {
       return { kind: "failed", message: `Switch to X Layer ${CHAIN_ID} before verifying this transaction` };
     }
+    const originatingSession = captureWalletSession(record.wallet);
+    if (!originatingSession) return { kind: "failed", message: "Connect the wallet that sent this transaction before verifying it" };
     const lockKey = `${record.wallet.toLowerCase()}:${record.chainId}:${record.actionId}`;
     if (activeActionLocksRef.current.has(lockKey)) {
       return { kind: "failed", message: "This transaction is already being checked" };
@@ -816,7 +822,7 @@ export default function App() {
     try {
       const onUpdate = createTransactionUpdateHandler(displayLabel, record.actionId, record.verification, record);
       if (record.stage === "approval") {
-        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate);
+        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate, originatingSession);
         if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) {
           const action = record.actionId === CREATE_DEMAND_ACTION_ID ? "demand" : "support";
           setStatus(`${displayLabel} token approval confirmed. No ${action} was submitted`);
@@ -825,7 +831,7 @@ export default function App() {
       }
 
       const readback = await afterConfirmedTransaction(
-        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate),
+        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate, originatingSession),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
@@ -996,7 +1002,7 @@ export function CreateDemandRoute() {
       walletStatus={walletStatus}
       pendingTransaction={pendingCreate}
       onConnect={connect}
-      onCreate={(input) => run("create", CREATE_DEMAND_ACTION_ID, (onUpdate) => createDemand(input, onUpdate), input)}
+      onCreate={(input) => run("create", CREATE_DEMAND_ACTION_ID, (onUpdate, session) => createDemand(input, onUpdate, session), input)}
       onVerify={verifyCreate}
       onRefreshBoard={refreshBoard}
     />
@@ -1484,7 +1490,7 @@ function DemandDetail({
                     <label htmlFor="demand-support-calls">Expected calls
                       <Input id="demand-support-calls" value={supportCalls} onChange={(event) => setSupportCalls(event.currentTarget.value)} className="demand-detail-input" />
                     </label>
-                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("support")} onClick={() => void run("support", `support:${demand.demandId}`, (onUpdate) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate))}>Support This Request</Button>
+                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("support")} onClick={() => void run("support", `support:${demand.demandId}`, (onUpdate, session) => supportDemand(demand.demandId, supportAmount, supportCalls, onUpdate, session))}>Support This Request</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -1496,7 +1502,7 @@ function DemandDetail({
                   <CardDescription className="demand-detail-card-description">Your eligible commitment can be returned</CardDescription>
                 </CardHeader>
                 <CardContent className="demand-detail-actions">
-                  <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate) => refundDemand(demand.demandId, onUpdate))}>Refund {formatUsd0(support.commitment)} USD₮0</Button>
+                  <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate, session) => refundDemand(demand.demandId, onUpdate, session))}>Refund {formatUsd0(support.commitment)} USD₮0</Button>
                 </CardContent>
               </Card>
             )}
@@ -1527,7 +1533,7 @@ function DemandDetail({
                     <label htmlFor="proposal-evidence">Evidence</label>
                     <Textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(event) => setEvidence(event.currentTarget.value)} className="demand-detail-input" />
                     <p className="demand-detail-help" id="proposal-evidence-help">Proof that the service fulfills this request</p>
-                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate) => submitService(demand.demandId, serviceUrl, evidence, onUpdate))}>Submit Service Proposal</Button>
+                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate, session) => submitService(demand.demandId, serviceUrl, evidence, onUpdate, session))}>Submit Service Proposal</Button>
                   </div>
                 </CardContent>
               ) : null}
@@ -1554,8 +1560,8 @@ function DemandDetail({
                   <div className="demand-detail-actions">
                     {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
                       <>
-                        <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}`, (onUpdate) => approveService(demand.demandId, onUpdate))}>Approve Proposal</Button>
-                        <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}`, (onUpdate) => rejectService(demand.demandId, onUpdate))}>Reject Proposal</Button>
+                        <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}`, (onUpdate, session) => approveService(demand.demandId, onUpdate, session))}>Approve Proposal</Button>
+                        <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}`, (onUpdate, session) => rejectService(demand.demandId, onUpdate, session))}>Reject Proposal</Button>
                       </>
                     )}
                     {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement</span>}
@@ -1571,10 +1577,10 @@ function DemandDetail({
                 </CardHeader>
                 <CardContent className="demand-detail-actions">
                   {demand.status === 1 && demand.quorumReached && (
-                    <Button type="button" className="demand-detail-action" disabled={busy || actionBlocked("finalize")} onClick={() => void run("finalize", `finalize:${demand.demandId}`, (onUpdate) => finalizeDemand(demand.demandId, onUpdate))}>Finalize Payout</Button>
+                    <Button type="button" className="demand-detail-action" disabled={busy || actionBlocked("finalize")} onClick={() => void run("finalize", `finalize:${demand.demandId}`, (onUpdate, session) => finalizeDemand(demand.demandId, onUpdate, session))}>Finalize Payout</Button>
                   )}
                   {canReopen && (
-                    <Button type="button" variant="outline" className="demand-detail-action" disabled={busy || !account || actionBlocked("reopen")} onClick={() => void run("reopen", `reopen:${demand.demandId}`, (onUpdate) => reopenDemand(demand.demandId, onUpdate))}>Reopen Demand</Button>
+                    <Button type="button" variant="outline" className="demand-detail-action" disabled={busy || !account || actionBlocked("reopen")} onClick={() => void run("reopen", `reopen:${demand.demandId}`, (onUpdate, session) => reopenDemand(demand.demandId, onUpdate, session))}>Reopen Demand</Button>
                   )}
                 </CardContent>
               </Card>

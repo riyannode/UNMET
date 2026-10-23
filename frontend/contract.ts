@@ -284,6 +284,12 @@ type EthereumProvider = {
   removeListener?(event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void): void;
 };
 
+export type WalletSession = {
+  readonly provider: EthereumProvider;
+  readonly generation: number;
+  readonly account: Address | null;
+};
+
 function parseConfiguredAddress(value: string | undefined, name: string): Address | undefined {
   if (!value) return undefined;
   if (!isAddress(value)) throw new Error(`${name} is not a valid EVM address`);
@@ -296,6 +302,8 @@ function requireContract(): Address {
 }
 
 let reownWalletProvider: EthereumProvider | null = null;
+let walletProviderGeneration = 0;
+let reownWalletAccount: Address | null = null;
 
 function requireReownProvider(): EthereumProvider {
   if (!reownWalletProvider) throw new Error("WALLET_NOT_FOUND");
@@ -307,16 +315,38 @@ function isEthereumProvider(provider: unknown): provider is EthereumProvider {
     && "request" in provider && typeof provider.request === "function";
 }
 
-export function setReownWalletProvider(provider: unknown): void {
-  reownWalletProvider = isEthereumProvider(provider) ? provider : null;
+export function setReownWalletProvider(provider: unknown, account: Address | null = null): void {
+  const nextProvider = isEthereumProvider(provider) ? provider : null;
+  const nextAccount = nextProvider ? account : null;
+  if (nextProvider !== reownWalletProvider || nextAccount?.toLowerCase() !== reownWalletAccount?.toLowerCase()) {
+    walletProviderGeneration += 1;
+  }
+  reownWalletProvider = nextProvider;
+  reownWalletAccount = nextAccount;
+}
+
+export function captureWalletSession(account: Address | null = null): WalletSession | null {
+  return reownWalletProvider
+    ? { provider: reownWalletProvider, generation: walletProviderGeneration, account: account ?? reownWalletAccount }
+    : null;
 }
 
 export function getPublic(): PublicClient {
   return createPublicClient({ chain: targetChain, transport: http(RPC_URL, { timeout: 15_000, retryCount: 2 }) }) as PublicClient;
 }
 
-export function walletClient() {
-  return createWalletClient({ chain: targetChain, transport: custom(requireReownProvider() as never) });
+export function walletClient(session?: WalletSession) {
+  const provider = session?.provider ?? requireReownProvider();
+  return createWalletClient({ chain: targetChain, transport: custom({
+    request: async (request: { method: string; params?: readonly unknown[] }) => {
+      if (session && (request.method === "eth_sendTransaction" || request.method === "wallet_sendTransaction")) {
+        if (!session.account) throw new Error("WALLET_NOT_CONNECTED");
+        await assertWalletSession(session, session.account);
+        assertProviderSession(session);
+      }
+      return provider.request(request);
+    },
+  }) });
 }
 
 export async function currentWallet(): Promise<Address | null> {
@@ -335,19 +365,63 @@ export async function currentChainId(): Promise<number | null> {
   return Number.parseInt(result, 16);
 }
 
-export async function ensureChain(): Promise<void> {
-  const eth = requireReownProvider();
-  const current = await currentChainId();
+function assertProviderSession(session: WalletSession): void {
+  if (session.provider !== reownWalletProvider || session.generation !== walletProviderGeneration) {
+    throw new Error("WALLET_CHANGED");
+  }
+}
+
+async function sessionWallet(session: WalletSession): Promise<Address | null> {
+  assertProviderSession(session);
+  const accounts = await session.provider.request({ method: "eth_accounts" });
+  assertProviderSession(session);
+  if (!Array.isArray(accounts) || typeof accounts[0] !== "string" || !isAddress(accounts[0])) return null;
+  return getAddress(accounts[0]);
+}
+
+async function sessionChainId(session: WalletSession): Promise<number | null> {
+  assertProviderSession(session);
+  const result = await session.provider.request({ method: "eth_chainId" });
+  assertProviderSession(session);
+  return typeof result === "string" ? Number.parseInt(result, 16) : null;
+}
+
+async function assertWalletSession(session: WalletSession, expectedAccount: Address): Promise<void> {
+  const account = await sessionWallet(session);
+  if (!account) throw new Error("WALLET_NOT_CONNECTED");
+  if (account.toLowerCase() !== expectedAccount.toLowerCase() || session.account && account.toLowerCase() !== session.account.toLowerCase()) {
+    throw new Error("WALLET_CHANGED");
+  }
+  if (await sessionChainId(session) !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
+}
+
+async function requireWalletSession(session?: WalletSession): Promise<WalletSession> {
+  const current = session ?? captureWalletSession();
+  if (!current) throw new Error("WALLET_NOT_CONNECTED");
+  assertProviderSession(current);
+  return current;
+}
+
+export async function ensureChain(session?: WalletSession, expectedAccount?: Address): Promise<void> {
+  const currentSession = await requireWalletSession(session);
+  const account = expectedAccount ?? currentSession.account ?? await sessionWallet(currentSession);
+  if (!account) throw new Error("WALLET_NOT_CONNECTED");
+  if (currentSession.account && account.toLowerCase() !== currentSession.account.toLowerCase()) throw new Error("WALLET_CHANGED");
+  if ((await sessionWallet(currentSession))?.toLowerCase() !== account.toLowerCase()) throw new Error("WALLET_CHANGED");
+  const current = await sessionChainId(currentSession);
   if (current === CHAIN_ID) return;
+  assertProviderSession(currentSession);
   try {
-    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }] });
+    await currentSession.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }] });
   } catch (error) {
     const code = (error as { code?: number }).code;
     if (code !== 4902) {
       if (code === 4001) throw new Error("WALLET_REJECTED");
       throw new Error("CHAIN_WRONG_NETWORK");
     }
-    await eth.request({ method: "wallet_addEthereumChain", params: [{
+    assertProviderSession(currentSession);
+    if ((await sessionWallet(currentSession))?.toLowerCase() !== account.toLowerCase()) throw new Error("WALLET_CHANGED");
+    await currentSession.provider.request({ method: "wallet_addEthereumChain", params: [{
       chainId: `0x${CHAIN_ID.toString(16)}`,
       chainName: targetChain.name,
       nativeCurrency: targetChain.nativeCurrency,
@@ -355,6 +429,7 @@ export async function ensureChain(): Promise<void> {
       blockExplorerUrls: [targetChain.blockExplorers.default.url],
     }] });
   }
+  await assertWalletSession({ ...currentSession, account }, account);
 }
 
 export function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
@@ -529,11 +604,15 @@ export async function readSupport(demandId: bigint, supporter: Address): Promise
   return { commitment: value[0], expectedCalls: value[1], approved: value[2], rejected: value[3], refundable: Boolean(refundable) };
 }
 
-async function requireAccount(): Promise<Address> {
-  const account = await currentWallet();
+async function requireAccount(session?: WalletSession): Promise<{ account: Address; session: WalletSession }> {
+  const currentSession = await requireWalletSession(session);
+  const account = await sessionWallet(currentSession);
   if (!account) throw new Error("WALLET_NOT_CONNECTED");
-  await ensureChain();
-  return account;
+  if (currentSession.account && account.toLowerCase() !== currentSession.account.toLowerCase()) throw new Error("WALLET_CHANGED");
+  const boundSession = { ...currentSession, account };
+  await ensureChain(boundSession, account);
+  await assertWalletSession(boundSession, account);
+  return { account, session: boundSession };
 }
 
 async function readTransactionByHash(hash: Hash): Promise<ObservedTransaction> {
@@ -592,13 +671,15 @@ async function writeDemand(
   account: Address,
   functionName: "createDemand" | "supportDemand" | "submitService" | "approveService" | "rejectService" | "finalize" | "reopen" | "refund",
   args: readonly unknown[],
+  session: WalletSession,
   stage: TransactionStage = "action",
   onUpdate?: TransactionUpdateHandler,
 ): Promise<Hash> {
   const address = requireContract();
   const data = encodeFunctionData({ abi: DEMAND_ABI, functionName, args: args as never });
   const intent: TransactionIntent = { to: address, data, value: 0n };
-  const hash = await walletClient().writeContract({
+  await assertWalletSession(session, account);
+  const hash = await walletClient(session).writeContract({
     address,
     abi: DEMAND_ABI,
     functionName,
@@ -609,19 +690,21 @@ async function writeDemand(
   return wait(hash, intent, stage, account, CHAIN_ID, onUpdate);
 }
 
-async function ensureAllowance(owner: Address, amount: bigint, onUpdate?: TransactionUpdateHandler): Promise<void> {
+async function ensureAllowance(owner: Address, amount: bigint, session: WalletSession, onUpdate?: TransactionUpdateHandler): Promise<void> {
   if (amount <= 0n) throw new Error("SUPPORT_TOO_SMALL");
   const client = getPublic();
   const contract = requireContract();
   const current = await client.readContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "allowance", args: [owner, contract] }) as bigint;
   if (current >= amount) return;
-  const wallet = walletClient();
+  const wallet = walletClient(session);
   if (current > 0n) {
     const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, 0n] });
+    await assertWalletSession(session, owner);
     const reset = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, 0n], account: owner, chain: targetChain });
     await wait(reset, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
   }
   const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, amount] });
+  await assertWalletSession(session, owner);
   const approval = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, amount], account: owner, chain: targetChain });
   await wait(approval, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
 }
@@ -640,9 +723,9 @@ export async function createDemand(input: {
   expectedCalls: string;
   deadlineDays: string;
   commitment: string;
-}, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
+}, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
   const durationSeconds = deadlineDurationSeconds(input.deadlineDays);
-  const account = await requireAccount();
+  const { account, session } = await requireAccount(originatingSession);
   const capability = normalizeCapability(input.capability);
   const specification = input.specification.trim();
   if (!specification || new TextEncoder().encode(specification).length > 2048) throw new Error("DEMAND_INVALID_SPEC");
@@ -651,21 +734,21 @@ export async function createDemand(input: {
   if (commitment <= 0n || commitment > (1n << 96n) - 1n || maxPrice <= 0n || maxPrice > (1n << 96n) - 1n) throw new Error("DEMAND_INVALID_AMOUNT");
   const calls = parsePositiveUint(input.expectedCalls, 64, "DEMAND_INVALID_CALLS");
   const deadline = BigInt(Math.floor(Date.now() / 1000) + durationSeconds);
-  await ensureAllowance(account, commitment, onUpdate);
-  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment], "demand", onUpdate);
+  await ensureAllowance(account, commitment, session, onUpdate);
+  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment], session, "demand", onUpdate);
 }
 
-export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  const account = await requireAccount();
+export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
   const atomic = parseUsd0(amount);
   if (atomic <= 0n || atomic > (1n << 96n) - 1n) throw new Error("SUPPORT_TOO_SMALL");
   const calls = parsePositiveUint(expectedCalls, 64, "DEMAND_INVALID_CALLS");
-  await ensureAllowance(account, atomic, onUpdate);
-  return writeDemand(account, "supportDemand", [demandId, atomic, calls], "action", onUpdate);
+  await ensureAllowance(account, atomic, session, onUpdate);
+  return writeDemand(account, "supportDemand", [demandId, atomic, calls], session, "action", onUpdate);
 }
 
-export async function submitService(demandId: bigint, serviceUrl: string, evidence: string, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  const account = await requireAccount();
+export async function submitService(demandId: bigint, serviceUrl: string, evidence: string, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
   let parsedUrl: URL;
   try { parsedUrl = new URL(serviceUrl.trim()); } catch { throw new Error("SUBMISSION_INVALID_URL"); }
   if (parsedUrl.protocol !== "https:") throw new Error("SUBMISSION_INVALID_URL");
@@ -674,23 +757,28 @@ export async function submitService(demandId: bigint, serviceUrl: string, eviden
   const evidenceHash = /^0x[0-9a-fA-F]{64}$/.test(evidenceValue)
     ? evidenceValue as `0x${string}`
     : keccak256(toBytes(evidenceValue));
-  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash], "action", onUpdate);
+  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash], session, "action", onUpdate);
 }
 
-export async function approveService(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  return writeDemand(await requireAccount(), "approveService", [demandId], "action", onUpdate);
+export async function approveService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "approveService", [demandId], session, "action", onUpdate);
 }
-export async function rejectService(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  return writeDemand(await requireAccount(), "rejectService", [demandId], "action", onUpdate);
+export async function rejectService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "rejectService", [demandId], session, "action", onUpdate);
 }
-export async function finalizeDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  return writeDemand(await requireAccount(), "finalize", [demandId], "action", onUpdate);
+export async function finalizeDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "finalize", [demandId], session, "action", onUpdate);
 }
-export async function reopenDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  return writeDemand(await requireAccount(), "reopen", [demandId], "action", onUpdate);
+export async function reopenDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "reopen", [demandId], session, "action", onUpdate);
 }
-export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler): Promise<Hash> {
-  return writeDemand(await requireAccount(), "refund", [demandId], "action", onUpdate);
+export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const { account, session } = await requireAccount(originatingSession);
+  return writeDemand(account, "refund", [demandId], session, "action", onUpdate);
 }
 
 export async function verifyTransaction(
@@ -700,12 +788,12 @@ export async function verifyTransaction(
   expectedWallet: Address,
   expectedChainId: number,
   onUpdate?: TransactionUpdateHandler,
+  originatingSession?: WalletSession,
 ): Promise<Hash> {
-  const wallet = await currentWallet();
-  if (!wallet) throw new Error("WALLET_NOT_CONNECTED");
-  const chainId = await currentChainId();
-  if (chainId !== CHAIN_ID || expectedChainId !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
-  if (wallet.toLowerCase() !== expectedWallet.toLowerCase()) throw new Error("WALLET_CHANGED");
+  const session = await requireWalletSession(originatingSession ?? captureWalletSession(expectedWallet) ?? undefined);
+  if (expectedChainId !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
+  await assertWalletSession({ ...session, account: expectedWallet }, expectedWallet);
+  const wallet = expectedWallet;
   return wait(hash, intent, stage, wallet, expectedChainId, onUpdate, true);
 }
 
