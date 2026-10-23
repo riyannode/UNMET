@@ -191,9 +191,9 @@ Browser verification:
 - show loading/error states distinctly from an empty demand board
 - select a market request from Market Requests and confirm it opens the dedicated Demand view
 - navigate Request Details, Escrow & Support, and Builder Proposal; return to the originating view with Back
-- Post a Request uses Request, Economics, and Initial Escrow and shows the Post Request & Commit Escrow action
+- Create Demand collects six terms in the guided chat, supports review/edit, and shows Create & Fund Demand only after explicit create intent
 - confirm Support This Request and Submit Service Proposal are visible only when their existing lifecycle conditions allow them
-- My Activity opens the selected position in the same Demand view
+- Analytics opens a selected demand in the same Demand view; /my-activity redirects to /analytics
 - support from a second wallet; read back the board and position
 - submit an HTTPS service URL and evidence
 - approve or reject and verify commitment-weighted progress
