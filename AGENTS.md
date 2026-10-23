@@ -189,8 +189,6 @@ Use [Self-hosting](docs/SELF_HOSTING.md#health-smoke-checks-and-logs) for custom
 
 ## Coding principles
 
-These four principles summarize the [Karpathy-inspired reference](https://github.com/multica-ai/andrej-karpathy-skills); no provider-specific rules or installation are required.
-
 - **Think Before Coding:** understand code and requirements; surface material uncertainty and tradeoffs instead of silently guessing.
 - **Simplicity First:** choose the simplest correct solution; add only the features and abstractions the task needs.
 - **Surgical Changes:** change only what the task requires; preserve unrelated behavior, comments, formatting and conventions.
