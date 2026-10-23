@@ -1,5 +1,7 @@
 # UNMET demo (2–4 minutes)
 
+> September 2026 demo/submission walkthrough. Endpoint status and UI labels below describe the recorded presentation, not the latest release. Use [frontend product](PRODUCT.md) for current routes/wizard and [STATUS](STATUS.md) for dated evidence. No endpoint availability is asserted today.
+
 Final submission video:
 [https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
 

@@ -2,6 +2,8 @@
 
 One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
 
+Run Compose from the repository root. It keeps `context: .` and builds with `Docker/Dockerfile.api` and `Docker/Dockerfile.web`; the web image copies `Docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
+
 ## WSL2 prerequisites
 
 On Windows, enable Ubuntu WSL2 and Docker Desktop integration for that distribution. Alternatively use a compatible Docker Engine and Compose plugin inside Linux; do not start a second daemon alongside working Docker Desktop integration.
@@ -53,7 +55,6 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | VITE_XLAYER_RPC_URL | Required public build input | Browser-accessible RPC; no confidential provider credentials |
 | VITE_REOWN_PROJECT_ID | Required public build input | Your Reown project ID; allow your site origin in Reown |
 | VITE_MARKET_SYNC_INTERVAL_MS | Public build input, default 60000 | Existing browser synchronization setting |
-| VITE_NETWORK_SCENE_URL | Optional public build input | Existing frontend asset setting |
 
 VITE_* values are embedded in public JavaScript at build time: rebuild web after changes. Private OKX inputs are passed only through the API's explicit runtime environment allowlist, never build arguments. Neither image contains .env or .git. Neither runtime receives DEPLOYER_PRIVATE_KEY; keep deployment credentials in a separate ignored file outside normal runtime.
 
@@ -104,27 +105,41 @@ Validation, rate limiting and admission precede official x402. Rejected inputs r
 
 - /live: cheap process liveness, no chain/payment call. Docker uses it to avoid restart loops on temporary RPC outages.
 - /health: preserves chain/contract verification and success fields, with short shared caching; checks chain ID, bytecode and latest block.
-- /ready: additionally requires initialized payment middleware. It initiates no payment and does not promise future verify/settle success. Chain outages appear after the dependency cache expires.
+- /ready: additionally checks configured durable storage and requires initialized payment middleware. It initiates no payment and does not promise future verify/settle success. Chain outages appear after the dependency cache expires.
 - The first data request warms the index under a single-flight promise. Readiness is dependency readiness, not proof a cold index fits its budget. Alert separately on INDEX_* failures.
 - Structured logs contain generated request IDs, registered method/route, status/duration and stable error codes. Application handlers omit raw bodies, payment headers, query strings and upstream exception text. The pinned official SDK lacks transport/log injection options: an async-local scope bounds its unchanged signed HTTP calls and replaces its warning/error diagnostics with a stable PAYMENT_SDK_DIAGNOSTIC record. Fetch and console calls outside that scope retain their original behavior.
 - Compose rotates JSON logs at 10 MiB, three files/container. The restart policy restarts exited containers; Docker does not automatically restart a merely unhealthy live process.
 
+The automated smoke script accepts only local HTTP origins (`localhost`, `127.0.0.1` or `[::1]`). For the default localhost configuration with HTTP_PORT=80:
+
 ~~~bash
-curl -fsS http://localhost/live
-curl -fsS http://localhost/ready
-curl -fsS http://localhost/health
-curl -fsS http://localhost/v1/demands
-curl -i -H 'Content-Type: application/json' -d '{}' http://localhost/v1/opportunities
-# Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
 BASE_URL=http://localhost bun scripts/smoke-unpaid.ts
 ~~~
 
-Refresh /docs, /market, /market/1, /create-demand, /analytics and /my-activity directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
-
-The local-only bounded probe sends **no PAYMENT-SIGNATURE**:
+For the custom local HTTP_PORT=18080 configuration above, use its actual origin instead:
 
 ~~~bash
-BASE_URL=http://localhost REQUESTS=60 CONCURRENCY=4 bun scripts/load-unpaid.ts
+BASE_URL=http://localhost:18080 bun scripts/smoke-unpaid.ts
+~~~
+
+For manual verification, choose the actual configured browser origin, including scheme and any nondefault port: for example `http://localhost:18080` locally or your configured `https://` domain publicly. Use one origin from FRONTEND_ORIGIN, not its entire comma-separated list. A public Caddy hostname requires requests to that hostname; `http://localhost` is not a substitute. The smoke/load scripts do not accept public domains or HTTPS, so use these curl checks for a separately authorized public deployment:
+
+~~~bash
+read -r -p 'Configured browser origin (no trailing slash): ' app_origin
+curl -fsS "$app_origin/live"
+curl -fsS "$app_origin/ready"
+curl -fsS "$app_origin/health"
+curl -fsS "$app_origin/v1/demands"
+curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/opportunities"
+# Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
+~~~
+
+Refresh /docs, /market, /market/1, /create-demand, /analytics and /my-activity at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
+
+The local-only bounded probe sends **no PAYMENT-SIGNATURE**. This example uses HTTP_PORT=18080; use `http://localhost` instead only for the default port 80. Do not point it at a public HTTPS origin:
+
+~~~bash
+BASE_URL=http://localhost:18080 REQUESTS=60 CONCURRENCY=4 bun scripts/load-unpaid.ts
 docker stats --no-stream
 ~~~
 
@@ -138,7 +153,7 @@ This PR deploys nothing publicly. Before separately authorized deployment:
 2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmet.example.com, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmet.example.com, replacing the example hostname.
 3. Configure real Reown origin/project, public browser RPC and private provider quotas. Review independent payment network/recipient.
 4. Rebuild/start the same stack. Public Caddy certificates require valid domain/DNS and reachable ports. The caddy_data/caddy_config volumes preserve certificate state.
-5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting. Paid settlement/replay requires separate authorization/evidence.
+5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting at the configured HTTPS origin using the [manual verification commands](#health-smoke-checks-and-logs). Paid settlement/replay requires separate authorization/evidence.
 
 Local validation changes no DNS, production certificates, Vercel environment or production configuration.
 
@@ -148,15 +163,17 @@ Record the current commit/image tag before updating. Retain known-good images wi
 
 ~~~bash
 git fetch origin
-git checkout <reviewed-commit>
-# Set IMAGE_TAG=<reviewed-commit> in .env; preserve other settings.
+read -r -p 'Reviewed release commit: ' release_commit
+git switch --detach "$release_commit"
+# Set IMAGE_TAG to that reviewed commit in .env; preserve other settings.
 docker compose build --pull
 docker compose up -d --no-build
 docker compose ps
-BASE_URL=http://localhost bun scripts/smoke-unpaid.ts
 ~~~
 
-Rollback: restore the previous reviewed source/config combination, set IMAGE_TAG to its retained known-good tag, then run docker compose up -d --no-build. If missing, rebuild that commit first. Public frontend settings must match its build. Recheck health and 402. There are no application DB migrations; the chain index rebuilds from the contract. Never roll back chain state.
+After update or rollback, repeat the [health and unpaid verification](#health-smoke-checks-and-logs) against the actual configured origin. Use the automated smoke script only for a local HTTP origin with its configured port; use the manual curl checks for public HTTPS.
+
+Rollback: restore the previous reviewed source/config combination, set IMAGE_TAG to its retained known-good tag, then run docker compose up -d --no-build. If missing, rebuild that commit first. Public frontend settings must match its build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
 
 Use docker compose stop for graceful stop, or docker compose down to remove this stack's containers/network. **Do not remove volumes** during update/rollback: retain certificates and private configuration. API drains for 20 seconds, then closes remaining connections and exits nonzero; Compose allows 25 seconds. Do not assume an interrupted paid request was unsettled.
 
@@ -176,10 +193,12 @@ Use docker compose stop for graceful stop, or docker compose down to remove this
 | TLS failure | DNS, ports 80/443, public SITE_ADDRESS without HTTP scheme, volume permissions |
 | Subnet/IP problems | Adjust subnet/Caddy/API IPs together, retain explicit proxy trust/header replacement |
 
-Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before increasing limits. This targets one VPS and one API replica. Extra replicas duplicate RPC/index work and have separate quotas. Global rate policy, index ownership and official x402 verify/settle/idempotency under concurrent retry/failure need verification before horizontal scaling. No Redis, database, worker or distributed payment safety is implied.
+Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before increasing limits. This targets one VPS and one API replica. Extra replicas duplicate RPC/index work and have separate quotas. Global rate policy, index ownership and official x402 verify/settle/idempotency under concurrent retry/failure need verification before horizontal scaling. There is no Redis, database server or worker. Local SQLite payment storage is required and is not a distributed payment guarantee.
 
 ## Durable payment storage
 
-The Docker API now requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Vercel keeps its existing payment behavior and has no durable SQLite guarantee.
+The Docker API requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Vercel keeps its existing payment behavior and has no durable SQLite guarantee.
+
+SQLite uses WAL and synchronous=FULL; run exactly one Bun API replica with local storage. No automatic settlement retry or original paid-response replay is provided. Hashless ambiguous outcomes need operator investigation.
 
 See [payment recovery operations](PAYMENT_RECOVERY.md) for state transitions, optional Idempotency-Key, duplicate/conflict responses, configuration, reconciliation, integrity checks, WAL-consistent backups, restore precautions and single-replica limitations.

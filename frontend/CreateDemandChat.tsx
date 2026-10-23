@@ -107,7 +107,6 @@ const EDIT_PROMPTS: Record<EditableDemandField, string> = {
 
 function buildTurns(
   answers: CreateDemandAnswers,
-  step: ChatStep,
   editingField: EditableDemandField | null,
 ): ChatTurn[] {
   const turns: ChatTurn[] = [{ speaker: "UNMET", text: PROMPTS.capability }];
@@ -238,7 +237,7 @@ export function CreateDemandChat({
   const sessionRefreshing = sessionMatchesCommittedWallet && refreshing;
   const sessionRefreshMessage = sessionMatchesCommittedWallet ? refreshMessage : "";
   const sessionError = sessionMatchesCommittedWallet ? error : "";
-  const turns = buildTurns(answers, step, editingField);
+  const turns = buildTurns(answers, editingField);
   const reviewRows = buildReviewRows(answers);
   const prompt = editPrompt(editingField, step);
   const busyCreating = busy || sessionCreatePending;

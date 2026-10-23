@@ -1,73 +1,61 @@
 # UNMET
 
-## What UNMET is
+UNMET is an onchain demand market for AI-agent capabilities. Requesters publish needs and commit funds; builders discover funded demand, propose a service, and receive funds only after commitment-weighted supporter approval. Eligible non-approver funds remain refundable.
 
-UNMET is an onchain demand order book for AI-agent capabilities. Agents and supporters publish needs they cannot currently buy and commit funds to make that demand credible before a builder is selected.
+## Two separate flows
 
-## Problem
-
-Agent marketplaces usually start with listed supply. They do not show builders which capabilities agents already need but cannot find. That leaves unmet demand scattered across private requests and gives builders little evidence to prioritize it.
-
-## How it works
-
-**Create Demand → Aggregate Escrow → Builder Proposal → Commitment-Weighted Review → Selective Settlement / Refund**
-
-A creator defines a capability, specification, price ceiling, expected calls, deadline, and initial escrow. Other supporters can add their own commitments. A builder submits a service URL and evidence hash. At submission, the contract snapshots escrow and calculates the approval quorum. Supporters vote with the weight of their commitments. Once quorum is reached, anyone may finalize; only explicit approver commitments settle to the builder and treasury. Other eligible commitments remain individually refundable.
-
-## Why it is different
-
-UNMET makes demand visible before a provider is chosen. Builders can compare funded opportunities rather than publish supply and wait. Multiple wallets can independently back one demand, and settlement reflects which supporters approved the submitted candidate.
+- **Demand funding:** wallet transactions create/support demands, vote, finalize or refund through `AgentDemand.sol` on **X Layer Testnet (1952)**.
+- **Paid demand intelligence:** `POST /v1/opportunities` ranks chain-derived demand. Official OKX x402 bills each query separately on **X Layer Mainnet (196)** in production. Buying intelligence does not fund escrow or move the demand market to Mainnet.
 
 ## Architecture
 
-| Layer | Responsibility |
+| Part | Responsibility |
 | --- | --- |
-| [`AgentDemand.sol`](backend/AgentDemand.sol) | Canonical demand, escrow commitments, proposal review, settlement, refund, and reopen state |
-| X Layer Testnet | Contract state and lifecycle events (`eip155:1952`) |
-| Backend | Reorg-aware chain index, derived ranking, and separate paid Demand Intelligence API |
-| Frontend | Wallet UI and direct contract reads/writes; it does not define lifecycle state |
+| [AgentDemand.sol](backend/AgentDemand.sol) | Canonical demand, escrow, voting, settlement and refunds |
+| React/Vite frontend | Reown wallet UI, viem contract reads/writes, routed demand views |
+| Bun/Express backend | Bounded, reorg-aware in-memory chain index and intelligence ranking |
+| Native `bun:sqlite` | Self-hosted x402 operation/idempotency and settlement records; **not the escrow database** |
+| Caddy + Docker Compose | Static frontend, reverse proxy and persistent payment volume |
 
-The backend index is disposable and rebuilt from chain data; there is no persistent application database. Supporting-wallet counts are not unique-human counts. See [Architecture](docs/ARCHITECTURE.md) and the [API reference](docs/API.md).
+The chain index can be rebuilt. Payment records must survive restarts. Vercel uses the exported Express app without durable SQLite; Docker uses one Bun API replica. See [Architecture](docs/ARCHITECTURE.md).
 
-## OKX / X Layer integration
+## Local development
 
-The demand market and `AgentDemand` deployment run on **X Layer Testnet** (`eip155:1952`). The separate `POST /v1/opportunities` Demand Intelligence endpoint uses the official OKX x402 middleware and advertises billing on **X Layer Mainnet** (`eip155:196`); this does not move the demand market to Mainnet.
+Use Ubuntu WSL2 on its Linux filesystem. Install Bun (manifest/image version `1.4.2`) and Foundry for contract checks.
 
-The current public endpoint's unpaid challenge was read on 2026-09-24 and returned HTTP 402 for mainnet USD₮0. This verifies challenge generation only. No paid Mainnet replay is documented. A paid Testnet replay is historical evidence and is recorded in [STATUS](docs/STATUS.md). The latest repository evidence for OKX.AI ASP `13853` / Service `40842` is dated 2026-09-23 and records the service as unlisted with review not submitted; no newer approval evidence was found for this update.
+```bash
+git clone https://github.com/riyannode/UNMET.git
+cd UNMET
+bun install --frozen-lockfile
+cp .env.example .env
+chmod 600 .env
+```
 
-## Demo
+Configure public market addresses/RPC and Reown inputs; backend startup additionally needs your official OKX credentials and fee recipient. See [Contributing](CONTRIBUTING.md) for exact environment loading, Foundry dependency installation, and separate terminal commands. Offline checks need no payment credentials.
 
-- Live app: [https://frontend-omega-beige-33.vercel.app/](https://frontend-omega-beige-33.vercel.app/)
-- Demo video: [https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
-- Judge-facing submission: [docs/SUBMISSION.md](docs/SUBMISSION.md)
-- Verification / evidence: [docs/STATUS.md](docs/STATUS.md)
+```bash
+# Terminal 1, repository root; use development settings as documented.
+bun --env-file=.env run dev:backend
+# Terminal 2, repository root
+bun --env-file=.env run dev:frontend --host 127.0.0.1
+```
 
-## API
+## Checks
 
-- Backend health: [`/health`](https://unmet-api.vercel.app/health)
-- Public demands: [`/v1/demands`](https://unmet-api.vercel.app/v1/demands)
-- Paid opportunity endpoint: `POST https://unmet-api.vercel.app/v1/opportunities`
+```bash
+bun run typecheck
+bun run test:backend
+bun run test:frontend
+bun run test:contract
+bun run build:frontend
+```
 
-On 2026-09-24, the frontend returned HTTP 200, `/health` and `/v1/demands` returned HTTP 200 on chain `1952`, and an unpaid opportunities request returned the Mainnet x402 challenge. See [Demo](docs/DEMO.md) for the current frontend path and [STATUS](docs/STATUS.md) for verification limits.
+`bun run check` runs all of these. Foundry dependencies must be installed first. No lint script or CI workflow is currently defined. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
 
-## Self-hosting
+## Documentation and limitations
 
-Run the production frontend/Caddy and Bun API with one Docker Compose stack using your own OKX and Reown configuration. See [Self-hosting](docs/SELF_HOSTING.md) for WSL2 setup, localhost HTTP, future domain/HTTPS configuration, API limits, health and rollback. Local startup does not authorize a public deployment or signed x402 payment.
+Coding agents should read [AGENTS](AGENTS.md) first. Start with the [documentation index](docs/README.md), [contributor guide](CONTRIBUTING.md), [API](docs/API.md), [self-hosting guide](docs/SELF_HOSTING.md), and [payment recovery](docs/PAYMENT_RECOVERY.md).
 
-## Verified evidence
+The contract is unaudited and the demand market remains on Testnet. Self-hosted payment protection assumes one API replica and a local WAL/FULL SQLite volume. It provides neither distributed exactly-once settlement nor original paid-response replay. Hashless ambiguous settlements require operator investigation; never retry payment automatically. Interactive wallet acceptance and live paid Mainnet settlement remain separate production gates.
 
-[STATUS](docs/STATUS.md) is the canonical record for deployment readbacks, contract receipts, historical paid Testnet evidence, current unpaid Mainnet challenge checks, and known verification gaps. The contract has not been independently audited, and the demand market is not production-ready.
-
-## Repository and docs
-
-- [Judge-facing submission](docs/SUBMISSION.md)
-- [Product requirements](docs/PRD.md)
-- [Technical architecture](docs/ARCHITECTURE.md)
-- [Demo path](docs/DEMO.md)
-- [API contract](docs/API.md)
-- [Operations runbook](docs/RUNBOOK.md)
-- [Verification status and evidence](docs/STATUS.md)
-- [Error reference](docs/ERRORS.md)
-- [Historical x402 debugging evidence](docs/OKX_PAYMENT_DEBUG.md)
-
-Durable self-hosted x402 duplicate protection and operator recovery: [Payment recovery](docs/PAYMENT_RECOVERY.md).
+[STATUS](docs/STATUS.md) preserves dated deployment/transaction evidence; [the submission video](https://youtu.be/6eCRf7iAbFo) and September endpoints are historical artifacts, not proof of a current deployment. Local tests do not establish public hosting or audited production readiness.

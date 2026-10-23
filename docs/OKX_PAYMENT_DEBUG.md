@@ -1,5 +1,7 @@
 # OKX Mock Merchant payment debug
 
+> Historical diagnostic report: all current/live observations below refer to the captured September dates. Preserve the receipts and failed replay evidence; these commands and payment results are not acceptance for the latest release.
+
 Captured: **2026-09-20 01:58:36 Asia/Jakarta** (`Date: Sat, 19 Sep 2026 18:58:36 GMT`)
 
 Network under test: **X Layer Testnet, CAIP-2 `eip155:1952`**. No request or transaction used mainnet `196`.

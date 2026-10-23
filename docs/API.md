@@ -2,9 +2,21 @@
 
 Default local base URL: `http://127.0.0.1:8787`.
 
+## Routes
+
+| Method / route | Payment | Behavior |
+| --- | --- | --- |
+| `GET /live` | Public | Cheap process liveness: `{ "ok": true, "name": "UNMET" }`; no dependency calls |
+| `GET /health` | Public | Checks market RPC chain ID, latest block and contract bytecode |
+| `GET /ready` | Public | Payment middleware/storage readiness, then the health check |
+| `GET /v1/demands` | Public | Up to 50 chain-derived demands |
+| `POST /v1/opportunities` | Official x402 | Filtered and ranked demand intelligence |
+
+`OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure, then uses the same health result. It sends no payment and does not guarantee future settlement or index capacity.
+
 ## GET /health
 
-Free readiness check. Returns `503` if the configured contract is missing, RPC is unavailable, or no bytecode exists at the configured address.
+Free chain dependency check. Returns `503` if the configured contract is missing, RPC/chain ID is unavailable or mismatched, or no bytecode exists at the configured address.
 
 ```json
 {
@@ -18,11 +30,11 @@ Free readiness check. Returns `503` if the configured contract is missing, RPC i
 
 ## GET /v1/demands
 
-Free UI/discovery read. Returns up to 50 chain-derived demands sorted by committed bounty. This is not a persistent database endpoint.
+Free UI/discovery read. Returns up to 50 chain-derived demands sorted by committed bounty. The envelope is `chainId`, `contract`, `blockNumber` (decimal string), `generatedAt` (ISO timestamp), and `demands` (the opportunity schema below). It has no filter or pagination contract; the query string is not used. The disposable index is not the payment database.
 
 ## POST /v1/opportunities
 
-Paid OKX.AI/A2MCP Demand Intelligence route. Price: `$0.01` per call.
+Paid OKX.AI/A2MCP Demand Intelligence route. Default price: `$0.01` per call, configurable with `OPPORTUNITY_PRICE`.
 
 The returned opportunity data is read from the core market network (`CHAIN_ID=1952` in production). The payment network is configured independently with `X402_CHAIN_ID=196` in production; this does not change demand reads or escrow.
 
@@ -30,11 +42,15 @@ The returned opportunity data is read from the core market network (`CHAIN_ID=19
 
 The route uses the official `@okxweb3/x402-express` middleware with `OKXFacilitatorClient` and the EVM exact scheme.
 
-Without valid payment, the middleware returns HTTP `402` using the standard x402 v2 payment challenge (`PAYMENT-REQUIRED`). The buyer pays/signs according to the challenge and replays the same request with the standard `PAYMENT-SIGNATURE` header. Verification and settlement happen through the OKX facilitator before the protected route executes.
+Without valid payment, the middleware returns HTTP `402` using the standard x402 v2 payment challenge (`PAYMENT-REQUIRED`). The buyer pays/signs according to the challenge and replays the same request with the standard `PAYMENT-SIGNATURE` header. Official verification precedes route execution. The Express SDK buffers the result, skips settlement for unsuccessful execution, settles through OKX, then releases the response. Self-hosted durable mode records the reservation and in-flight marker before settlement and releases content only after confirmed success is persisted.
 
-Production currently advertises `eip155:196`, scheme `exact`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000` (6 decimals), and the configured treasury as `payTo`. In production `X402_CHAIN_ID` must be explicitly set to `196`; local/test environments may omit it and inherit `CHAIN_ID`.
+With the default price, production configuration advertises `eip155:196`, scheme `exact`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000` (6 decimals), and `OKX_PAY_TO` as `payTo` (independent of the contract treasury). In production `X402_CHAIN_ID` must be explicitly set to `196`; local/test environments may omit it and inherit `CHAIN_ID`.
 
 UNMET does not accept a locally invented payment ID as proof.
+
+### Optional Idempotency-Key (durable self-hosted mode)
+
+`Idempotency-Key` is optional: 1–128 printable non-space ASCII characters. It is scoped to the verified payer/network and binds the validated operation. A retained authorization or conflicting key returns 409; even a settled request does **not** replay its original paid response. A fresh nonce without a stable key can be another payment. After confirmed pre-settlement cancellation only, a new authorization may reclaim the key while the original authorization stays blocked. Ambiguous outcomes require observation/operator recovery, never automatic signing or settlement retry. Vercel has no durable-key guarantee. See [Payment recovery](PAYMENT_RECOVERY.md).
 
 ### Body
 
@@ -48,10 +64,12 @@ UNMET does not accept a locally invented payment ID as proof.
 }
 ```
 
+All fields are optional; `{}` uses defaults. Body must be a JSON object, with no unknown fields, `Content-Type: application/json`, and at most 32 KiB. Validation runs before payment.
+
 Rules:
 - `minBounty`: non-negative decimal string, maximum 6 decimals
 - `minSupporters`: uint32-safe integer, default `1`
-- `status`: `open | submitted | ready | rejected | expired | fulfilled | closed` (default: `open`)
+- `status`: `open | submitted | ready | rejected | expired | fulfilled | closed`, case-insensitive (default: `open`)
 - `sort`: `bounty | supporters | calls | deadline | score`
 - `limit`: integer `1..50`, default `10`
 
@@ -135,4 +153,17 @@ EVM integers and percentile comparisons remain `bigint`. The deadline freshness 
 }
 ```
 
-See `ERRORS.md`.
+| HTTP | Context |
+| --- | --- |
+| 400 | Invalid JSON/filter (`INVALID_JSON`, `INVALID_SORT`, `INVALID_STATUS`, `INVALID_LIMIT`); durable key/identity validation |
+| 402 | Official x402 challenge with `PAYMENT-REQUIRED`; no paid content |
+| 409 | Durable authorization/key conflict, already reserved, or settlement reconciliation required; no paid response replay |
+| 413 / 415 | Oversized body / unsupported content type or encoding |
+| 429 | `RATE_LIMITED`; respect `Retry-After` |
+| 503 | Chain/index dependency, payment readiness, capacity, client identity or durable storage failure |
+
+Default per-IP route quotas are 60 demands and 20 opportunities per 60 seconds, including unpaid challenges. Invalid input precedes quotas/admission; limits and admission precede x402. Limits are process-local. Retry guidance never authorizes a new payment. The error handler sanitizes unexpected execution failures as `CHAIN_RPC_UNAVAILABLE`. Readiness uses `{ ok: false, error: ... }`; normal API failures use `{ error: ... }`; official SDK challenge/payment bodies retain SDK format.
+
+API responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a server-generated `X-Request-ID`. CORS allows configured exact origins and exposes `payment-required` / `payment-response`; it permits `idempotency-key`.
+
+See the canonical [error reference](ERRORS.md) and [operational limits](SELF_HOSTING.md#limits-and-bounded-work).

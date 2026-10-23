@@ -4,9 +4,9 @@ import * as React from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { cn } from "cn";
 
-export type PromptInputStatus = "ready" | "streaming";
+type PromptInputStatus = "ready" | "streaming";
 
-export type PromptInputProps = Omit<
+type PromptInputProps = Omit<
   React.HTMLAttributes<HTMLFormElement>,
   "onSubmit" | "children"
 > & {
@@ -156,5 +156,3 @@ export function PromptInput({
     </form>
   );
 }
-
-export default PromptInput;

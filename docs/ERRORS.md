@@ -1,6 +1,6 @@
 # Errors
 
-Source keeps errors short. This file is the recovery reference.
+Canonical recovery reference for API, durable payment, wallet and contract errors. See [API](API.md) for response shapes and [payment recovery](PAYMENT_RECOVERY.md) for operator procedures.
 
 ## Backend / frontend
 
@@ -12,12 +12,15 @@ Source keeps errors short. This file is the recovery reference.
 | `CHAIN_RECEIPT_FAILED` | mined write failed | inspect revert and transaction |
 | `CHAIN_STATE_READBACK_FAILED` | transaction receipt succeeded but the follow-up demand read failed | inspect the transaction, then refresh the chain view |
 | `WALLET_NOT_FOUND` | injected EIP-1193 wallet unavailable | install/unlock wallet |
+| `WALLET_NOT_CONNECTED` | no connected account for the requested action | connect the intended wallet before submitting |
+| `WALLET_CHANGED` | account/provider/session changed before signing | review the action under the current wallet; observe any already-broadcast transaction separately |
 | `WALLET_REJECTED` | user rejected wallet request | retry intentionally |
 | `DEMAND_INVALID_CAPABILITY` | capability is not canonical lowercase slug | use lowercase letters/digits/hyphens |
 | `DEMAND_INVALID_SPEC` | specification is empty/oversize | correct input |
 | `DEMAND_INVALID_AMOUNT` | token amount invalid/out of uint96 range | correct decimal amount |
 | `DEMAND_INVALID_CALLS` | expected calls invalid/out of uint64 range | correct integer |
 | `DEMAND_INVALID_DEADLINE` | deadline input invalid | use positive day interval |
+| `DEMAND_DEADLINE_TOO_SHORT` | guided-chat deadline duration is below one hour | choose a deadline of at least one hour |
 | `SUPPORT_TOO_SMALL` | invalid support amount | use a positive amount meeting contract minimum |
 | `SUBMISSION_INVALID_URL` | service URL invalid/non-HTTPS | submit public HTTPS endpoint |
 | `SUBMISSION_INVALID_EVIDENCE` | evidence missing | supply evidence text/JSON or bytes32 hash |
@@ -45,10 +48,33 @@ Source keeps errors short. This file is the recovery reference.
 | STARTUP_UNAVAILABLE | Nonzero startup exit | Verify required config/dependencies |
 | DRAIN_TIMEOUT | Nonzero shutdown exit | Deadline elapsed; do not blindly retry signed payments |
 | UPSTREAM_CAPACITY, UPSTREAM_TIMEOUT_OR_SIZE, UPSTREAM_UNAVAILABLE | Internal transport failure | Check RPC capacity/time/size bounds; public errors are sanitized |
+| UPSTREAM_RESPONSE_TOO_LARGE | Internal bounded transport body limit | Review the configured byte limit and provider response; public errors are sanitized |
 | PAYMENT_SDK_DIAGNOSTIC | Sanitized SDK warning/error log | Inspect status and request ID; raw provider/payment data is omitted |
 | PAYMENT_UPSTREAM_UNAVAILABLE | Internal official SDK failure | Check facilitator access; no automatic settlement retry |
 
 Official x402 payment errors/challenges are produced by the OKX x402 middleware/facilitator; UNMET does not substitute custom payment-proof headers.
+
+## Durable payment operations
+
+These codes apply to durable self-hosted payment handling. Error responses never return database paths, raw signatures, upstream diagnostics or paid content.
+
+| Code | HTTP | Meaning / action |
+| --- | --- | --- |
+| IDEMPOTENCY_KEY_INVALID | 400 | Optional key must contain 1–128 printable non-space ASCII characters |
+| PAYMENT_IDENTITY_UNSUPPORTED | 400 | Authorization/payer/requirements cannot be safely bound; no settlement started |
+| IDEMPOTENCY_CONFLICT | 409 | Existing logical key or authorization is bound to a different operation; do not pay again automatically |
+| PAYMENT_ALREADY_RESERVED | 409 | Retained authorization already belongs to an operation; no paid content replay |
+| PAYMENT_RECONCILIATION_REQUIRED | 409 | Settlement outcome ambiguous; operator status reconciliation required |
+| PAYMENT_STORAGE_UNAVAILABLE | 503 | Storage cannot durably protect settlement; fail closed |
+| PAYMENT_STORAGE_CAPACITY | 503 | Record cap reached; operator cleanup/recovery needed |
+| PAYMENT_CONTEXT_UNAVAILABLE | 503 | SDK call has no protected request context; no settlement |
+| PAYMENT_STATE_INVALID / PAYMENT_STATE_CONFLICT | 503 | Invalid or conflicting atomic state transition; investigate operation |
+| PAYMENT_OPERATION_FAILED | CLI exit 1 | Invalid operator command or storage/upstream failure; no private details printed |
+| PAYMENT_BACKUP_INVALID | Internal backup validation | Use a fresh absolute destination; the operator CLI reports PAYMENT_OPERATION_FAILED |
+
+A retry header is guidance to retry observation/request later, never permission to sign a new payment. See [payment recovery](PAYMENT_RECOVERY.md).
+
+Wallet transaction recovery also distinguishes `broadcast`, `confirmed`, `reverted`, `cancelled`, and `unknown` in `TransactionLifecycleError` and wallet-scoped pending records. `broadcast`/`unknown` block another submission. Observe the existing hash and original intent before any intentional retry; a successful receipt with failed readback is not permission to fund again. See [wallet session/recovery limits](WALLET_DISCONNECT.md).
 
 ## Contract custom errors
 

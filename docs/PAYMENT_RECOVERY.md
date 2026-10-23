@@ -43,7 +43,7 @@ SQLite uses WAL, synchronous=FULL, busy_timeout=5000 and foreign_keys=ON; initia
 
 PAYMENT_MAX_RECORDS defaults to 100000 (1–1000000); exhaustion fails closed. Metadata is bounded by schema constraints and fixed hashes. PAYMENT_RETENTION_DAYS defaults to 30 (1–3650). Startup and operator cleanup remove at most 1000 terminal rows whose retention interval **and authorization validity** have ended. Active/UNKNOWN rows never expire to free space. Run cleanup repeatedly when needed; no worker or automatic payment retry is installed. Deleted pages are reused by SQLite; WAL checkpoints and physical disk capacity still require normal operator attention.
 
-FULL WAL adds synchronous disk commits. A local WSL sample of 100 reserve+cancel operations measured p50 3.39 ms, p95 4.32 ms, p99 4.79 ms; these are local disk measurements, not production throughput or facilitator latency guarantees. A busy transaction can block the Bun event loop for up to five seconds. One local filesystem and one API replica are required; do not share this volume across hosts or use network filesystems.
+FULL WAL adds synchronous disk commits. The [PR #14 local verification](PAYMENT_VERIFICATION.md), dated 2026-10-23, sampled 100 reserve+cancel operations: p50 3.39 ms, p95 4.32 ms, p99 4.79 ms. These are historical local disk measurements, not production throughput or facilitator latency guarantees. A busy transaction can block the Bun event loop for up to five seconds. One local filesystem and one API replica are required; do not share this volume across hosts or use network filesystems.
 
 ## Operator reconciliation
 

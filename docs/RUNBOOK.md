@@ -1,8 +1,10 @@
 # Production runbook
 
+All command blocks start at the repository root unless they explicitly change directory. Deployment and signed-payment procedures require their own authorization.
+
 ## 1. Toolchain
 
-Required verified WSL toolchain:
+Manifest/image toolchain (local cleanup checks also passed with Bun 1.4.3):
 - Bun `1.4.2`
 - Foundry Forge `1.8.3`
 - Solidity `0.8.37`
@@ -30,6 +32,7 @@ OpenZeppelin Contracts v5.6.1 and forge-std v1.16.1 are checked out at the depen
 ```bash
 bun run typecheck
 bun run test:backend
+bun run test:frontend
 bun run test:contract
 bun run build:frontend
 ```
@@ -50,6 +53,8 @@ Contract tests must cover at minimum:
 - pull refunds and double-refund prevention
 - token accounting invariant
 
+Contract deployment and signed-payment procedures below require separate explicit authorization. They are not contributor smoke checks. Use [CONTRIBUTING](../CONTRIBUTING.md) for local environment loading, offline checks and Docker validation; use [SELF_HOSTING](SELF_HOSTING.md) and [PAYMENT_RECOVERY](PAYMENT_RECOVERY.md) for current Compose operations.
+
 ## 4. X Layer Testnet
 
 ### 4.1 Verify the official OKX Mock Merchant
@@ -64,7 +69,7 @@ Use the official OnchainOS `payment quote` flow. Review the actual network, asse
 
 The currently documented buyer example expects test USD₮0, but the live Mock Merchant may return different terms. Record the raw response and inspect the returned token on X Layer Testnet before payment. If the token is not available from an official testnet faucet or the domain metadata does not match the on-chain token, do not pay that challenge; continue independent UNMET contract and seller checks. See [OKX_PAYMENT_DEBUG.md](OKX_PAYMENT_DEBUG.md) for the reproduced `USDC_TEST` / EIP-712 version mismatch.
 
-Set `.env`:
+Use a separate private ignored `.env.deploy` file, loaded explicitly with Bun; never pass its key to runtime containers. Example fields:
 
 ```text
 CHAIN_ID=1952
@@ -77,8 +82,7 @@ DEPLOYER_PRIVATE_KEY=0x...
 Deploy:
 
 ```bash
-cd backend
-bun run admin.ts deploy-testnet
+bun --env-file=.env.deploy run backend/admin.ts deploy-testnet
 ```
 
 Record:
@@ -97,8 +101,7 @@ VITE_DEMAND_CONTRACT=0x...
 Inspect:
 
 ```bash
-cd backend
-bun run admin.ts inspect
+bun --env-file=.env run backend/admin.ts inspect
 ```
 
 `inspect` must find bytecode and return the expected token, treasury, fee (`200` bps), quorum (`6000` bps), minimum commitment and review period.
@@ -148,7 +151,7 @@ The server intentionally refuses to start the paid production path without these
 Run:
 
 ```bash
-bun run --cwd backend start
+bun --env-file=.env run backend/start.ts
 ```
 
 Verify:
@@ -188,9 +191,9 @@ Browser verification:
 - show loading/error states distinctly from an empty demand board
 - select a market request from Market Requests and confirm it opens the dedicated Demand view
 - navigate Request Details, Escrow & Support, and Builder Proposal; return to the originating view with Back
-- Post a Request uses Request, Economics, and Initial Escrow and shows the Post Request & Commit Escrow action
+- Create Demand collects six terms in the guided chat, supports review/edit, and shows Create & Fund Demand only after explicit create intent
 - confirm Support This Request and Submit Service Proposal are visible only when their existing lifecycle conditions allow them
-- My Activity opens the selected position in the same Demand view
+- Analytics opens a selected demand in the same Demand view; /my-activity redirects to /analytics
 - support from a second wallet; read back the board and position
 - submit an HTTPS service URL and evidence
 - approve or reject and verify commitment-weighted progress
@@ -200,7 +203,9 @@ Browser verification:
 
 ## 8. Public deployment
 
-### Current network split (2026-09-23)
+These are historical deployment observations. Availability, listing status, CORS and deployed commits have not been revalidated by the cleanup. Current/live descriptions within these snapshots refer to the original September checks.
+
+### Historical network split (2026-09-23)
 
 Backend-only production deployment `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n` is on Express / Node.js 24 and serves [https://unmet-api.vercel.app](https://unmet-api.vercel.app). It was deployed from branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, now pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2). The production `X402_CHAIN_ID=196` variable is set; `CHAIN_ID=1952` was left unchanged.
 
@@ -212,7 +217,7 @@ Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200
 
 ### Earlier production state (before network split)
 
-The public X Layer Testnet deployment is live from GitHub commit `de77198aef994feae84059e1ae7413852a99326e`:
+The earlier public X Layer Testnet deployment was recorded from GitHub commit `de77198aef994feae84059e1ae7413852a99326e`:
 
 | Project | URL | Deployment | Runtime |
 | --- | --- | --- | --- |
@@ -247,8 +252,7 @@ The A2MCP x402 rail already uses this network, but that does **not** move the de
 ```bash
 export ALLOW_MAINNET_DEPLOY=1
 # switch CHAIN_ID/RPC/token and re-check treasury/deployer
-cd backend
-bun run admin.ts deploy-mainnet
+bun --env-file=.env.deploy run backend/admin.ts deploy-mainnet
 ```
 
 Start with tiny values. Repeat full receipt/state/balance verification.
