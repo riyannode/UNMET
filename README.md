@@ -69,3 +69,5 @@ Run the production frontend/Caddy and Bun API with one Docker Compose stack usin
 - [Verification status and evidence](docs/STATUS.md)
 - [Error reference](docs/ERRORS.md)
 - [Historical x402 debugging evidence](docs/OKX_PAYMENT_DEBUG.md)
+
+Durable self-hosted x402 duplicate protection and operator recovery: [Payment recovery](docs/PAYMENT_RECOVERY.md).

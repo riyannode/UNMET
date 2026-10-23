@@ -177,3 +177,9 @@ Use docker compose stop for graceful stop, or docker compose down to remove this
 | Subnet/IP problems | Adjust subnet/Caddy/API IPs together, retain explicit proxy trust/header replacement |
 
 Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before increasing limits. This targets one VPS and one API replica. Extra replicas duplicate RPC/index work and have separate quotas. Global rate policy, index ownership and official x402 verify/settle/idempotency under concurrent retry/failure need verification before horizontal scaling. No Redis, database, worker or distributed payment safety is implied.
+
+## Durable payment storage
+
+The Docker API now requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Vercel keeps its existing payment behavior and has no durable SQLite guarantee.
+
+See [payment recovery operations](PAYMENT_RECOVERY.md) for state transitions, optional Idempotency-Key, duplicate/conflict responses, configuration, reconciliation, integrity checks, WAL-consistent backups, restore precautions and single-replica limitations.

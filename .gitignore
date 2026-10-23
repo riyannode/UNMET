@@ -12,3 +12,7 @@ broadcast/
 lib/
 typechain-types/
 .vercel
+
+**/*.sqlite*
+**/*.db*
+**/payment-data/
