@@ -1,5 +1,5 @@
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
-import { concurrencyGate, rateLimiter } from "./admission.ts";
+import { admittedWork, concurrencyGate, rateLimiter } from "./admission.ts";
 import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
@@ -505,13 +505,20 @@ export async function createPaymentMiddleware(): Promise<RequestHandler> {
     },
   }, resourceServer, undefined, undefined, false);
   return (req, res, next) => {
-    void withBoundedFetch(facilitatorFetch, async () => { await middleware(req, res, next); }).catch(next);
+    return withBoundedFetch(facilitatorFetch, async () => { await middleware(req, res, next); }).catch(next);
   };
 }
 
 let vercelPaymentMiddlewarePromise: Promise<RequestHandler> | null = null;
 const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
-  void initializedPayment().then((middleware) => middleware(req, res, next)).catch(next);
+  return initializedPayment().then((middleware) => {
+    if (req.aborted || res.destroyed) {
+      res.statusCode = 503;
+      res.end();
+      return;
+    }
+    return middleware(req, res, next);
+  }).catch(next);
 };
 
 type Payment = { middleware: RequestHandler; ready?: () => Promise<unknown> };
@@ -587,15 +594,20 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     })().catch(next);
   });
 
-  app.get("/v1/demands", limiter("demands", config.demandsPerWindow), gate, async (_req, res, next) => {
+  app.get("/v1/demands", limiter("demands", config.demandsPerWindow), gate, admittedWork(async (req, res, next) => {
     try {
       if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
       await ensureIndex(rpc(), market.contract);
+      if (req.aborted || res.destroyed) {
+        res.statusCode = 503;
+        res.end();
+        return;
+      }
       const entries = [...demandIndex.entries.values()];
       const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 });
       res.json({ chainId: market.chainId, contract: market.contract, blockNumber: demandIndex.lastIndexedBlock.toString(), generatedAt: new Date().toISOString(), demands });
     } catch (error) { next(error); }
-  });
+  }));
 
   const validate: RequestHandler = (req, res, next) => {
     if (!req.is("application/json")) {
@@ -610,10 +622,15 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     res.locals.opportunityInput = parsed.value;
     next();
   };
-  app.post("/v1/opportunities", validate, limiter("opportunities", config.opportunitiesPerWindow), gate, payment.middleware, async (_req, res, next) => {
+  app.post("/v1/opportunities", validate, limiter("opportunities", config.opportunitiesPerWindow), gate, admittedWork(payment.middleware), admittedWork(async (req, res, next) => {
     try {
       if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
       await ensureIndex(rpc(), market.contract);
+      if (req.aborted || res.destroyed) {
+        res.statusCode = 503;
+        res.end();
+        return;
+      }
       const input: QueryInput = res.locals.opportunityInput;
       const opportunities = filterAndSort([...demandIndex.entries.values()], input);
       res.json({
@@ -624,14 +641,20 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
         opportunities,
       });
     } catch (error) { next(error); }
-  });
+  }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Route not found" } });
   });
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (res.headersSent || res.destroyed) return;
+    if (res.destroyed) {
+      // Complete the SDK's buffered response without starting settlement.
+      res.statusCode = 503;
+      res.end();
+      return;
+    }
+    if (res.headersSent) return;
     const parserStatus = typeof error === "object" && error !== null && "status" in error ? error.status : undefined;
     const code = parserStatus === 413 ? "BODY_TOO_LARGE"
       : parserStatus === 415 ? "UNSUPPORTED_MEDIA_TYPE"

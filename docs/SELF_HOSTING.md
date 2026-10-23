@@ -65,7 +65,9 @@ The example uses Testnet demand state and Mainnet x402. It does not authorize pa
 
 Caddy handles /v1, /v1/*, /live, /ready and /health before static fallback. Unknown versioned API endpoints return Express JSON 404. Other paths use index.html, preserving existing React routes and its UI 404. Hashed /assets/* are cached for one year; HTML revalidates after deployment.
 
-Caddy replaces X-Forwarded-For with the actual TCP peer address. Express trusts only Caddy's fixed internal IP, not an arbitrary hop count. Direct access from an untrusted API peer ignores forwarding headers. Keep api without published ports and do not attach arbitrary containers to its network. Another CDN/proxy requires a separately designed trusted client-IP chain. CORS is not authentication or abuse protection.
+Caddy replaces X-Forwarded-For with the actual TCP peer address. Express trusts only Caddy's fixed internal IP, not an arbitrary hop count. Direct access from an untrusted API peer ignores forwarding headers, including forged Vercel identity headers. Keep api without published ports and do not attach arbitrary containers to its network. Another CDN/proxy requires a separately designed trusted client-IP chain. CORS is not authentication or abuse protection.
+
+On Vercel, the platform-owned VERCEL=1 runtime flag selects a validated single-IP x-vercel-forwarded-for identity instead of the internal socket peer. Changing x-forwarded-for/x-real-ip cannot change that identity; missing, invalid or multi-IP platform identity returns CLIENT_IP_UNAVAILABLE (503) before payment rather than assigning a shared proxy quota. Merely sending Vercel-looking headers never selects this policy. Docker's explicit environment allowlist does not pass VERCEL, so its Caddy-only proxy policy remains unchanged. Do not manually set VERCEL=1 on a directly reachable standalone server. This relies on [Vercel's ingress header contract](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for); custom proxy arrangements need separate validation. Quotas still remain process-local across Vercel instances.
 
 Caddy forwards x402 headers/statuses unchanged. Its upstream response-header deadline is 90 seconds; RPC/facilitator calls have shorter independent deadlines. Interrupted paid requests may have ambiguous settlement state: never automatically replay signed payments.
 
@@ -96,7 +98,7 @@ The effective batch size is clamped to the RPC capacity (three reads/demand, res
 
 Expired limiter keys are removed in expiration order. Full state rejects new identities rather than evicting active quotas. NAT/shared-IP users share quotas. All limits/index caches are **process-local**, not globally shared.
 
-Validation, rate limiting and admission precede official x402. Rejected inputs receive 400/413/415/429/503 before verification/settlement. Slot release is idempotent on finish/close/error/abort. A closed HTTP connection does not cancel an ambiguous payment; RPC/facilitator transport caps remain held until work ends.
+Validation, rate limiting and admission precede official x402. Rejected inputs receive 400/413/415/429/503 before verification/settlement. Finish/close/error/abort marks the connection ended. Release occurs exactly once only after all admitted middleware and execution promises have completed, including asynchronous verification, settlement and lazy initialization. Disconnect never frees capacity while that work is still running. New asynchronous handlers must return their promise through admittedWork; detached background work is not part of this model. A disconnected request cannot start new chain execution/settlement after verification; a buffered error response completes the SDK without settlement. Settlement already in progress continues under the same slot until its promise completes. A closed HTTP connection does not cancel an ambiguous payment; RPC/facilitator transport caps remain held until work ends.
 
 ## Health, smoke checks and logs
 

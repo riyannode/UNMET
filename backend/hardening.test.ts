@@ -263,3 +263,178 @@ test("official SDK diagnostic scope never prints raw payment/provider data", asy
   expect(output).toContain("PAYMENT_SDK_DIAGNOSTIC");
   expect(output).toContain("outside-scope-marker");
 });
+
+test("Vercel platform IPs have distinct quotas even when they share one internal socket peer", async () => {
+  await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, {
+    config: loadOperationalConfig({ VERCEL: "1", RATE_OPPORTUNITIES: "1", RATE_DEMANDS: "1" }),
+    client: { getBlock: async () => { throw new Error("offline fixture"); } } as unknown as PublicClient,
+  }), async (url) => {
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-forwarded-for": "198.51.100.1" })).status).toBe(402);
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.2", "x-forwarded-for": "198.51.100.1" })).status).toBe(402);
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-forwarded-for": "198.51.100.99" })).status).toBe(429);
+    expect((await post(url, { "x-vercel-forwarded-for": "2001:db8::1" })).status).toBe(402);
+    expect((await post(url, { "x-vercel-forwarded-for": "2001:db8::1", "x-real-ip": "198.51.100.8" })).status).toBe(429);
+    const demands = (ip: string) => fetch(url + "/v1/demands", { headers: { "x-vercel-forwarded-for": ip } });
+    expect((await demands("192.0.2.1")).status).toBe(503); // Offline RPC fixture, admitted quota.
+    expect((await demands("192.0.2.2")).status).toBe(503);
+    expect((await demands("192.0.2.1")).status).toBe(429);
+  });
+});
+
+test("Vercel missing or ambiguous platform IP fails closed instead of sharing a proxy quota", async () => {
+  let calls = 0;
+  await withServer(createApp({ middleware: (_req, res) => { calls++; res.status(402).end(); } }, {
+    config: loadOperationalConfig({ VERCEL: "1", RATE_OPPORTUNITIES: "1" }),
+  }), async (url) => {
+    const cases: Record<string, string>[] = [{}, { "x-vercel-forwarded-for": "invalid" }, { "x-vercel-forwarded-for": "192.0.2.1, 192.0.2.2" }];
+    for (const headers of cases) {
+      const response = await post(url, headers);
+      expect(response.status).toBe(503);
+      expect((await response.json()).error.code).toBe("CLIENT_IP_UNAVAILABLE");
+    }
+    expect(calls).toBe(0);
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1" })).status).toBe(402);
+  });
+});
+
+test("self-hosted ingress ignores forged Vercel headers", async () => {
+  await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, {
+    config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1" }),
+  }), async (url) => {
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-vercel-id": "test" })).status).toBe(402);
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.2", "x-vercel-id": "test" })).status).toBe(429);
+  });
+});
+
+function deferred() {
+  let release: () => void = () => {};
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, resolve: () => release() };
+}
+
+for (const outcome of ["resolve", "reject"] as const) {
+  test("disconnect during asynchronous verification holds admission until work " + outcome + "s", async () => {
+    const started = deferred();
+    const disconnected = deferred();
+    const unblock = deferred();
+    const done = deferred();
+    let active = 0;
+    let peak = 0;
+    let calls = 0;
+    const app = createApp({ middleware: async (req, res, next) => {
+      calls++;
+      if (!req.get("test-hold")) { res.status(402).end(); return; }
+      active++;
+      peak = Math.max(peak, active);
+      res.once("close", disconnected.resolve);
+      started.resolve();
+      try {
+        await unblock.promise;
+        if (outcome === "reject") throw new Error("verification-fixture-failed");
+        res.status(402).end();
+      } catch (error) { next(error); }
+      finally { active--; done.resolve(); }
+    } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }) });
+    await withServer(app, async (url) => {
+      const controller = new AbortController();
+      const pending = fetch(url + "/v1/opportunities", {
+        method: "POST", headers: { "content-type": "application/json", "test-hold": "1" }, body: "{}", signal: controller.signal,
+      }).catch(() => undefined);
+      try {
+        await started.promise;
+        controller.abort();
+        await pending;
+        await disconnected.promise;
+        expect((await post(url)).status).toBe(503);
+        expect(calls).toBe(1);
+        expect(active).toBe(1);
+      } finally { unblock.resolve(); await done.promise; }
+      expect((await post(url)).status).toBe(402);
+      expect(active).toBe(0);
+      expect(peak).toBe(1);
+    });
+  });
+}
+
+test("response completion cannot release a slot while asynchronous settlement is pending", async () => {
+  const unblock = deferred();
+  const done = deferred();
+  await withServer(createApp({ middleware: async (req, res) => {
+    res.status(402).end();
+    if (req.get("test-hold")) {
+      await unblock.promise;
+      done.resolve();
+    }
+  } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }) }), async (url) => {
+    try {
+      expect((await post(url, { "test-hold": "1" })).status).toBe(402);
+      expect((await post(url)).status).toBe(503);
+    } finally { unblock.resolve(); await done.promise; }
+    expect((await post(url)).status).toBe(402);
+  });
+});
+
+import { paymentMiddlewareFromHTTPServer } from "@okxweb3/x402-express";
+
+for (const phase of ["execution failure", "verification", "settlement"] as const) {
+  test("official x402 middleware remains admitted after disconnect during " + phase, async () => {
+    const started = deferred();
+    const disconnected = deferred();
+    const unblock = deferred();
+    const done = deferred();
+    let settlements = 0;
+    // Test-only HTTP adapter seam: the real SDK still buffers/flushes the response.
+    // No signed payload, network verification or settlement is submitted.
+    const httpServer = {
+      requiresPayment: () => true,
+      processHTTPRequest: async () => {
+        if (phase === "verification") { started.resolve(); await unblock.promise; }
+        return { type: "payment-verified", paymentPayload: {}, paymentRequirements: {} };
+      },
+      processSettlement: async () => {
+        settlements++;
+        if (phase === "settlement") { started.resolve(); await unblock.promise; }
+        return { success: true, headers: {} };
+      },
+    } as unknown as Parameters<typeof paymentMiddlewareFromHTTPServer>[0];
+    const middleware = paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false);
+    const hash = "0x" + "d".repeat(64) as `0x${string}`;
+    let failIndex = phase === "execution failure";
+    const client = {
+      getBlock: async () => {
+        if (failIndex) {
+          failIndex = false;
+          started.resolve();
+          await unblock.promise;
+          throw new Error("index-fixture-failed");
+        }
+        return { number: 1n, hash };
+      },
+      readContract: async () => 1n,
+    } as unknown as PublicClient;
+    await withServer(createApp({ middleware: (req, res, next) => {
+      res.once("close", disconnected.resolve);
+      return Promise.resolve(middleware(req, res, next)).finally(done.resolve);
+    } }, {
+      config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }),
+      market: { ...loadConfig(), contract: "0x0000000000000000000000000000000000000001" }, client,
+    }), async (url) => {
+      const controller = new AbortController();
+      const pending = fetch(url + "/v1/opportunities", {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: controller.signal,
+      }).catch(() => undefined);
+      try {
+        await started.promise;
+        controller.abort();
+        await pending;
+        await disconnected.promise;
+        expect((await post(url)).status).toBe(503);
+      } finally { unblock.resolve(); await done.promise; }
+      expect(settlements).toBe(phase === "settlement" ? 1 : 0);
+      expect((await fetch(url + "/live")).status).toBe(200);
+      // Another request must reach the SDK rather than a permanently leaked slot.
+      const recovered = await post(url);
+      expect(recovered.status).toBe(200);
+    });
+  });
+}

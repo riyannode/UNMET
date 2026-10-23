@@ -34,6 +34,7 @@ Source keeps errors short. This file is the recovery reference.
 | BODY_TOO_LARGE | 413; body exceeds 32 KiB | Send a smaller JSON body |
 | UNSUPPORTED_MEDIA_TYPE | 415 | Use application/json and supported encoding |
 | RATE_LIMITED | 429 | Respect Retry-After |
+| CLIENT_IP_UNAVAILABLE | 503; invalid or absent trusted client identity | On Vercel check platform ingress headers; never fall back to a shared proxy quota |
 | LIMITER_CAPACITY | 503; bounded client table full | Back off; inspect traffic/key limits |
 | OVER_CAPACITY | 503; no request slot | Respect Retry-After |
 | INDEX_CAPACITY | 503; index exceeds bounds | Review chain size and measured capacity |

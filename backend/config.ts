@@ -38,6 +38,7 @@ export function loadOperationalConfig(env: Env = process.env) {
   return {
     port: integer(env, "PORT", 8787, 1, 65535),
     trustedProxies,
+    vercel: env.VERCEL === "1",
     rateWindowMs: integer(env, "RATE_WINDOW_MS", 60_000, 100, 3_600_000),
     demandsPerWindow: integer(env, "RATE_DEMANDS", 60, 1, 100_000),
     opportunitiesPerWindow: integer(env, "RATE_OPPORTUNITIES", 20, 1, 100_000),
