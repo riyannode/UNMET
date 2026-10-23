@@ -15,13 +15,16 @@ describe("app routes", () => {
     ["/market/42", "demandDetail"],
     ["/create-demand", "createDemand"],
     ["/analytics", "analytics"],
-    ["/my-activity", "myActivity"],
   ])("matches %s to %s", (path, routeId) => {
     expect(matchRoutes(routeObjects, path)?.at(-1)?.route.id).toBe(routeId);
   });
 
   test("builds demand URLs that can be opened directly", () => {
     expect(demandHref(42n)).toBe("/market/42");
+  });
+
+  test("does not register the removed activity route", () => {
+    expect(matchRoutes(routeObjects, "/my-activity")).toBeNull();
   });
 
   test.each([

@@ -2,7 +2,7 @@
 
 One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
 
-Run Compose from the repository root. It keeps `context: .` and builds with `Docker/Dockerfile.api` and `Docker/Dockerfile.web`; the web image copies `Docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
+Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
 
 ## WSL2 prerequisites
 
@@ -37,6 +37,8 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | Input | Required / visibility | Meaning |
 | --- | --- | --- |
 | SITE_ADDRESS | Public, default http://localhost | Caddy site address; future public hostname enables TLS |
+| WWW_SITE_ADDRESS | Public, default http://localhost:8081 | Alias serving a permanent 308 redirect; default port is not published |
+| CANONICAL_ORIGIN | Public, default http://localhost | Redirect destination origin, without trailing slash; preserves path and query |
 | WEB_BIND_IP, HTTP_PORT, HTTPS_PORT | Public, defaults 127.0.0.1, 80, 443 | Host ingress binding |
 | IMAGE_TAG | Public, default local | Set to an immutable release/commit identifier when updating |
 | APP_SUBNET, CADDY_INTERNAL_IP, API_INTERNAL_IP | Public, defaults 172.30.80.0/24, 172.30.80.2, 172.30.80.3 | Choose a nonconflicting subnet and unused addresses inside it, changing all three together |
@@ -134,7 +136,7 @@ curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/opportunitie
 # Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
 ~~~
 
-Refresh /docs, /market, /market/1, /create-demand, /analytics and /my-activity at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
+Refresh /docs, /market, /market/1, /create-demand and /analytics at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
 
 The local-only bounded probe sends **no PAYMENT-SIGNATURE**. This example uses HTTP_PORT=18080; use `http://localhost` instead only for the default port 80. Do not point it at a public HTTPS origin:
 
@@ -145,14 +147,14 @@ docker stats --no-stream
 
 At most 200 requests / 16 concurrent clients are permitted. The default unpaid opportunities path does not invoke verify/settle or index refresh after initialization. Do not load-test upstream public services. The probe reports counts and p50/p95/p99; 429 is expected after quota exhaustion. Backend tests separately verify overload with deterministic held requests on local infrastructure.
 
-## Future public VPS setup
+## Production deployment checklist
 
-This PR deploys nothing publicly. Before separately authorized deployment:
+Use this checklist for initial deployments, redeployments, and future installations. The configuration below describes the intended operating setup; it does not by itself prove the state of a particular deployment. Record dated runtime verification separately, and repeat the acceptance checks after each deployment. Historical production results apply only to the revision and time recorded in that evidence.
 
 1. Prepare Linux; allow only needed SSH and TCP 80/443, restrict SSH and Docker socket access. Do not expose 8787.
-2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmet.example.com, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmet.example.com, replacing the example hostname.
+2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmetxyz.my.id, WWW_SITE_ADDRESS=www.unmetxyz.my.id, CANONICAL_ORIGIN=https://unmetxyz.my.id, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmetxyz.my.id. Caddy obtains certificates for both names, redirects HTTP to HTTPS and sends alias requests to the canonical origin with HTTP 308, preserving paths and queries. Keep both DNS records DNS-only and pointed at the same host. Use your own hostnames for another deployment.
 3. Configure real Reown origin/project, public browser RPC and private provider quotas. Review independent payment network/recipient.
-4. Rebuild/start the same stack. Public Caddy certificates require valid domain/DNS and reachable ports. The caddy_data/caddy_config volumes preserve certificate state.
+4. Rebuild/start the same stack. Public Caddy certificates require valid domain/DNS and reachable ports. The caddy_data/caddy_config volumes preserve certificate state. The web image runs Caddy as UID/GID 10001 and initializes `/data/caddy` and `/config/caddy` as owner 10001 with mode 0700. For existing named volumes, apply `chmod 0700 /data/caddy /config/caddy` inside the running web container after confirming those two directories are owned by 10001; do not recursively change permissions or ownership. Keep the fixed runtime UID when using these volumes.
 5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting at the configured HTTPS origin using the [manual verification commands](#health-smoke-checks-and-logs). Paid settlement/replay requires separate authorization/evidence.
 
 Local validation changes no DNS, production certificates, Vercel environment or production configuration.

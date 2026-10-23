@@ -1103,7 +1103,7 @@ export function DemandDetailRoute() {
 
 function demandReturnPath(state: unknown): string {
   if (typeof state !== "object" || state === null || !("from" in state)) return ROUTES.market.href;
-  return state.from === ROUTES.analytics.href || state.from === ROUTES.myActivity.href ? ROUTES.analytics.href : ROUTES.market.href;
+  return state.from === ROUTES.analytics.href ? ROUTES.analytics.href : ROUTES.market.href;
 }
 
 function DemandBoard({ board, loading, loadError, selectedId, contractConfigured, detailFrom }: { board: DemandView[]; loading: boolean; loadError: boolean; selectedId: bigint | null; contractConfigured: boolean; detailFrom: string }) {

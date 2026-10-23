@@ -9,7 +9,6 @@
     { "source": "/market", "destination": "/" },
     { "source": "/market/:demandId", "destination": "/" },
     { "source": "/create-demand", "destination": "/" },
-    { "source": "/analytics", "destination": "/" },
-    { "source": "/my-activity", "destination": "/" }
+    { "source": "/analytics", "destination": "/" }
   ]
 }

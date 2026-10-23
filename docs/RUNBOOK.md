@@ -193,7 +193,7 @@ Browser verification:
 - navigate Request Details, Escrow & Support, and Builder Proposal; return to the originating view with Back
 - Create Demand collects six terms in the guided chat, supports review/edit, and shows Create & Fund Demand only after explicit create intent
 - confirm Support This Request and Submit Service Proposal are visible only when their existing lifecycle conditions allow them
-- Analytics opens a selected demand in the same Demand view; /my-activity redirects to /analytics
+- Analytics opens a selected demand in the same Demand view
 - support from a second wallet; read back the board and position
 - submit an HTTPS service URL and evidence
 - approve or reject and verify commitment-weighted progress

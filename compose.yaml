@@ -4,7 +4,7 @@ services:
     image: unmet-api:${IMAGE_TAG:-local}
     build:
       context: .
-      dockerfile: Docker/Dockerfile.api
+      dockerfile: docker/Dockerfile.api
     environment:
       PAYMENT_DB_PATH: /data/payments.sqlite
       PAYMENT_RETENTION_DAYS: ${PAYMENT_RETENTION_DAYS:-30}
@@ -73,7 +73,7 @@ services:
     image: unmet-web:${IMAGE_TAG:-local}
     build:
       context: .
-      dockerfile: Docker/Dockerfile.web
+      dockerfile: docker/Dockerfile.web
       args:
         VITE_CHAIN_ID: ${VITE_CHAIN_ID:-1952}
         VITE_XLAYER_RPC_URL: ${VITE_XLAYER_RPC_URL:?Configure public VITE_XLAYER_RPC_URL}
@@ -83,6 +83,8 @@ services:
         VITE_MARKET_SYNC_INTERVAL_MS: ${VITE_MARKET_SYNC_INTERVAL_MS:-60000}
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-http://localhost}
+      WWW_SITE_ADDRESS: ${WWW_SITE_ADDRESS:-http://localhost:8081}
+      CANONICAL_ORIGIN: ${CANONICAL_ORIGIN:-http://localhost}
     ports:
       - "${WEB_BIND_IP:-127.0.0.1}:${HTTP_PORT:-80}:8080"
       - "${WEB_BIND_IP:-127.0.0.1}:${HTTPS_PORT:-443}:8443"
