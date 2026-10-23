@@ -88,6 +88,9 @@ export class PaymentStore {
   reserve(input: Reservation): PaymentRecord {
     this.available();
     return this.db.transaction(() => {
+      // Reclaim only a confirmed pre-settlement cancellation, in the same transaction.
+      this.db.query("UPDATE payments SET logicalKey=NULL WHERE logicalKey=? AND state='CANCELLED' AND txHash IS NULL")
+        .run(input.logicalKey);
       const prior = this.db.query<PaymentRecord, [string, string | null]>(
         "SELECT * FROM payments WHERE payment=? OR logicalKey=? LIMIT 1",
       ).get(input.payment, input.logicalKey);

@@ -160,3 +160,49 @@ test("removed or made-unwritable database cannot admit new settlement", () => {
     expect(() => store.reserve(reservation("c"))).toThrow();
   });
 });
+
+test("cancelled logical key can be reclaimed without deleting its authorization", () => {
+  fixture((store, path) => {
+    const key = "d".repeat(64);
+    const original = store.reserve({ ...reservation(), logicalKey: key });
+    store.transition(original.id, "VERIFIED", "CANCELLED");
+    const retry = store.reserve({ ...reservation("c"), logicalKey: key });
+    expect(retry.logicalKey).toBe(key);
+    expect(store.get(original.id)?.state).toBe("CANCELLED");
+    expect(store.get(original.id)?.logicalKey).toBeNull();
+    expect(() => store.reserve({ ...reservation(), logicalKey: key })).toThrow();
+    const reopened = new PaymentStore(path);
+    try {
+      expect(reopened.findPayment(original.payment)?.id).toBe(original.id);
+      expect(() => reopened.reserve({ ...reservation("e"), logicalKey: key })).toThrow("IDEMPOTENCY_CONFLICT");
+    } finally { reopened.close(); }
+  });
+});
+
+test("settlement and interrupted states never release their logical keys", () => {
+  for (const state of ["UNKNOWN", "SETTLEMENT_IN_FLIGHT", "SETTLED"] as const) {
+    fixture((store) => {
+      const key = "d".repeat(64);
+      const row = store.reserve({ ...reservation(), logicalKey: key });
+      if (state === "UNKNOWN") store.recoverInterrupted();
+      else {
+        store.transition(row.id, "VERIFIED", "SETTLEMENT_IN_FLIGHT");
+        if (state === "SETTLED") store.transition(row.id, "SETTLEMENT_IN_FLIGHT", "SETTLED");
+      }
+      expect(() => store.transition(row.id, state, "CANCELLED")).toThrow("PAYMENT_STATE_INVALID");
+      expect(() => store.reserve({ ...reservation("c"), logicalKey: key })).toThrow("IDEMPOTENCY_CONFLICT");
+      expect(store.get(row.id)?.logicalKey).toBe(key);
+    });
+  }
+});
+
+test("failed replacement reservation rolls back cancelled-key release", () => {
+  const dir = mkdtempSync(tmpdir() + "/unmet-cancel-atomic-");
+  const store = new PaymentStore(dir + "/payments.sqlite", 1);
+  try {
+    const key = "d".repeat(64), row = store.reserve({ ...reservation(), logicalKey: key });
+    store.transition(row.id, "VERIFIED", "CANCELLED");
+    expect(() => store.reserve({ ...reservation("c"), logicalKey: key })).toThrow("PAYMENT_STORAGE_CAPACITY");
+    expect(store.get(row.id)?.logicalKey).toBe(key);
+  } finally { store.close(); rmSync(dir, { recursive: true }); }
+});

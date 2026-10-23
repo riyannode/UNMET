@@ -38,6 +38,7 @@ async function fixture(run: (ctx: {
   store: PaymentStore; path: string; post: (p?: PaymentPayload, body?: string, key?: string, signal?: AbortSignal) => Promise<Response>;
   calls: { verify: number; settle: number }; official: Official; url: string;
 }) => Promise<void>, options: {
+  failExecution?: () => boolean;
   settle?: () => Promise<SettleResponse>; verify?: () => Promise<{ isValid: boolean; payer: string }>;
 } = {}) {
   const dir = mkdtempSync(tmpdir() + "/unmet-durable-");
@@ -53,10 +54,17 @@ async function fixture(run: (ctx: {
   const durable = durablePayment(store, official);
   const resource = new x402ResourceServer(durable.client).register("eip155:196", new ExactEvmScheme());
   await resource.initialize();
-  const middleware = durable.wrap(paymentMiddleware({
+  const paid = paymentMiddleware({
     "POST /v1/opportunities": { accepts: [{ scheme: "exact", network: "eip155:196", payTo: recipient,
       price: { asset, amount: "10000", extra: { name: "Fixture", version: "1" } } }] },
-  }, resource, undefined, undefined, false));
+  }, resource, undefined, undefined, false);
+  const middleware = durable.wrap((req, res, next) => paid(req, res, (error) => {
+    if (!error && options.failExecution?.()) {
+      res.status(503).json({ error: { code: "EXECUTION_FIXTURE_FAILED" } });
+      return;
+    }
+    next(error);
+  }));
   const client = { getBlock: async () => ({ number: 1n, hash }),
     readContract: async () => 1n } as unknown as PublicClient;
   const app = createApp({ middleware }, {
@@ -315,4 +323,42 @@ test("failed status queries rotate so later recoverable records are not starved"
     expect((await reconcilePayments(store, client)).unresolved).toBe(20);
     expect((await reconcilePayments(store, client)).settled).toBe(1);
   });
+});
+
+test("confirmed cancellation permits one concurrent new authorization with the same key, never the old payment", async () => {
+  let fail = true;
+  await fixture(async ({ post, store, calls }) => {
+    const p = payload(), key = "cancelled-logical-request";
+    const failed = await post(p, "{}", key);
+    expect(failed.status).toBe(503);
+    expect((await failed.text()).includes('"opportunities":')).toBe(false);
+    const identity = paymentIdentity(p, requirements, payer, { method: "POST", route: "/v1/opportunities", input: {} });
+    const original = store.findPayment(identity.payment)!;
+    expect(original.state).toBe("CANCELLED");
+    expect(original.txHash).toBeNull();
+    expect(calls.settle).toBe(0);
+    fail = false;
+    const retries = await Promise.all([post(payload("b"), "{}", key), post(payload("c"), "{}", key)]);
+    expect(retries.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(calls.settle).toBe(1);
+    expect(store.get(original.id)?.state).toBe("CANCELLED");
+    expect(store.get(original.id)?.logicalKey).toBeNull();
+    const replay = await post(p, "{}", key);
+    expect(replay.status).toBe(409);
+    expect((await replay.text()).includes('"opportunities":')).toBe(false);
+    expect(calls.settle).toBe(1);
+  }, { failExecution: () => fail });
+});
+
+test("settlement transport ambiguity retains the logical key against a newly signed retry", async () => {
+  await fixture(async ({ post, store, calls }) => {
+    const key = "ambiguous-logical-request";
+    const response = await post(payload(), "{}", key);
+    expect(response.status).toBe(409);
+    expect((await response.text()).includes('"opportunities":')).toBe(false);
+    expect(store.pending()[0].state).toBe("UNKNOWN");
+    expect(store.pending()[0].logicalKey).not.toBeNull();
+    expect((await post(payload("b"), "{}", key)).status).toBe(409);
+    expect(calls.settle).toBe(1);
+  }, { settle: async () => { throw new Error("transport-fixture-failed"); } });
 });
