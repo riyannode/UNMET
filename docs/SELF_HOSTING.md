@@ -147,9 +147,9 @@ docker stats --no-stream
 
 At most 200 requests / 16 concurrent clients are permitted. The default unpaid opportunities path does not invoke verify/settle or index refresh after initialization. Do not load-test upstream public services. The probe reports counts and p50/p95/p99; 429 is expected after quota exhaustion. Backend tests separately verify overload with deterministic held requests on local infrastructure.
 
-## Future public VPS setup
+## Production deployment checklist
 
-This PR deploys nothing publicly. Before separately authorized deployment:
+Use this checklist for initial deployments, redeployments, and future installations. The configuration below describes the intended operating setup; it does not by itself prove the state of a particular deployment. Record dated runtime verification separately, and repeat the acceptance checks after each deployment. Historical production results apply only to the revision and time recorded in that evidence.
 
 1. Prepare Linux; allow only needed SSH and TCP 80/443, restrict SSH and Docker socket access. Do not expose 8787.
 2. Configure domain DNS and inbound reachability. Set SITE_ADDRESS=unmetxyz.my.id, WWW_SITE_ADDRESS=www.unmetxyz.my.id, CANONICAL_ORIGIN=https://unmetxyz.my.id, WEB_BIND_IP=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, FRONTEND_ORIGIN=https://unmetxyz.my.id. Caddy obtains certificates for both names, redirects HTTP to HTTPS and sends alias requests to the canonical origin with HTTP 308, preserving paths and queries. Keep both DNS records DNS-only and pointed at the same host. Use your own hostnames for another deployment.
