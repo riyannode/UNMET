@@ -136,7 +136,7 @@ curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/opportunitie
 # Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
 ~~~
 
-Refresh /docs, /market, /market/1, /create-demand, /analytics and /my-activity at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
+Refresh /docs, /market, /market/1, /create-demand and /analytics at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
 
 The local-only bounded probe sends **no PAYMENT-SIGNATURE**. This example uses HTTP_PORT=18080; use `http://localhost` instead only for the default port 80. Do not point it at a public HTTPS origin:
 

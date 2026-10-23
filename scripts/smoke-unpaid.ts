@@ -2,7 +2,7 @@ const base = new URL(process.env.BASE_URL || "http://localhost");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(base.hostname) || base.protocol !== "http:") {
   throw new Error("Local HTTP targets only");
 }
-for (const path of ["/", "/docs", "/market", "/market/1", "/create-demand", "/analytics", "/my-activity", "/unknown-ui"]) {
+for (const path of ["/", "/docs", "/market", "/market/1", "/create-demand", "/analytics", "/unknown-ui"]) {
   const response = await fetch(new URL(path, base), { signal: AbortSignal.timeout(10_000) });
   if (response.status !== 200 || !response.headers.get("content-type")?.includes("text/html")) throw new Error("SPA_SMOKE_FAILED: " + path);
 }

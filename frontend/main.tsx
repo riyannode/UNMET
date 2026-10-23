@@ -1,6 +1,6 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import UnmetLanding from "./UnmetLanding.tsx";
 import UnmetNavigation from "./UnmetNavigation.tsx";
@@ -51,7 +51,6 @@ createRoot(el).render(
           <Route id="demand-detail" path={ROUTES.demandDetail.path} element={<DemandDetailRoute />} />
           <Route id="create-demand" path={ROUTES.createDemand.path} element={<CreateDemandRoute />} />
           <Route id="analytics" path={ROUTES.analytics.path} element={<AnalyticsRoute />} />
-          <Route id="my-activity" path={ROUTES.myActivity.path} element={<Navigate to={ROUTES.analytics.href} replace />} />
         </Route>
         <Route path="*" element={<NotFoundRoute />} />
       </Routes>
