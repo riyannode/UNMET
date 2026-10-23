@@ -1,3 +1,5 @@
+import { httpUrl, loadOperationalConfig } from "./config.ts";
+import { createBoundedFetch } from "./upstream.ts";
 import {
   createPublicClient,
   defineChain,
@@ -287,20 +289,38 @@ export type DemandTuple = {
 
 function optionalAddress(value: string | undefined): Address | undefined {
   if (!value) return undefined;
-  return getAddress(value);
+  try {
+    const address = getAddress(value);
+    if (/^0x0{40}$/i.test(address)) throw new Error();
+    return address;
+  } catch { throw new Error("CONFIG_INVALID: DEMAND_CONTRACT"); }
 }
 
 export function loadConfig() {
   const chainId = Number(process.env.CHAIN_ID || "1952");
   if (chainId !== 1952 && chainId !== 196) throw new Error("CHAIN_ID must be 1952 or 196");
   const rpcUrl = process.env.XLAYER_RPC_URL || (chainId === 196 ? X_LAYER_MAINNET.rpcUrls.default.http[0] : X_LAYER_TESTNET.rpcUrls.default.http[0]);
+  httpUrl(rpcUrl, "XLAYER_RPC_URL");
   const contract = optionalAddress(process.env.DEMAND_CONTRACT);
+  if (!/^\d+$/.test(process.env.DEMAND_DEPLOY_BLOCK || "0")) throw new Error("CONFIG_INVALID: DEMAND_DEPLOY_BLOCK");
   const deployBlock = BigInt(process.env.DEMAND_DEPLOY_BLOCK || "0");
-  const paymentToken = getAddress(process.env.PAYMENT_TOKEN || (chainId === 196
+  const tokenRaw = process.env.PAYMENT_TOKEN || (chainId === 196
     ? "0x779ded0c9e1022225f8e0630b35a9b54be713736"
-    : "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c"));
+    : "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c");
+  let paymentToken: Address;
+  try {
+    paymentToken = getAddress(tokenRaw);
+    if (/^0x0{40}$/i.test(paymentToken)) throw new Error();
+  } catch { throw new Error("CONFIG_INVALID: PAYMENT_TOKEN"); }
   return { rpcUrl, chainId, contract, deployBlock, paymentToken };
 }
+
+const rpcConfig = loadOperationalConfig();
+const rpcFetch = createBoundedFetch({
+  maxInFlight: rpcConfig.rpcMaxInFlight,
+  timeoutMs: rpcConfig.rpcTimeoutMs,
+  maxBytes: rpcConfig.upstreamMaxBytes,
+});
 
 export function getPublicClient(rpcUrl?: string): PublicClient {
   const cfg = loadConfig();
@@ -308,12 +328,13 @@ export function getPublicClient(rpcUrl?: string): PublicClient {
   const chain = cfg.chainId === 196 ? X_LAYER_MAINNET : X_LAYER_TESTNET;
   return createPublicClient({
     chain: { ...chain, rpcUrls: { default: { http: [url] } } },
-    transport: http(url, { timeout: 15_000, retryCount: 2 }),
+    transport: http(url, { timeout: rpcConfig.rpcTimeoutMs, retryCount: 0, fetchFn: rpcFetch }),
   }) as PublicClient;
 }
 
-export async function readDemand(client: PublicClient, contract: Address, demandId: bigint): Promise<DemandTuple> {
+export async function readDemand(client: PublicClient, contract: Address, demandId: bigint, blockNumber?: bigint): Promise<DemandTuple> {
   return await client.readContract({
+    blockNumber,
     address: contract,
     abi: AGENT_DEMAND_ABI,
     functionName: "getDemand",
@@ -321,16 +342,18 @@ export async function readDemand(client: PublicClient, contract: Address, demand
   }) as DemandTuple;
 }
 
-export async function readNextDemandId(client: PublicClient, contract: Address): Promise<bigint> {
+export async function readNextDemandId(client: PublicClient, contract: Address, blockNumber?: bigint): Promise<bigint> {
   return await client.readContract({
+    blockNumber,
     address: contract,
     abi: AGENT_DEMAND_ABI,
     functionName: "nextDemandId",
   }) as bigint;
 }
 
-export async function readApprovalProgress(client: PublicClient, contract: Address, demandId: bigint) {
+export async function readApprovalProgress(client: PublicClient, contract: Address, demandId: bigint, blockNumber?: bigint) {
   return await client.readContract({
+    blockNumber,
     address: contract,
     abi: AGENT_DEMAND_ABI,
     functionName: "approvalProgress",
@@ -338,8 +361,9 @@ export async function readApprovalProgress(client: PublicClient, contract: Addre
   }) as readonly [bigint, bigint, boolean];
 }
 
-export async function readRejectionProgress(client: PublicClient, contract: Address, demandId: bigint) {
+export async function readRejectionProgress(client: PublicClient, contract: Address, demandId: bigint, blockNumber?: bigint) {
   return await client.readContract({
+    blockNumber,
     address: contract,
     abi: AGENT_DEMAND_ABI,
     functionName: "rejectionProgress",

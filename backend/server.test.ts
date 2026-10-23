@@ -114,7 +114,7 @@ describe("bounded demand log indexing", () => {
     const client = fakeClient({
       getBlock: (blockNumber) => blockNumber === undefined
         ? { number: 251n, hash: hashB }
-        : { number: blockNumber, hash: hashA },
+        : { number: blockNumber, hash: blockNumber === 100n ? hashA : hashB },
       getLogs: (fromBlock, toBlock) => { requests.push([fromBlock, toBlock]); return []; },
       readContract: (functionName) => functionName === "nextDemandId" ? 1n : undefined,
     });

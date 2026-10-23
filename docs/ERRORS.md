@@ -27,6 +27,27 @@ Source keeps errors short. This file is the recovery reference.
 | `INVALID_STATUS` | unsupported status filter | see API.md |
 | `NOT_FOUND` | route does not exist | use documented route |
 
+## Self-hosted API operations
+
+| Code | HTTP / context | Recovery |
+| --- | --- | --- |
+| BODY_TOO_LARGE | 413; body exceeds 32 KiB | Send a smaller JSON body |
+| UNSUPPORTED_MEDIA_TYPE | 415 | Use application/json and supported encoding |
+| RATE_LIMITED | 429 | Respect Retry-After |
+| CLIENT_IP_UNAVAILABLE | 503; invalid or absent trusted client identity | On Vercel check platform ingress headers; never fall back to a shared proxy quota |
+| LIMITER_CAPACITY | 503; bounded client table full | Back off; inspect traffic/key limits |
+| OVER_CAPACITY | 503; no request slot | Respect Retry-After |
+| INDEX_CAPACITY | 503; index exceeds bounds | Review chain size and measured capacity |
+| INDEX_BUDGET_EXCEEDED | 503; refresh deadline/window bound | Check RPC latency/budget |
+| INDEX_REORG | 503; pinned block changed | Retry; previous checkpoint remains intact |
+| PAYMENT_UNAVAILABLE | 503 readiness | Check official facilitator initialization |
+| CONFIG_INVALID | Startup failure | Correct the named environment field |
+| STARTUP_UNAVAILABLE | Nonzero startup exit | Verify required config/dependencies |
+| DRAIN_TIMEOUT | Nonzero shutdown exit | Deadline elapsed; do not blindly retry signed payments |
+| UPSTREAM_CAPACITY, UPSTREAM_TIMEOUT_OR_SIZE, UPSTREAM_UNAVAILABLE | Internal transport failure | Check RPC capacity/time/size bounds; public errors are sanitized |
+| PAYMENT_SDK_DIAGNOSTIC | Sanitized SDK warning/error log | Inspect status and request ID; raw provider/payment data is omitted |
+| PAYMENT_UPSTREAM_UNAVAILABLE | Internal official SDK failure | Check facilitator access; no automatic settlement retry |
+
 Official x402 payment errors/challenges are produced by the OKX x402 middleware/facilitator; UNMET does not substitute custom payment-proof headers.
 
 ## Contract custom errors
