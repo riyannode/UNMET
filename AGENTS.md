@@ -21,7 +21,7 @@ UNMET/
 ├── package.json, bun.lock             # Bun workspaces and root commands
 ├── compose.yaml, .dockerignore        # Root build context and stack
 ├── .env.example, .gitignore, LICENSE
-├── Docker/
+├── docker/
 │   ├── Dockerfile.api                 # Bun runtime, backend/start.ts
 │   ├── Dockerfile.web                 # Vite build and Caddy runtime
 │   └── Caddyfile                      # Static files, API proxy, SPA fallback
@@ -66,7 +66,7 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 - The backend index is disposable, process-local derived chain state. Reads use pinned blocks; canonical hashes, bounded log windows and atomic checkpoints protect refreshes and reorg recovery.
 - Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.
 - Official OKX verification precedes buffered execution and settlement. Durable mode reserves the authorization, persists the in-flight marker before external settlement, and withholds content until confirmed success is persisted. Ambiguous results remain blocked for status-only recovery.
-- Root Compose builds from `context: .` using `Docker/Dockerfile.api` and `Docker/Dockerfile.web`. Caddy serves the frontend and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready` to the private API. Caddy replaces forwarded client identity; Express trusts only its configured hop.
+- Root Compose builds from `context: .` using `docker/Dockerfile.api` and `docker/Dockerfile.web`. Caddy serves the frontend and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready` to the private API. Caddy replaces forwarded client identity; Express trusts only its configured hop.
 - Vercel is a separate path: it imports the Express default export, initializes payments lazily and uses platform ingress identity. `PAYMENT_DB_PATH` must remain unset there; no durable SQLite guarantee applies to that runtime.
 
 Read [Architecture](docs/ARCHITECTURE.md) for diagrams and detailed accounting/index behavior. Deployment configuration and historical receipts do not prove that a current public deployment is live or production-ready.
@@ -95,7 +95,7 @@ These are starting points, not isolated ownership boundaries. Trace the complete
 | x402 lifecycle and identity | `backend/durable-payment.ts`, `backend/payment-identity.ts`, `backend/payment-error.ts`, `backend/server.ts`, `backend/durable-payment.test.ts` |
 | Payment operator commands | `backend/payment-ops.ts`, `docs/PAYMENT_RECOVERY.md`; reconciliation requires the API stopped |
 | Contract/diagnostic operations | `backend/admin.ts`, `backend/payment-debug.ts`, `docs/RUNBOOK.md`, `docs/OKX_PAYMENT_DEBUG.md`; signing/deployment needs explicit authorization |
-| Container configuration and smoke | `Docker/`, `compose.yaml`, `.dockerignore`, `.env.example`, `scripts/`, `docs/SELF_HOSTING.md` |
+| Container configuration and smoke | `docker/`, `compose.yaml`, `.dockerignore`, `.env.example`, `scripts/`, `docs/SELF_HOSTING.md` |
 | Product/design reference | `docs/PRODUCT.md`, `docs/DESIGN.md`, `docs/PRD.md` |
 
 ## Development commands
