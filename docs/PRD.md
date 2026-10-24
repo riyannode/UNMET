@@ -1,14 +1,13 @@
-# UNMET — Product Requirements Document
+# UNMET — Post-Hackathon Product Requirements
 
-Version: 1.1  
-Hackathon: OKX Dev Day 2026  
-Primary track: Build a Company
+Version: 1.2
+Scope: Current Post-Hackathon product
 
 ## Product
 
 UNMET is an onchain demand order book for AI agents. Agents fund capabilities they need but cannot currently buy. Builders use that demand as a machine-readable product signal, submit new supply, and receive the explicitly approved amount, less the protocol fee, when supporters approve the result.
 
-Hero: **The market for what agents need but cannot buy yet.**
+Current landing heading: **Agent Demand Market**.
 
 ## Thesis
 
@@ -46,7 +45,7 @@ A funded demand signal is stronger than a poll, Discord request, failed search, 
 ## Users
 
 ### Requester/supporter agent
-Creates a missing capability or joins an existing one with real USD₮0 and expected usage.
+Creates a missing capability or joins an existing one with test USD₮0 on X Layer Testnet (`1952`) and expected usage.
 
 ### Builder
 Finds funded gaps and produces a reusable service matching the requirement.
@@ -63,7 +62,7 @@ A public funded demand record contains:
 - expected calls
 - deadline
 - supporting wallet count
-- real committed bounty
+- committed Testnet escrow bounty (USD₮0)
 - candidate service/evidence when submitted
 - fixed review threshold
 - lifecycle state
@@ -72,7 +71,7 @@ The system must say “supporting wallets,” not “unique users.”
 
 ## Economics
 
-MVP protocol fee: `2%` of the amount approved for builder settlement.
+The repository CLI baseline configures a `2%` fee, `60%` quorum and 24-hour review period; these are source defaults, not a fresh deployed-value readback.
 
 Example:
 
@@ -84,13 +83,15 @@ Example:
 40 USD₮0 from non-approvers -> remains refundable
 ```
 
+These are illustrative Testnet values, not deployment readback.
+
 `committed` is current escrow. `reviewCommitted` is the immutable escrow snapshot taken when a candidate is submitted. `approvalWeight` is the total pre-submission commitment of supporters who explicitly approved; at finalization it is the approved amount and the maximum amount eligible for builder settlement. The treasury fee is calculated from that approved amount. Funds from supporters who did not approve remain individually refundable, including after the candidate is fulfilled.
 
 `supporterCount` and aggregate `expectedCalls` are historical demand signals. Refunds reduce current escrow and the refunding wallet's own commitment/call values, but do not decrement those aggregate demand signals.
 
 No protocol fee is charged merely for posting a failed demand. Unfulfilled supporters retain their pull-refund entitlement.
 
-Secondary revenue: paid `POST /v1/opportunities`, recommended demo price `$0.01/query`, protected with official OKX x402 middleware.
+Secondary revenue: paid `POST /v1/opportunities`, with a configurable main-branch default `OPPORTUNITY_PRICE` of `$0.01` per query, protected with official OKX x402 middleware. Production intelligence billing is configured separately for X Layer Mainnet; it does not move the demand market from Testnet.
 
 ## Canonical storage
 
@@ -161,7 +162,7 @@ If rejection weight makes quorum impossible, anyone can reopen while the demand 
 
 ### Refund
 
-Refunds are pull-based and available only when `isRefundable()` is true. This includes non-approver commitments remaining after fulfillment and supporter commitments after a demand expires or an unapproved review ends. Each supporter can withdraw only their own remaining commitment; there is no global refund loop. A refund decreases `committed` and `totalEscrowed`, and clears that wallet's own commitment and expected calls. Aggregate `supporterCount` and `expectedCalls` remain historical. When the last escrow entitlement is refunded, state becomes `Closed`; fulfilled demands remain `Fulfilled` while non-approver refunds are outstanding.
+Refunds are pull-based and available only when `isRefundable()` is true. This includes non-approver commitments remaining after fulfillment and supporter commitments after a demand expires or an unapproved review ends. Each supporter can withdraw only their own remaining commitment; there is no global refund loop. A refund decreases `committed` and `totalEscrowed`, and clears that wallet's own commitment and expected calls. Aggregate `supporterCount` and `expectedCalls` remain historical. When the last escrow entitlement is refunded from a non-fulfilled demand, state becomes `Closed`; a `Fulfilled` demand remains `Fulfilled` after its final eligible non-approver refund.
 
 Expired exact demand may be replaced without waiting for every old supporter to refund; old-demand cleanup must not clear a newer active replacement.
 
@@ -170,7 +171,9 @@ Expired exact demand may be replaced without waiting for every old supporter to 
 Runtime: Bun. HTTP: Express only because the official OKX x402 package provides the supported middleware adapter.
 
 Routes:
-- `GET /health` free
+- `GET /live` public process liveness
+- `GET /health` free dependency health check
+- `GET /ready` public payment readiness plus health check
 - `GET /v1/demands` free chain-derived board
 - `POST /v1/opportunities` paid OKX.AI/A2MCP route
 
@@ -247,9 +250,9 @@ Versions pinned in manifests or used by the verified WSL toolchain:
 - OpenZeppelin Contracts v5.6.1 and forge-std v1.16.1 (Foundry dependency tags)
 - Foundry Forge 1.8.3 (verified WSL toolchain)
 
-## Non-goals
+## Current exclusions
 
-Do not add to hackathon MVP:
+Do not add to the current product:
 - semantic clustering / LLM matching
 - reputation
 - KYC / identity proof
@@ -261,9 +264,9 @@ Do not add to hackathon MVP:
 - trading/recommendation functionality
 - hidden DB
 
-## Security acceptance
+## Verification requirements and evidence
 
-Before any mainnet release:
+These are requirements for a release, not evidence that the checks have passed. The demand market currently targets X Layer Testnet; production intelligence billing is separately configured for X Layer Mainnet. Before a demand-market Mainnet release:
 - contract tests pass
 - backend tests pass
 - typecheck passes
@@ -278,9 +281,9 @@ Before any mainnet release:
 
 The contract is not independently audited; documentation must not imply otherwise.
 
-## Hackathon demo success
+## Current lifecycle verification
 
-The 2–4 minute demo must visibly prove:
+A product verification walkthrough should demonstrate:
 
 ```text
 missing capability
@@ -294,81 +297,6 @@ missing capability
 
 Evidence is transaction receipt + state readback, not transaction submission alone.
 
-## Future implementation
+## Documentation ownership
 
-These are post-MVP directions and are not implemented in the current hackathon submission.
-
-### Demand-to-Supply Protocol
-
-The long-term thesis is to evolve UNMET from a funded unmet-demand market into a closed-loop system that turns structured unmet demand into purchasable agent services:
-
-```text
-Need -> Specify -> Fund -> Discover -> Build -> Verify -> Approve
--> Publish -> Buy -> Measure -> Feed usage and outcomes back into Demand Intelligence
-```
-
-### Machine-Readable RFQ
-
-Future demand records could extend the current demand object into agent-native requests for quotation (RFQs), with fields such as capability, input and output schemas, maximum latency, maximum unit price, expected calls, deadline, verification rule, and settlement condition. These fields would extend the demand record; they would not replace escrow, supporter commitments, commitment-weighted review, selective settlement, or refunds.
-
-### Paid Demand Intelligence
-
-The existing paid `POST /v1/opportunities` route could grow into a broader paid intelligence layer, with x402 remaining the likely paid-access mechanism. Potential future signals include fastest-growing unmet capabilities, funded demand by capability, capital velocity, expected call volume, repeated failed requests, reopened proposals, budget distributions, demand clusters, demand-to-service conversion rate, fulfillment time, and post-fulfillment usage. These expanded analytics are not available in the current MVP.
-
-### Demand → x402 Service Conversion
-
-A fulfilled demand could produce a machine-readable service record linked to its origin demand. Future metadata could include service ID, origin demand ID, capability, builder/provider, endpoint, input and output schemas, price, x402 payment network, scheme, asset, verification status, and availability state. Its conceptual lifecycle is:
-
-```text
-UNMET -> FUNDED -> BUILDING -> VERIFIED -> AVAILABLE
-```
-
-This would close the future loop: Need → Fund → Build → Approve → Buy. A service registry and this conversion flow are not implemented today.
-
-### Unified system model
-
-```text
-Machine-Readable RFQ
-        ↓
-Funded Demand Market
-        ↓
-Paid Demand Intelligence
-        ↓
-Builder Proposal
-        ↓
-Verification / Approval
-        ↓
-x402 Service Conversion
-        ↓
-Actual Purchases / Usage
-        ↓
-Outcome + Usage Data
-        └──────────────→ Demand Intelligence
-```
-
-### Future product surfaces
-
-These are conceptual surfaces, not current product claims:
-
-- **UNMET Market** — funded unmet demand.
-- **UNMET Intelligence** — paid demand analytics.
-- **UNMET Services** — services created from fulfilled demand.
-
-### Implementation order
-
-1. **Phase 1 — Machine-Readable RFQ**
-2. **Phase 2 — Fulfilled Demand Service Registry**
-3. **Phase 3 — x402 Service Conversion**
-4. **Phase 4 — Demand Intelligence Expansion**
-5. **Phase 5 — Automatic Capability Resolver**
-
-### Future non-goals
-
-Keep the roadmap focused. Future work excludes:
-
-- token, NFT, or DAO
-- social feed or generic chat
-- generic agent marketplace
-- speculative reputation scoring or unsupported demand prediction
-- cross-chain complexity without a concrete requirement
-- hidden economic state
+Proposed plans and requirements are maintained exclusively in the [Future Implementation roadmap](FUTURE_IMPLEMENTATION.md). This PRD describes the current Post-Hackathon product; [STATUS](STATUS.md) and dated verification records describe evidence and its limits.

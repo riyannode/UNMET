@@ -117,7 +117,7 @@ API/UI additionally derive:
 - `READY`: submitted and fixed approval quorum reached
 - `REJECTED`: enough rejection weight makes approval quorum mathematically impossible
 - `EXPIRED`: deadline passed and no successful path is pending
-- `CLOSED`: all remaining refundable escrow has been withdrawn
+- `CLOSED`: all refundable escrow has been withdrawn from a non-fulfilled demand; `FULFILLED` remains `FULFILLED` after eligible non-approver refunds, including the final refund.
 
 During review, `rejectService` records a supporter's pre-submission commitment as rejection weight. A supporter can approve or reject once for the current submission nonce, but cannot do both. `rejectionWeight >= reviewCommitted - approvalRequired + 1` marks the candidate rejected and permits immediate reopen while the demand deadline is active. Reopening emits `SubmissionRejected`, clears the candidate and review vote progress, and returns the demand to `OPEN`.
 
