@@ -12,20 +12,22 @@ Validation, route/IP limits and admission still run before the SDK. SQLite reser
 official verification valid
     -> VERIFIED (unique reservation committed)
     -> SETTLEMENT_IN_FLIGHT (committed before official settle)
-    -> SETTLED (explicit success, network and transaction hash checked)
+    -> persisted transaction hash checkpoint
+    -> SETTLED (strict facilitator success plus canonical Mainnet L2 receipt proof)
     -> UNKNOWN (pending, timeout, transport error or ambiguous result)
 
 VERIFIED -> CANCELLED (execution failed/disconnected before settlement)
 VERIFIED / SETTLEMENT_IN_FLIGHT -> UNKNOWN (restart)
-UNKNOWN -> SETTLED / FAILED (official status confirmation only)
+UNKNOWN -> SETTLED (strict official status plus the same canonical L2 receipt proof)
+UNKNOWN -> FAILED (explicit matching official failed status)
 UNKNOWN -> UNKNOWN (query unresolved)
 ~~~
 
-FAILED requires an explicit official failed settlement-status response. A negative settle response alone is conservatively ambiguous. A pending/timeout result is persisted with its hash before returning an explicit reconciliation-required error; durable mode does not release paid content for the SDK's optimistic pending status. Reconciliation makes status queries only; it never calls settle again.
+FAILED requires an explicit matching official failed status; its provider error text is expected. A failed or contradictory result from settle alone remains ambiguous. A transaction hash returned by settle is committed before any RPC proof. Missing or unavailable Mainnet proof remains blocked; it is never retried by submitting settlement again. Confirmation checks chain ID 196, supported legacy/access-list/dynamic-fee transaction envelopes, transaction/receipt/block/log references, direct token `transferWithAuthorization` calldata, matching `AuthorizationUsed` and `Transfer` logs, and block timestamp bounds. It rejects blob, delegated-account and unknown transaction types, wrappers, multicalls and unknown selectors. It uses current canonical L2 inclusion, not safe/finalized or L1 finality. A successful historical authorization can be expired now as long as its inclusion timestamp was within its signed bounds.
 
 ## Schema and identity
 
-One schema-version-1 table stores: internal UUID, unique payment fingerprint, separate request binding fingerprint, optional unique logical-key fingerprint, network, recipient, amount, verified payer, authorization expiry, state, transaction hash, timestamps and stable error classification. No raw signatures, response bodies, private keys or OKX secrets are stored.
+The existing inline schema-version-1 DDL is unchanged; no migration is required. Its single table stores: internal UUID, unique payment fingerprint, separate request binding fingerprint, optional unique logical-key fingerprint, network, recipient, amount, verified payer, authorization expiry (`validBefore` in milliseconds), state, transaction hash, timestamps and stable error classification. No raw signatures, response bodies, private keys or OKX secrets are stored.
 
 Payment identity is SHA-256 of normalized network, token contract, payer and EIP-3009 nonce. It deliberately excludes request content and signature bytes: serialization, address case, alternate signatures or a changed request cannot create a second operation for the same nonce. The separate binding covers method, route, canonical validated filters/defaults, payment terms and expected requirements. Logical keys are hashed and scoped to verified payer/network.
 
@@ -55,7 +57,7 @@ docker compose run --rm --no-deps api bun run backend/payment-ops.ts reconcile
 docker compose up -d api
 ~~~
 
-The command checks up to 20 hash-bearing UNKNOWN records, sequentially, with a 30-second batch budget (plus at most one configured upstream timeout). Each official call retains existing bounded transport. Hashless records cannot starve hash-bearing recovery. Output contains counts only. Rerun bounded passes if necessary. Missing hashes remain unresolved.
+The command checks up to 20 hash-bearing UNKNOWN records, sequentially, with a 30-second batch deadline between records. An active facilitator-status query and its receipt-proof RPC calls can extend the pass by their individually bounded timeouts. Hashless records cannot starve hash-bearing recovery. Output contains counts only. Rerun bounded passes if necessary. Missing hashes remain unresolved.
 
 Other operator commands:
 
@@ -94,8 +96,10 @@ Interrupted shutdown/crash leaves a durable pre-settlement marker or an UNKNOWN 
 
 ## Platform and delivery limits
 
-Vercel keeps its existing official payment behavior with PAYMENT_DB_PATH unset. The storage module is dynamically loaded only for an explicitly configured Bun filesystem; setting PAYMENT_DB_PATH on Vercel is rejected. No ephemeral function filesystem is advertised as durable. Docker cannot disable persistence through an env override because Compose fixes its required path. Production Vercel settings are unchanged.
+With PAYMENT_DB_PATH unset, Vercel can still serve unpaid SDK challenges, but requests carrying payment headers receive 503 PAYMENT_STORAGE_UNAVAILABLE and readiness fails. No ephemeral function filesystem is advertised as durable. Setting PAYMENT_DB_PATH on Vercel is rejected. Docker cannot disable persistence through an env override because Compose fixes its required path. Production Vercel settings are unchanged.
 
 This prevents multiple independent settlements for retained identities under the single-replica deployment assumptions. It does **not** provide distributed exactly-once settlement across SQLite and OKX: there is no atomic transaction spanning those systems. Live signed settlement, receipt finality and real payer resource delivery remain separate payment acceptance work; this PR authorizes none of those transactions.
+
+This confirmer is Mainnet-only. Nonproduction 1952 challenges retain the existing Testnet asset selection, but durable paid acceptance is unsupported under this policy. Hosted direct-call paid execution also remains unverified; verify it in a separately approved acceptance run before relying on paid content delivery.
 
 References: [official OKX payment API](https://web3.okx.com/onchainos/dev-docs/payments/api-http-onetime), [installed SDK source](https://github.com/okx/payments), [Bun SQLite](https://bun.com/docs/runtime/sqlite), [SQLite WAL](https://www.sqlite.org/wal.html), [SQLite pragmas](https://www.sqlite.org/pragma.html).

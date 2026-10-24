@@ -123,7 +123,17 @@ export class PaymentStore {
     if (!allowed[from].includes(to) || (txHash !== null && !/^0x[0-9a-fA-F]{64}$/.test(txHash)) ||
       (error !== null && !/^[A-Z_]{1,64}$/.test(error))) throw new PaymentError("PAYMENT_STATE_INVALID");
     const result = this.db.query(`UPDATE payments SET state=?,txHash=COALESCE(?,txHash),updated=?,error=?
-      WHERE id=? AND state=?`).run(to, txHash, this.now(), error, id, from);
+      WHERE id=? AND state=? AND (? IS NULL OR txHash IS NULL OR lower(txHash)=lower(?))`)
+      .run(to, txHash, this.now(), error, id, from, txHash, txHash);
+    if (result.changes !== 1) throw new PaymentError("PAYMENT_STATE_CONFLICT");
+  }
+
+  checkpointHash(id: string, payment: string, hash: string) {
+    this.available();
+    if (!/^[0-9a-f]{64}$/.test(payment) || !/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new PaymentError("PAYMENT_STATE_INVALID");
+    const result = this.db.query(`UPDATE payments SET txHash=?,updated=?
+      WHERE id=? AND payment=? AND state='SETTLEMENT_IN_FLIGHT' AND (txHash IS NULL OR lower(txHash)=lower(?))`)
+      .run(hash, this.now(), id, payment, hash);
     if (result.changes !== 1) throw new PaymentError("PAYMENT_STATE_CONFLICT");
   }
 

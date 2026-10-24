@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { encodeEventTopics, type Address, type PublicClient } from "viem";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
+import { x402ResourceServer } from "@okxweb3/x402-core/server";
+import { paymentMiddleware } from "@okxweb3/x402-express";
+import express from "express";
 import { getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI } from "./contract.ts";
-import { app, changedDemandIds, createApp, createDemandIndexState, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
+import { app, changedDemandIds, createApp, createDemandIndexState, opportunityPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput } from "./server.ts";
 
 const testContract = "0x0000000000000000000000000000000000000001" as Address;
 const demandContract = "0x7c51457235cFFBae862493D788137BFf1EF07e2E" as Address;
@@ -249,10 +252,14 @@ describe("independent market and x402 networks", () => {
     expect(() => resolveX402PaymentConfig({ VERCEL_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "1952" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
-    expect(resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "196" }, 1952)).toEqual({
-      network: "eip155:196",
-      price: "$0.01",
+    expect(resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "196" }, 1952)).toMatchObject({
+      network: "eip155:196", price: "$0.01", assets: [
+        { asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736", extra: { name: "USD₮0", version: "1" } },
+        { asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", extra: { name: "USDC", version: "2" } },
+        { asset: "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", extra: { name: "Global Dollar", version: "1" } },
+      ],
     });
+    expect(() => resolveX402PaymentConfig({ X402_CHAIN_ID: "196", OPPORTUNITY_PRICE: "1" }, 1952)).toThrow("CONFIG_INVALID: OPPORTUNITY_PRICE");
   });
 
   test("official x402 scheme resolves network-specific stablecoin and amount", async () => {
@@ -261,6 +268,78 @@ describe("independent market and x402 networks", () => {
     const testnet = await scheme.parsePrice("$0.01", "eip155:1952");
     expect(mainnet).toMatchObject({ amount: "10000", asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736" });
     expect(testnet).toMatchObject({ amount: "10000", asset: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c" });
+  });
+
+  test("Mainnet opportunity accepts are the exact ordered native token options", () => {
+    const payTo = "0x1111111111111111111111111111111111111111" as const;
+    expect(opportunityPaymentOptions(resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952), payTo)).toEqual([
+      { scheme: "exact", network: "eip155:196", payTo, price: { asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736", amount: "10000", extra: { name: "USD₮0", version: "1" } } },
+      { scheme: "exact", network: "eip155:196", payTo, price: { asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", amount: "10000", extra: { name: "USDC", version: "2" } } },
+      { scheme: "exact", network: "eip155:196", payTo, price: { asset: "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", amount: "10000", extra: { name: "Global Dollar", version: "1" } } },
+    ]);
+  });
+
+  test("official SDK 402 challenge carries all three Mainnet options in order", async () => {
+    const payTo = "0x1111111111111111111111111111111111111111" as const;
+    const accepts = opportunityPaymentOptions(resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952), payTo);
+    const resource = new x402ResourceServer({
+      getSupported: async () => ({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }], extensions: [], signers: {} }),
+      verify: async () => ({ isValid: false }), settle: async () => { throw new Error("not called"); },
+      getSettleStatus: async () => ({ success: false }),
+    }).register("eip155:196", new ExactEvmScheme());
+    await resource.initialize();
+    const paid = paymentMiddleware({ "POST /v1/opportunities": { accepts } }, resource, undefined, undefined, false);
+    const app = express();
+    app.post("/v1/opportunities", paid, (_req, res) => res.json({}));
+    const server = app.listen(0, "127.0.0.1");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test listener unavailable");
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, { method: "POST" });
+      expect(response.status).toBe(402);
+      const challenge = JSON.parse(Buffer.from(response.headers.get("payment-required")!, "base64").toString());
+      expect(challenge.accepts).toEqual(accepts.map((option) => ({
+        scheme: option.scheme, network: option.network, asset: (option.price as { asset: string }).asset,
+        amount: (option.price as { amount: string }).amount, payTo: option.payTo,
+        maxTimeoutSeconds: 300, extra: (option.price as { extra: unknown }).extra,
+      })));
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("no-storage payment guard blocks both payment headers and leaves unpaid challenges reachable", () => {
+    const guard = paymentStorageGuard(false);
+    for (const header of ["payment-signature", "x-payment"]) {
+      let status = 0, body: unknown, next = false;
+      const req = { get: (name: string) => name === header ? "fixture" : undefined };
+      const res = { status(value: number) { status = value; return this; }, json(value: unknown) { body = value; return this; } };
+      guard(req as never, res as never, () => { next = true; });
+      expect(status).toBe(503);
+      expect(body).toEqual({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+      expect(next).toBe(false);
+    }
+    let unpaidNext = false;
+    guard({ get: () => undefined } as never, {} as never, () => { unpaidNext = true; });
+    expect(unpaidNext).toBe(true);
+  });
+
+  test("default API rejects paid HTTP requests for missing storage before facilitator initialization", async () => {
+    expect(process.env.PAYMENT_DB_PATH).toBeUndefined();
+    const server = app.listen(0, "127.0.0.1");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test listener unavailable");
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
+        method: "POST", headers: { "content-type": "application/json", "x-payment": "fixture" }, body: "{}",
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

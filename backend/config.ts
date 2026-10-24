@@ -39,6 +39,7 @@ export function loadOperationalConfig(env: Env = process.env) {
     throw new Error("CONFIG_INVALID: PAYMENT_DB_PATH");
   }
   return {
+    x402RpcUrl: httpUrl(env.X402_RPC_URL || "https://rpc.xlayer.tech", "X402_RPC_URL"),
     paymentDbPath: env.PAYMENT_DB_PATH,
     paymentRetentionDays: integer(env, "PAYMENT_RETENTION_DAYS", 30, 1, 3650),
     paymentMaxRecords: integer(env, "PAYMENT_MAX_RECORDS", 100_000, 1, 1_000_000),

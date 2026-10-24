@@ -161,6 +161,13 @@ test("unsafe configuration is rejected without echoing supplied values", () => {
   ]) expect(() => loadOperationalConfig(env)).toThrow("CONFIG_INVALID");
 });
 
+test("Mainnet payment confirmation RPC is validated independently of the market RPC", () => {
+  expect(loadOperationalConfig({ XLAYER_RPC_URL: "https://testnet.example", X402_RPC_URL: "https://mainnet.example" }).x402RpcUrl)
+    .toBe("https://mainnet.example");
+  expect(loadOperationalConfig({ XLAYER_RPC_URL: "https://testnet.example" }).x402RpcUrl).toBe("https://rpc.xlayer.tech");
+  expect(() => loadOperationalConfig({ X402_RPC_URL: "file:///tmp/rpc" })).toThrow("CONFIG_INVALID: X402_RPC_URL");
+});
+
 test("index capacity failure leaves the previous complete checkpoint intact", async () => {
   const state = createDemandIndexState();
   state.ready = true;
