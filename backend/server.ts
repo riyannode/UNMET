@@ -714,9 +714,13 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       : error instanceof SyntaxError && "body" in error ? "INVALID_JSON"
       : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
       : "CHAIN_RPC_UNAVAILABLE";
-    const status = code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    const status = error instanceof PaymentError ? error.status
+      : code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    const message = error instanceof PaymentError && status === 400 ? "Payment authorization is invalid or unsupported"
+      : error instanceof PaymentError && status === 409 ? "Payment operation unavailable; do not submit a new payment"
+      : status >= 500 ? "Service temporarily unavailable" : "Invalid request body";
     log({ level: "error", event: "request_error", requestId: res.getHeader("x-request-id"), code });
-    res.status(status).json({ error: { code, message: status >= 500 ? "Service temporarily unavailable" : "Invalid request body" } });
+    res.status(status).json({ error: { code, message } });
   });
   return app;
 }

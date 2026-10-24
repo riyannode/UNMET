@@ -124,7 +124,7 @@ bun run build:frontend
 bun run check
 ```
 
-`check` runs typechecks, frontend/backend tests, Foundry and frontend production build. Root `test` omits frontend. Backend tests intentionally run API/hardening and SQLite/durable suites in separate Bun invocations. Use the root frontend test script for its required preload. No lint script or CI workflow currently exists.
+`check` runs typechecks, frontend/backend tests, Foundry and frontend production build. Root `test` omits frontend. Backend tests intentionally run API/hardening and SQLite/durable suites in separate Bun invocations. Use the root frontend test script for its required preload. The CI workflow runs these checks in separate frontend, backend, contracts and Docker jobs; there is no lint script.
 
 The real React session-race fixture is `frontend/tests/create-demand-chat-race.html`, served by Vite at `/tests/create-demand-chat-race.html`. It must finish with PASS; its synthetic outcomes send no wallet transactions. This is separate from interactive wallet acceptance.
 
