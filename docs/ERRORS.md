@@ -65,7 +65,7 @@ These codes apply to durable self-hosted payment handling. Error responses never
 | IDEMPOTENCY_CONFLICT | 409 | Existing logical key or authorization is bound to a different operation; do not pay again automatically |
 | PAYMENT_ALREADY_RESERVED | 409 | Retained authorization already belongs to an operation; no paid content replay |
 | PAYMENT_RECONCILIATION_REQUIRED | 409 | Settlement outcome ambiguous; operator status reconciliation required |
-| PAYMENT_STORAGE_UNAVAILABLE | 503 | Storage cannot durably protect settlement; fail closed |
+| PAYMENT_STORAGE_UNAVAILABLE | 503 | No durable store is available or storage cannot protect settlement; configure/restore persistent SQLite and do not submit a new authorization for an ambiguous operation |
 | PAYMENT_STORAGE_CAPACITY | 503 | Record cap reached; operator cleanup/recovery needed |
 | PAYMENT_CONTEXT_UNAVAILABLE | 503 | SDK call has no protected request context; no settlement |
 | PAYMENT_STATE_INVALID / PAYMENT_STATE_CONFLICT | 503 | Invalid or conflicting atomic state transition; investigate operation |

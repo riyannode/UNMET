@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createApp } from "./server.ts";
+import { PaymentError } from "./payment-error.ts";
 
 test("invalid requests never enter payment verification", async () => {
   let paid = 0;
@@ -161,6 +162,13 @@ test("unsafe configuration is rejected without echoing supplied values", () => {
   ]) expect(() => loadOperationalConfig(env)).toThrow("CONFIG_INVALID");
 });
 
+test("Mainnet payment confirmation RPC is validated independently of the market RPC", () => {
+  expect(loadOperationalConfig({ XLAYER_RPC_URL: "https://testnet.example", X402_RPC_URL: "https://mainnet.example" }).x402RpcUrl)
+    .toBe("https://mainnet.example");
+  expect(loadOperationalConfig({ XLAYER_RPC_URL: "https://testnet.example" }).x402RpcUrl).toBe("https://rpc.xlayer.tech");
+  expect(() => loadOperationalConfig({ X402_RPC_URL: "file:///tmp/rpc" })).toThrow("CONFIG_INVALID: X402_RPC_URL");
+});
+
 test("index capacity failure leaves the previous complete checkpoint intact", async () => {
   const state = createDemandIndexState();
   state.ready = true;
@@ -204,6 +212,31 @@ test("request IDs are server-owned and public errors omit internal text and stac
     expect(text).not.toContain("credential-marker");
     expect(text).not.toContain("stack");
   });
+});
+
+test("payment errors retain their public status, code, and safe message through the HTTP handler", async () => {
+  const identityError = new PaymentError("PAYMENT_IDENTITY_UNSUPPORTED", 400);
+  identityError.stack = "payment-stack-marker";
+  const reconciliationError = new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
+  reconciliationError.stack = "reconciliation-stack-marker";
+  for (const [error, status, message] of [
+    [identityError, 400, "Payment authorization is invalid or unsupported"],
+    [reconciliationError, 409, "Payment operation unavailable; do not submit a new payment"],
+    [new PaymentError("PAYMENT_STORAGE_UNAVAILABLE"), 503, "Service temporarily unavailable"],
+    [Object.assign(new Error("ordinary-private-marker"), { cause: new Error("ordinary-cause-marker") }), 503, "Service temporarily unavailable"],
+  ] as const) {
+    await withServer(createApp({ middleware: (_req, _res, next) => next(error) }), async (url) => {
+      const response = await post(url);
+      expect(response.status).toBe(status);
+      const text = await response.text();
+      expect(text).not.toContain("payment-stack-marker");
+      expect(text).not.toContain("reconciliation-stack-marker");
+      expect(text).not.toContain("ordinary-private-marker");
+      expect(text).not.toContain("ordinary-cause-marker");
+      expect(text).not.toContain("stack");
+      expect(JSON.parse(text)).toEqual({ error: { code: error instanceof PaymentError ? error.code : "CHAIN_RPC_UNAVAILABLE", message } });
+    });
+  }
 });
 
 test("minimum RPC capacity still completes a rebuild when a larger demand batch was requested", async () => {

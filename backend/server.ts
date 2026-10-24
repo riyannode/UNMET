@@ -1,5 +1,7 @@
 import { durablePayment } from "./durable-payment.ts";
+import { MAINNET_ASSETS } from "./payment-identity.ts";
 import type { PaymentStore } from "./payment-store.ts";
+import { PaymentError } from "./payment-error.ts";
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
 import { admittedWork, concurrencyGate, rateLimiter } from "./admission.ts";
 import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
@@ -434,20 +436,44 @@ export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, core
   if (x402ChainId !== "1952" && x402ChainId !== "196") throw new Error("X402_CHAIN_ID must be 1952 or 196");
   const priceRaw = env.OPPORTUNITY_PRICE || "0.01";
   if (!/^\d+(\.\d{1,6})?$/.test(priceRaw)) throw new Error("OPPORTUNITY_PRICE must be a decimal amount with <=6 decimals");
+  const priceAmount = parseUnits6(priceRaw);
+  if (x402ChainId === "196" && priceAmount !== parseUnits6("0.01")) throw new Error("CONFIG_INVALID: OPPORTUNITY_PRICE");
   return {
     network: `eip155:${x402ChainId}` as `eip155:${number}`,
+    assets: x402ChainId === "196" ? MAINNET_ASSETS.map(({ asset, name, version }) => ({ asset, extra: { name, version } })) : null,
     price: `$${priceRaw}`,
   };
 }
 
-function requirePaymentEnv() {
+export function opportunityPaymentOptions(pay: ReturnType<typeof resolveX402PaymentConfig>, payTo: Address) {
+  return pay.assets ? pay.assets.map(({ asset, extra }) => ({
+    scheme: "exact" as const, network: pay.network, payTo,
+    price: { asset, amount: parseUnits6("0.01").toString(), extra },
+  })) : [{ scheme: "exact" as const, network: pay.network, payTo, price: pay.price }];
+}
+
+export function paymentStorageGuard(available: boolean): RequestHandler {
+  return (req, res, next) => {
+    if (!available && (req.get("payment-signature") || req.get("x-payment"))) {
+      res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+      return;
+    }
+    next();
+  };
+}
+
+function requireFacilitatorCredentials() {
   const apiKey = process.env.OKX_API_KEY?.trim();
   const secretKey = process.env.OKX_SECRET_KEY?.trim();
   const passphrase = process.env.OKX_PASSPHRASE?.trim();
+  if (!apiKey || !secretKey || !passphrase) throw new Error("OKX_API_KEY, OKX_SECRET_KEY and OKX_PASSPHRASE are required");
+  return { apiKey, secretKey, passphrase };
+}
+
+function requirePaymentEnv() {
+  const credentials = requireFacilitatorCredentials();
   const payToRaw = process.env.OKX_PAY_TO || process.env.PAY_TO_ADDRESS;
-  if (!apiKey || !secretKey || !passphrase || !payToRaw) {
-    throw new Error("OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE and OKX_PAY_TO are required");
-  }
+  if (!payToRaw) throw new Error("OKX_PAY_TO is required");
   let payTo: Address;
   try {
     payTo = getAddress(payToRaw);
@@ -455,9 +481,7 @@ function requirePaymentEnv() {
   } catch { throw new Error("CONFIG_INVALID: OKX_PAY_TO"); }
   const payment = resolveX402PaymentConfig();
   return {
-    apiKey,
-    secretKey,
-    passphrase,
+    ...credentials,
     payTo,
     ...payment,
   };
@@ -488,11 +512,9 @@ async function initializePaymentStorage() {
 }
 
 export function createOfficialFacilitator() {
-  const pay = requirePaymentEnv();
+  const credentials = requireFacilitatorCredentials();
   const facilitatorClient = new OKXFacilitatorClient({
-    apiKey: pay.apiKey,
-    secretKey: pay.secretKey,
-    passphrase: pay.passphrase,
+    ...credentials,
     syncSettle: true,
   });
   return {
@@ -506,7 +528,7 @@ export function createOfficialFacilitator() {
   };
 }
 
-export async function createPaymentMiddleware(): Promise<RequestHandler> {
+export async function createPaymentMiddleware(): Promise<RequestHandler & { ready: () => Promise<void> }> {
   const store = await initializePaymentStorage();
   const pay = requirePaymentEnv();
   const boundedFacilitator = createOfficialFacilitator();
@@ -516,24 +538,27 @@ export async function createPaymentMiddleware(): Promise<RequestHandler> {
 
   const middleware = paymentMiddleware({
     "POST /v1/opportunities": {
-      accepts: [{
-        scheme: "exact",
-        network: pay.network,
-        payTo: pay.payTo,
-        price: pay.price,
-      }],
+    accepts: opportunityPaymentOptions(pay, pay.payTo),
       description: "Rank funded AI-agent capabilities that still need builders",
       mimeType: "application/json",
     },
   }, resourceServer, undefined, undefined, false);
   const protectedMiddleware = durable ? durable.wrap(middleware) : middleware;
-  return (req, res, next) => {
-    return withBoundedFetch(facilitatorFetch, async () => { await protectedMiddleware(req, res, next); }).catch(next);
-  };
+  const storageGuard = paymentStorageGuard(!!store);
+  const handler: RequestHandler = (req, res, next) => storageGuard(req, res, (error) => error ? next(error)
+    : withBoundedFetch(facilitatorFetch, async () => { await protectedMiddleware(req, res, next); }).catch(next));
+  return Object.assign(handler, { ready: async () => {
+    if (!store) throw new Error("PAYMENT_STORAGE_UNAVAILABLE");
+    store.integrity();
+  } });
 }
 
-let vercelPaymentMiddlewarePromise: Promise<RequestHandler> | null = null;
+let vercelPaymentMiddlewarePromise: ReturnType<typeof createPaymentMiddleware> | null = null;
 const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
+  if (!operations.paymentDbPath && (req.get("payment-signature") || req.get("x-payment"))) {
+    res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+    return;
+  }
   return initializedPayment().then((middleware) => {
     if (req.aborted || res.destroyed) {
       res.statusCode = 503;
@@ -555,8 +580,9 @@ function initializedPayment() {
     throw error;
   });
 }
+const paymentReady = async () => { const middleware = await initializedPayment(); await middleware.ready(); };
 
-export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware, ready: initializedPayment }, options: {
+export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware, ready: paymentReady }, options: {
   config?: OperationalConfig;
   client?: PublicClient;
   market?: ReturnType<typeof loadConfig>;
@@ -608,10 +634,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.get("/ready", (_req, res, next) => {
     void (async () => {
       try {
-        if (operations.paymentDbPath) {
-          const store = await initializePaymentStorage();
-          store?.get("readiness");
-        }
+        if (operations.paymentDbPath) await initializePaymentStorage();
         await payment.ready?.();
       }
       catch {
@@ -685,14 +708,19 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     }
     if (res.headersSent) return;
     const parserStatus = typeof error === "object" && error !== null && "status" in error ? error.status : undefined;
-    const code = parserStatus === 413 ? "BODY_TOO_LARGE"
+    const code = error instanceof PaymentError ? error.code
+      : parserStatus === 413 ? "BODY_TOO_LARGE"
       : parserStatus === 415 ? "UNSUPPORTED_MEDIA_TYPE"
       : error instanceof SyntaxError && "body" in error ? "INVALID_JSON"
       : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
       : "CHAIN_RPC_UNAVAILABLE";
-    const status = code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    const status = error instanceof PaymentError ? error.status
+      : code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    const message = error instanceof PaymentError && status === 400 ? "Payment authorization is invalid or unsupported"
+      : error instanceof PaymentError && status === 409 ? "Payment operation unavailable; do not submit a new payment"
+      : status >= 500 ? "Service temporarily unavailable" : "Invalid request body";
     log({ level: "error", event: "request_error", requestId: res.getHeader("x-request-id"), code });
-    res.status(status).json({ error: { code, message: status >= 500 ? "Service temporarily unavailable" : "Invalid request body" } });
+    res.status(status).json({ error: { code, message } });
   });
   return app;
 }
@@ -705,7 +733,7 @@ export async function startServer() {
   const pay = requirePaymentEnv();
   if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_ORIGIN?.trim()) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
   const middleware = await createPaymentMiddleware();
-  const application = createApp({ middleware });
+  const application = createApp({ middleware, ready: middleware.ready });
   const port = operations.port;
   const host = process.env.HOST || "0.0.0.0";
   const server = application.listen(port, host, () => {

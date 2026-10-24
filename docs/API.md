@@ -34,7 +34,7 @@ Free UI/discovery read. Returns up to 50 chain-derived demands sorted by committ
 
 ## POST /v1/opportunities
 
-Paid OKX.AI/A2MCP Demand Intelligence route. Default price: `$0.01` per call, configurable with `OPPORTUNITY_PRICE`.
+Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `OPPORTUNITY_PRICE` fails configuration.
 
 The returned opportunity data is read from the core market network (`CHAIN_ID=1952` in production). The payment network is configured independently with `X402_CHAIN_ID=196` in production; this does not change demand reads or escrow.
 
@@ -44,7 +44,11 @@ The route uses the official `@okxweb3/x402-express` middleware with `OKXFacilita
 
 Without valid payment, the middleware returns HTTP `402` using the standard x402 v2 payment challenge (`PAYMENT-REQUIRED`). The buyer pays/signs according to the challenge and replays the same request with the standard `PAYMENT-SIGNATURE` header. Official verification precedes route execution. The Express SDK buffers the result, skips settlement for unsuccessful execution, settles through OKX, then releases the response. Self-hosted durable mode records the reservation and in-flight marker before settlement and releases content only after confirmed success is persisted.
 
-With the default price, production configuration advertises `eip155:196`, scheme `exact`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000` (6 decimals), and `OKX_PAY_TO` as `payTo` (independent of the contract treasury). In production `X402_CHAIN_ID` must be explicitly set to `196`; local/test environments may omit it and inherit `CHAIN_ID`.
+Production advertises exactly three `eip155:196` native EIP-3009 exact options in order: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`, domain `USD₮0` v1), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`, `USDC` v2), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`, `Global Dollar` v1). Each is `10000` atomic units (6 decimals) and uses configured `OKX_PAY_TO`, independent of the contract treasury. `X402_RPC_URL` (default `https://rpc.xlayer.tech`) is used only to confirm Mainnet inclusion and must report chain ID 196. The market's Testnet token remains separate on `eip155:1952`.
+
+With durable SQLite enabled, content is released only after the facilitator reports strict success and the persisted transaction is confirmed in a successful canonical X Layer Mainnet L2 block with matching EIP-3009 authorization and token logs. This is current L2 inclusion, not safe/finalized or L1 finality. Without durable storage, unpaid requests can still receive the SDK's standard challenge, while requests carrying a payment signature receive `503 PAYMENT_STORAGE_UNAVAILABLE`.
+
+Nonproduction `eip155:1952` configuration remains separate and uses its existing Testnet token, never a Mainnet address. This Mainnet-only confirmation policy does not accept paid Testnet settlement; use unpaid smoke tests for Testnet environments. Hosted direct-call paid execution has not been verified by this local implementation work.
 
 UNMET does not accept a locally invented payment ID as proof.
 

@@ -25,7 +25,7 @@ Vercel instead imports the default Express app from `backend/server.ts`, initial
 
 The demand market is configured by `CHAIN_ID` and remains on X Layer Testnet (`1952`): contract reads, indexing, frontend writes, escrow, and health/readback reporting use this network. `PAYMENT_TOKEN` is the Testnet escrow token.
 
-Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`), matching the registered A2MCP fee token and yielding the mainnet USD₮0 challenge. This payment setting is never used by `backend/contract.ts` or demand-market clients. Local/test environments can omit it to inherit `CHAIN_ID`.
+Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`) and advertises three fixed native EIP-3009 assets. `X402_RPC_URL` independently confirms Mainnet settlement receipts; it is never sourced from the market Testnet RPC. This payment setting is never used by `backend/contract.ts` or demand-market clients.
 
 `AgentDemand.sol` is canonical for demand and escrow state. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
 
@@ -125,11 +125,12 @@ validated request -> route/IP quota -> admission -> official x402 middleware
     -> durable SQLite reservation (self-hosted only)
     -> buffered chain-derived execution
     -> durable SETTLEMENT_IN_FLIGHT before official settle
+    -> checkpoint returned hash -> verify canonical Mainnet L2 inclusion and token logs
     -> confirmed SETTLED -> release result + PAYMENT-RESPONSE
     -> ambiguous outcome -> UNKNOWN, withhold content, HTTP 409
 ```
 
-The official Express SDK buffers execution **before settlement** and skips settlement on failed execution. There is no custom proof or local bypass. Durable mode wraps the official facilitator and preserves its signing/verification/settlement; it withholds the SDK's optimistic pending response. Duplicate/conflicting reservations return 409. Optional `Idempotency-Key` binds a logical request but never enables original paid-response replay. Status-only operator reconciliation never resubmits settlement; a missing hash can require manual investigation.
+The official Express SDK buffers execution **before settlement** and skips settlement on failed execution. Durable mode adds no custom payment signing, settlement or bypass; it preserves the official verifier and facilitator while independently correlating the persisted operation with canonical receipt evidence. Content remains blocked until strict facilitator success and persisted-receipt inclusion proof. Proof uses current canonical L2 inclusion, not safe/finalized or L1 finality, so sequencer/reorg risk remains. Duplicate/conflicting reservations return 409. Optional `Idempotency-Key` binds a logical request but never enables original paid-response replay. Status-only operator reconciliation never resubmits settlement; a missing hash can require manual investigation.
 
 ## Trust model
 
