@@ -64,14 +64,15 @@ reopen -> SubmissionRejected -> OPEN
 OPEN after deadline --------------------------> supporter refunds
 SUBMITTED after deadline + review end
   and below quorum ---------------------------> supporter refunds
-all remaining funds refunded ----------------> CLOSED
+last refundable balance withdrawn from a non-fulfilled demand -> CLOSED
 ```
 
 Important invariants:
 - New support is disabled during review, so the approval denominator cannot move.
 - `approvalRequired` is a ceil-rounded snapshot created at submission.
 - Refunds cannot lower the threshold for an existing submission.
-- A submission that reached quorum is not refundable.
+- A submission that reached quorum is not refundable before settlement; after fulfillment, eligible non-approver commitments remain refundable.
+- `FULFILLED` remains the lifecycle state after eligible non-approver refunds, including the final such refund; `CLOSED` applies when a non-fulfilled demand has no remaining refundable balance.
 - Approvals are scoped to `submissionNonce`; old votes never carry into a new candidate.
 - Approvers may not also reject the same submission. Rejection weight is measured against the review snapshot; reaching `reviewCommitted - approvalRequired + 1` makes quorum impossible and permits immediate reopen before the demand deadline.
 - Reopening emits `SubmissionRejected` and clears candidate-specific vote progress. The demand returns to `Open` while its deadline remains active.
