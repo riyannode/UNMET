@@ -282,6 +282,115 @@ describe("free and paid discovery responses", () => {
     });
   });
 
+  test("paid reasoning qualifies quartiles by pool variation and explains rounded score ties", async () => {
+    const now = BigInt(fixedNow / 1000);
+    type ReasoningRow = {
+      demandId: string;
+      score: number;
+      rank: number;
+      scoreBreakdown: {
+        funding: { percentile: number; contribution: number };
+        expectedCalls: { percentile: number; contribution: number };
+        supporters: { percentile: number; contribution: number };
+        deadlineFreshness: { factor: number; contribution: number };
+      };
+      reasoning: { positive: string[]; cautions: string[] };
+    };
+    const getRows = async (entries: IndexEntry[], limit = 20) => {
+      let rows: ReasoningRow[] = [];
+      await routeFixture(entries, async (base) => {
+        const response = await fetch(base + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minSupporters: 0, limit }) });
+        const body: { opportunities: ReasoningRow[] } = await response.json();
+        rows = body.opportunities;
+      });
+      return rows;
+    };
+    const tiedEconomics = [1n, 2n, 3n].map((id) => syntheticEntry(id, { committed: 5_000_000n, expectedCalls: 10n, supporterCount: 2, deadline: now + 50_000n }));
+    const tiedRows = await getRows(tiedEconomics, 1);
+    expect(tiedRows[0].score).toBe(0.001929);
+    expect(tiedRows[0].rank).toBe(1);
+    expect(tiedRows[0].reasoning.positive.join(" ")).not.toContain("upper quartile");
+    expect(tiedRows[0].reasoning.cautions.join(" ")).not.toContain("lower quartile");
+    expect(tiedRows[0].reasoning.cautions.join(" ")).toContain("economic factors are tied");
+    expect(tiedRows[0].reasoning.cautions.join(" ")).toContain("Rounded scores are tied");
+    expect(tiedRows[0].scoreBreakdown).toEqual({
+      funding: { percentile: 0, contribution: 0 },
+      expectedCalls: { percentile: 0, contribution: 0 },
+      supporters: { percentile: 0, contribution: 0 },
+      deadlineFreshness: { factor: 0.019290123456790122, contribution: 0.0019290123456790122 },
+    });
+
+    const deadlines = [now + 86_400n, now + 30n * 86_400n].map((deadline, index) => syntheticEntry(BigInt(index + 1), {
+      committed: 5_000_000n, expectedCalls: 10n, supporterCount: 2, deadline,
+    }));
+    const deadlineRows = await getRows(deadlines);
+    expect(deadlineRows.map((row) => [row.demandId, row.score, row.rank])).toEqual([["2", 0.1, 1], ["1", 0.003333, 2]]);
+    expect(deadlineRows[0].reasoning.cautions.join(" ")).toContain("Deadline freshness distinguishes rounded scores");
+    expect(deadlineRows[0].reasoning.cautions.join(" ")).toContain("economic factors are tied");
+    expect(deadlineRows[0].reasoning.cautions.join(" ")).not.toContain("Rounded scores are tied");
+
+    const cappedDeadlines = [31n, 60n].map((days, index) => syntheticEntry(BigInt(index + 1), {
+      committed: 5_000_000n, expectedCalls: 10n, supporterCount: 2, deadline: now + days * 86_400n,
+    }));
+    const cappedRows = await getRows(cappedDeadlines);
+    expect(cappedRows.map((row) => [row.demandId, row.score, row.rank])).toEqual([["2", 0.1, 1], ["1", 0.1, 2]]);
+    expect(cappedRows[0].reasoning.cautions.join(" ")).toContain("Rounded scores are tied");
+    expect(cappedRows[0].reasoning.cautions.join(" ")).not.toContain("Deadline freshness distinguishes");
+
+    const tinyDeadlineChange = [50_000n, 50_001n].map((seconds, index) => syntheticEntry(BigInt(index + 1), {
+      committed: 5_000_000n, expectedCalls: 10n, supporterCount: 2, deadline: now + seconds,
+    }));
+    const tinyRows = await getRows(tinyDeadlineChange);
+    expect(tinyRows.map((row) => [row.demandId, row.score, row.rank])).toEqual([["2", 0.001929, 1], ["1", 0.001929, 2]]);
+    expect(tinyRows[0].reasoning.cautions.join(" ")).toContain("Rounded scores are tied");
+    expect(tinyRows[0].reasoning.cautions.join(" ")).not.toContain("Deadline freshness distinguishes");
+
+    for (const variableFactor of ["funding", "expectedCalls", "supporters"] as const) {
+      const entries = [1n, 2n, 3n].map((id) => syntheticEntry(id, {
+        committed: variableFactor === "funding" ? id * 1_000_000n : 5_000_000n,
+        expectedCalls: variableFactor === "expectedCalls" ? id : 10n,
+        supporterCount: variableFactor === "supporters" ? Number(id) : 2,
+        deadline: now + 50_000n,
+      }));
+      const rows = await getRows(entries, 1);
+      const top = rows[0];
+      const positive = top.reasoning.positive.join(" ");
+      const cautions = top.reasoning.cautions.join(" ");
+      const claims: Record<typeof variableFactor, [string, string]> = {
+        funding: ["Current escrow ranks in the upper quartile", "Current escrow is at or below the lower quartile"],
+        expectedCalls: ["Historical expected calls rank in the upper quartile", "Historical expected calls are at or below the lower quartile"],
+        supporters: ["Historical supporter count ranks in the upper quartile", "Historical supporter count is at or below the lower quartile"],
+      };
+      expect(positive).toContain(claims[variableFactor][0]);
+      const low = (await getRows(entries)).find((row) => row.demandId === "1")!;
+      expect(low.reasoning.cautions.join(" ")).toContain(claims[variableFactor][1]);
+      for (const factor of ["funding", "expectedCalls", "supporters"] as const) {
+        if (factor === variableFactor) continue;
+        const [upper, lower] = claims[factor];
+        expect(`${positive} ${cautions}`).not.toContain(upper);
+        expect(`${positive} ${cautions}`).not.toContain(lower);
+      }
+    }
+
+    const largeIds = [9_007_199_254_740_993n, 9_007_199_254_740_994n].map((id) => syntheticEntry(id, {
+      committed: 5_000_000n, expectedCalls: 10n, supporterCount: 2, deadline: now + 31n * 86_400n,
+    }));
+    const largeIdRows = await getRows(largeIds);
+    expect(largeIdRows.map((row) => [row.demandId, row.score, row.rank])).toEqual([
+      ["9007199254740994", 0.1, 1], ["9007199254740993", 0.1, 2],
+    ]);
+
+    const singleton = await getRows([syntheticEntry(9_007_199_254_740_993n, {
+      committed: 5_000_000n, expectedCalls: 10n, supporterCount: 2, deadline: now + 50_000n,
+    })]);
+    const singletonMessages = `${singleton[0].reasoning.positive.join(" ")} ${singleton[0].reasoning.cautions.join(" ")}`;
+    expect(singleton[0].rank).toBe(1);
+    expect(singletonMessages).toContain("Only one demand matches");
+    expect(singletonMessages).not.toContain("economic factors are tied");
+    expect(singletonMessages).not.toContain("Rounded scores are tied");
+    expect(singletonMessages).not.toContain("Deadline freshness distinguishes");
+  });
+
   test("singleton zeros and exact large bigint signals remain explicit", async () => {
     const id = 9_007_199_254_740_993n;
     const zeroEntry = syntheticEntry(id, { committed: 0n, expectedCalls: 0n, supporterCount: 0, deadline: BigInt(fixedNow / 1000) + 500n });

@@ -222,7 +222,8 @@ test("confirmed paid responses include full intelligence for each supported asse
     }
     const tied = await post(payload("8"));
     const tiedBody = await tied.json();
-    expect(tiedBody.opportunities[0].reasoning.cautions.join(" ")).toContain("All peer values are tied");
+    expect(tiedBody.opportunities[0].reasoning.cautions.join(" ")).toContain("All peer economic factors are tied");
+    expect(tiedBody.opportunities[0].reasoning.cautions.join(" ")).toContain("Rounded scores are tied");
     expect(calls.settle).toBe(7);
     const free = await fetch(url + "/v1/demands");
     expect(free.status).toBe(200);

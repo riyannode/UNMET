@@ -435,7 +435,14 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
   const { filtered, scored } = matchingEntries(entries, input, nowUnix);
   const ranked = [...scored].sort((a, b) => b.score - a.score || compareBigDesc(a.entry.demandId, b.entry.demandId));
   const ranks = new Map(ranked.map((row, index) => [row.entry.demandId.toString(), index + 1]));
-  const allPeerValuesTied = filtered.length > 1 && scored.every((peer) => peer.raw.committed === scored[0]!.raw.committed && peer.raw.expectedCalls === scored[0]!.raw.expectedCalls && peer.raw.supporters === scored[0]!.raw.supporters);
+  const varies = {
+    funding: scored.some((peer) => peer.raw.committed !== scored[0]?.raw.committed),
+    expectedCalls: scored.some((peer) => peer.raw.expectedCalls !== scored[0]?.raw.expectedCalls),
+    supporters: scored.some((peer) => peer.raw.supporters !== scored[0]?.raw.supporters),
+    deadlineFreshness: scored.some((peer) => peer.terms.deadlineFreshness !== scored[0]?.terms.deadlineFreshness),
+  };
+  const allEconomicFactorsTied = filtered.length > 1 && !varies.funding && !varies.expectedCalls && !varies.supporters;
+  const allRoundedScoresTied = filtered.length > 1 && scored.every((peer) => peer.score === scored[0]?.score);
   const opportunities = scored.slice(0, input.limit).map((row) => {
     const { entry, score, terms } = row;
     const base = toOpportunity(entry, score, nowUnix);
@@ -447,12 +454,12 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
     ];
     if (filtered.length === 1) cautions.push("Only one demand matches; percentiles have no peer comparison.");
     else {
-      if (terms.funding >= 0.75 && terms.funding > 0) positive.push("Current escrow ranks in the upper quartile of matching demands.");
-      if (terms.expectedCalls >= 0.75 && terms.expectedCalls > 0) positive.push("Historical expected calls rank in the upper quartile of matching demands.");
-      if (terms.supporters >= 0.75 && terms.supporters > 0) positive.push("Historical supporter count ranks in the upper quartile of matching demands.");
-      if (terms.funding <= 0.25) cautions.push("Current escrow is at or below the lower quartile of matching demands.");
-      if (terms.expectedCalls <= 0.25) cautions.push("Historical expected calls are at or below the lower quartile of matching demands.");
-      if (terms.supporters <= 0.25) cautions.push("Historical supporter count is at or below the lower quartile of matching demands.");
+      if (varies.funding && terms.funding >= 0.75) positive.push("Current escrow ranks in the upper quartile of matching demands.");
+      if (varies.expectedCalls && terms.expectedCalls >= 0.75) positive.push("Historical expected calls rank in the upper quartile of matching demands.");
+      if (varies.supporters && terms.supporters >= 0.75) positive.push("Historical supporter count ranks in the upper quartile of matching demands.");
+      if (varies.funding && terms.funding <= 0.25) cautions.push("Current escrow is at or below the lower quartile of matching demands.");
+      if (varies.expectedCalls && terms.expectedCalls <= 0.25) cautions.push("Historical expected calls are at or below the lower quartile of matching demands.");
+      if (varies.supporters && terms.supporters <= 0.25) cautions.push("Historical supporter count is at or below the lower quartile of matching demands.");
     }
     if (base.status === "OPEN" && remaining > 0n) positive.push("Open demand can receive builder proposals before its deadline.");
     if (entry.data.committed === 0n) cautions.push("No current escrow is committed.");
@@ -463,7 +470,9 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
     if (base.status === "FULFILLED") cautions.push("Residual escrow may be refundable to non-approvers.");
     if (base.status === "CLOSED" || base.status === "EXPIRED" || base.status === "REJECTED") cautions.push(`Current status is ${base.status}; new proposals are unavailable.`);
     if (Number(entry.data.status) === 1 && base.status === "SUBMITTED") cautions.push("A builder candidate is under commitment-weighted review; approval does not imply all escrow settles to the builder.");
-    if (allPeerValuesTied) cautions.push("All peer values are tied; strict-lower percentiles do not distinguish these demands.");
+    if (allEconomicFactorsTied) cautions.push("All peer economic factors are tied; economic percentiles do not distinguish these demands.");
+    if (allRoundedScoresTied) cautions.push("Rounded scores are tied; numeric demand ID descending breaks rank ties.");
+    else if (allEconomicFactorsTied && varies.deadlineFreshness) cautions.push("Deadline freshness distinguishes rounded scores among demands with tied economic factors.");
     const submitted = Number(entry.data.status) === 1;
     const review = submitted ? {
       approvalGap: formatUnits6(entry.approvalRequired > entry.approvalWeight ? entry.approvalRequired - entry.approvalWeight : 0n),
