@@ -43,22 +43,27 @@ function deferred() {
 type Official = Pick<OKXFacilitatorClient, "getSupported" | "verify" | "settle" | "getSettleStatus">;
 async function fixture(run: (ctx: {
   store: PaymentStore; path: string; post: (p?: PaymentPayload, body?: string, key?: string, signal?: AbortSignal) => Promise<Response>;
-  calls: { verify: number; settle: number }; official: Official; url: string;
+  calls: { verify: number; settle: number; status: number }; official: Official; url: string;
 }) => Promise<void>, options: {
   failExecution?: () => boolean;
   settle?: () => Promise<SettleResponse>; verify?: () => Promise<{ isValid: boolean; payer: string }>;
+  settleStatus?: (hash: string) => Promise<SettleStatusResponse>;
   confirm?: (record: PaymentRecord) => Promise<boolean>;
   confirmationBudgetMs?: number; onDiagnostic?: (event: Record<string, unknown>) => void;
 } = {}) {
   const dir = mkdtempSync(tmpdir() + "/unmet-durable-");
   const path = dir + "/payments.sqlite", store = new PaymentStore(path);
-  const calls = { verify: 0, settle: 0 };
+  const calls = { verify: 0, settle: 0, status: 0 };
   const official: Official = {
     getSupported: async () => ({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }], extensions: [], signers: {} }),
     verify: async () => { calls.verify++; return options.verify ? options.verify() : { isValid: true, payer }; },
     settle: async () => { calls.settle++; return options.settle ? options.settle() :
       { success: true, status: "success", transaction: hash, network: "eip155:196", payer }; },
-    getSettleStatus: async () => ({ success: true, status: "success", transaction: hash, network: "eip155:196", payer }),
+    getSettleStatus: async (transaction) => {
+      calls.status++;
+      return options.settleStatus ? options.settleStatus(transaction) :
+        { success: true, status: "success", transaction, network: "eip155:196", payer };
+    },
   };
   const durable = durablePayment(store, official, options.confirm || (async () => true), {
     confirmationBudgetMs: options.confirmationBudgetMs, onDiagnostic: options.onDiagnostic,
@@ -152,7 +157,7 @@ test("installed official facilitator settle makes one HTTP attempt on success, H
   }
 });
 
-test("durable Express adapter blocks SDK pending/timeout/transport outcomes without status polling or resettle", async () => {
+test("durable Express adapter polls SDK pending/timeout once and never retries settle", async () => {
   for (const mode of ["pending", "timeout", "http-error", "transport-error"] as const) {
     const dir = mkdtempSync(tmpdir() + "/unmet-sdk-durable-");
     const store = new PaymentStore(dir + "/payments.sqlite");
@@ -172,7 +177,7 @@ test("durable Express adapter blocks SDK pending/timeout/transport outcomes with
     }, fetch);
     const sdk = new OKXFacilitatorClient({ apiKey: "fixture", secretKey: "fixture", passphrase: "fixture", baseUrl: "https://fixture.invalid", syncSettle: true });
     try {
-      const durable = durablePayment(store, sdk);
+      const durable = durablePayment(store, sdk, async () => true, { confirmationBudgetMs: 100 });
       const resource = new x402ResourceServer(durable.client).register("eip155:196", new ExactEvmScheme());
       await withBoundedFetch(fakeFetch, () => resource.initialize());
       const paid = paymentMiddleware({ "POST /v1/opportunities": { accepts: [{ scheme: "exact", network: "eip155:196", payTo: recipient,
@@ -193,18 +198,150 @@ test("durable Express adapter blocks SDK pending/timeout/transport outcomes with
         headers: { "content-type": "application/json", "payment-signature": Buffer.from(JSON.stringify(payload())).toString("base64") }, body: "{}" });
       try {
         const first = await post();
-        expect(first.status).toBe(409);
-        expect((await first.json()).error.code).toBe("PAYMENT_RECONCILIATION_REQUIRED");
+        expect(first.status).toBe(mode === "pending" || mode === "timeout" ? 200 : 409);
+        if (first.status === 409) expect((await first.json()).error.code).toBe("PAYMENT_RECONCILIATION_REQUIRED");
         const replay = await post();
         expect(replay.status).toBe(409);
         expect(calls.settle).toBe(1);
-        expect(calls.status).toBe(0);
+        expect(calls.status).toBe(mode === "pending" || mode === "timeout" ? 1 : 0);
         expect(calls.verify).toBe(2);
       } finally {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     } finally { store.close(); rmSync(dir, { recursive: true }); }
+  }
+});
+
+for (const initialStatus of ["pending", "timeout"] as const) {
+  test(`settle ${initialStatus} is resolved by read-only status polling and canonical confirmation`, async () => {
+    const diagnostics: Record<string, unknown>[] = [];
+    let confirmationCalls = 0;
+    await fixture(async ({ post, store, calls }) => {
+      const response = await post(payload());
+      expect(response.status).toBe(200);
+      expect((await response.json()).opportunities).toEqual([]);
+      expect(calls.settle).toBe(1);
+      expect(calls.status).toBe(1);
+      expect(confirmationCalls).toBe(1);
+      const row = store.findPayment(paymentIdentity(payload(), requirements, payer,
+        { method: "POST", route: "/v1/opportunities", input: {} }).payment);
+      expect(row?.state).toBe("SETTLED");
+      expect(diagnostics).toContainEqual(expect.objectContaining({
+        event: "payment_settlement_status_classified", classification: initialStatus, pollRequired: true,
+      }));
+      expect(diagnostics).toContainEqual(expect.objectContaining({
+        event: "payment_settlement_status_poll", classification: "success", attempt: 1,
+      }));
+    }, {
+      confirmationBudgetMs: 250,
+      onDiagnostic: (event) => diagnostics.push(event),
+      settle: async () => ({ success: true, status: initialStatus, transaction: hash, network: requirements.network, payer }),
+      settleStatus: async (transaction) => ({ success: true, status: "success", transaction, network: requirements.network, payer }),
+      confirm: async () => { confirmationCalls++; return true; },
+    });
+  });
+}
+
+test("a timed out status read can recover to success without another settlement", async () => {
+  const diagnostics: Record<string, unknown>[] = [];
+  let polls = 0, confirmations = 0;
+  await fixture(async ({ post, store, calls }) => {
+    const response = await post(payload());
+    expect(response.status).toBe(200);
+    expect((await response.text()).includes('"opportunities":')).toBe(true);
+    expect(calls.settle).toBe(1);
+    expect(calls.status).toBe(2);
+    expect(confirmations).toBe(1);
+    expect(store.findPayment(paymentIdentity(payload(), requirements, payer,
+      { method: "POST", route: "/v1/opportunities", input: {} }).payment)?.state).toBe("SETTLED");
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      event: "payment_settlement_status_poll", attempt: 1, classification: "transient_error",
+    }));
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      event: "payment_settlement_status_poll", attempt: 2, classification: "success",
+    }));
+  }, {
+    confirmationBudgetMs: 500,
+    onDiagnostic: (event) => diagnostics.push(event),
+    settle: async () => ({ success: true, status: "timeout", transaction: hash, network: requirements.network, payer }),
+    settleStatus: async (transaction) => {
+      polls++;
+      if (polls === 1) throw Object.assign(new Error("PAYMENT_STATUS_TEMPORARY"), { name: "TimeoutError" });
+      return { success: true, status: "success", transaction, network: requirements.network, payer };
+    },
+    confirm: async () => { confirmations++; return true; },
+  });
+});
+
+test("unresolved status polling exhausts its budget and never releases paid content or settles twice", async () => {
+  const diagnostics: Record<string, unknown>[] = [];
+  let confirmations = 0;
+  await fixture(async ({ post, store, calls }) => {
+    const response = await post(payload());
+    expect(response.status).toBe(409);
+    expect((await response.text()).includes('"opportunities":')).toBe(false);
+    const row = store.pending(100, true)[0];
+    expect(row.state).toBe("UNKNOWN");
+    expect(row.error).toBe("SETTLEMENT_UNCONFIRMED");
+    expect(row.txHash).toBe(hash);
+    expect(confirmations).toBe(0);
+    expect(calls.settle).toBe(1);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      event: "payment_settlement_status_retry_exhausted", stage: "getSettleStatus",
+    }));
+    expect((await post(payload())).status).toBe(409);
+    expect(calls.settle).toBe(1);
+  }, {
+    confirmationBudgetMs: 40,
+    onDiagnostic: (event) => diagnostics.push(event),
+    settle: async () => ({ success: true, status: "pending", transaction: hash, network: requirements.network, payer }),
+    settleStatus: async (transaction) => ({ success: true, status: "pending", transaction, network: requirements.network, payer }),
+    confirm: async () => { confirmations++; return true; },
+  });
+});
+
+test("facilitator failed status is terminal and withholds content", async () => {
+  let confirmations = 0;
+  await fixture(async ({ post, store, calls }) => {
+    const response = await post(payload());
+    expect(response.status).toBe(409);
+    expect((await response.text()).includes('"opportunities":')).toBe(false);
+    expect(store.pending(100, true)[0]).toMatchObject({ state: "UNKNOWN", error: "SETTLEMENT_UNCONFIRMED", txHash: hash });
+    expect(calls.settle).toBe(1);
+    expect(calls.status).toBe(1);
+    expect(confirmations).toBe(0);
+  }, {
+    confirmationBudgetMs: 250,
+    settle: async () => ({ success: true, status: "pending", transaction: hash, network: requirements.network, payer }),
+    settleStatus: async (transaction) => ({ success: false, status: "failed", transaction,
+      network: requirements.network, payer, errorReason: "settlement_failed" }),
+    confirm: async () => { confirmations++; return true; },
+  });
+});
+
+test("invalid settlement hash and mismatched polled identity never reach confirmation", async () => {
+  for (const outcome of ["invalid hash", "mismatch"] as const) {
+    let confirmations = 0;
+    await fixture(async ({ post, store, calls }) => {
+      const response = await post(payload());
+      expect(response.status).toBe(409);
+      expect((await response.text()).includes('"opportunities":')).toBe(false);
+      const row = store.findPayment(paymentIdentity(payload(), requirements, payer,
+        { method: "POST", route: "/v1/opportunities", input: {} }).payment)!;
+      expect(row.state).toBe("UNKNOWN");
+      expect(row.txHash).toBe(outcome === "invalid hash" ? null : hash);
+      expect(calls.settle).toBe(1);
+      expect(calls.status).toBe(outcome === "invalid hash" ? 0 : 1);
+      expect(confirmations).toBe(0);
+    }, {
+      confirmationBudgetMs: 250,
+      settle: async () => ({ success: true, status: "pending", transaction: outcome === "invalid hash" ? "invalid" : hash,
+        network: requirements.network, payer }) as SettleResponse,
+      settleStatus: async (transaction) => ({ success: true, status: "success", transaction,
+        network: "eip155:1952", payer }),
+      confirm: async () => { confirmations++; return true; },
+    });
   }
 });
 
@@ -312,7 +449,7 @@ for (const outcome of ["no hash", "timeout hash", "pending", "failed"] as const)
       if (outcome === "no hash") throw new Error("private fixture error");
       return { success: outcome !== "failed", status: outcome === "pending" ? "pending" : "timeout",
         transaction: hash, network: "eip155:196" };
-    } });
+    }, confirmationBudgetMs: outcome === "pending" || outcome === "timeout hash" ? 0 : undefined });
   });
 }
 
@@ -373,7 +510,7 @@ test("settlement diagnostics identify facilitator failures without logging respo
       }
     }, { onDiagnostic: (event) => diagnostics.push(event), settle: async () => {
       if (outcome === "throws") throw Object.assign(new Error("private facilitator detail"), { name: "SECRET_API_KEY" });
-      return { success: true, status: "timeout", transaction: hash, network: "eip155:196", payer };
+      return { success: true, status: "unsupported" as unknown as "timeout", transaction: hash, network: "eip155:196", payer };
     } });
   }
 });
@@ -471,10 +608,14 @@ test("failed final SQLite transition stays ambiguous without retrying settlement
     expect(row.txHash).toBe(hash);
     expect(confirmCalls).toBe(1);
     expect(calls.settle).toBe(1);
+    expect(calls.status).toBe(1);
     expect(diagnostics).toContainEqual(expect.objectContaining({
       event: "payment_settlement_failed", stage: "sqlite_settled_transition",
     }));
-  }, { onDiagnostic: (event) => diagnostics.push(event), confirm: async () => { confirmCalls++; return true; } });
+  }, { onDiagnostic: (event) => diagnostics.push(event),
+    settle: async () => ({ success: true, status: "pending", transaction: hash, network: requirements.network, payer }),
+    settleStatus: async (transaction) => ({ success: true, status: "success", transaction, network: requirements.network, payer }),
+    confirm: async () => { confirmCalls++; return true; } });
 });
 
 test("success-shaped settlement with missing payer or contradictory errors stays UNKNOWN", async () => {

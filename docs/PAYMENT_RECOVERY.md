@@ -13,8 +13,9 @@ official verification valid
     -> VERIFIED (unique reservation committed)
     -> SETTLEMENT_IN_FLIGHT (committed before official settle)
     -> persisted transaction hash checkpoint
-    -> SETTLED (strict facilitator success plus canonical Mainnet L2 receipt proof)
-    -> UNKNOWN (pending, timeout, transport error or ambiguous result)
+    -> bounded read-only settle-status polling for initial pending/timeout
+    -> SETTLED (matching facilitator success plus canonical Mainnet L2 receipt proof)
+    -> UNKNOWN (unresolved/failed status, identity mismatch, transport error or invalid proof)
 
 VERIFIED -> CANCELLED (execution failed/disconnected before settlement)
 VERIFIED / SETTLEMENT_IN_FLIGHT -> UNKNOWN (restart)
@@ -23,7 +24,7 @@ UNKNOWN -> FAILED (explicit matching official failed status)
 UNKNOWN -> UNKNOWN (query unresolved)
 ~~~
 
-FAILED requires an explicit matching official failed status; its provider error text is expected. A failed or contradictory result from settle alone remains ambiguous. A transaction hash returned by settle is committed before any RPC proof. Missing or unavailable Mainnet proof remains blocked; it is never retried by submitting settlement again. Confirmation checks chain ID 196, supported legacy/access-list/dynamic-fee transaction envelopes, transaction/receipt/block/log references, direct token `transferWithAuthorization` calldata, matching `AuthorizationUsed` and `Transfer` logs, and block timestamp bounds. It rejects blob, delegated-account and unknown transaction types, wrappers, multicalls and unknown selectors. It uses current canonical L2 inclusion, not safe/finalized or L1 finality. A successful historical authorization can be expired now as long as its inclusion timestamp was within its signed bounds.
+FAILED requires an explicit matching official failed status during the separate UNKNOWN recovery flow; its provider error text is expected. A failed or contradictory result from settle alone remains ambiguous. A transaction hash returned by settle is committed before any RPC proof. For exact `syncSettle=true`, OKX documents `pending` as an asynchronous broadcast and `timeout` as a synchronous wait timeout; neither means the transaction failed. Both trigger a bounded, read-only `getSettleStatus` poll for the checkpointed hash. Polls use the existing `RPC_TIMEOUT_MS` budget and bounded facilitator transport/concurrency, with backoff. Only matching `success` proceeds; pending/not-found and transient transport or HTTP 429/5xx outcomes may be observed again within the budget. Failed, malformed, contradictory, identity-mismatched and other HTTP error responses stop immediately. A successful facilitator status is still followed by the full canonical proof below before `SETTLED` or content release. No status path calls settle again. Missing or unavailable Mainnet proof remains blocked; it is never retried by submitting settlement again. Confirmation checks chain ID 196, supported legacy/access-list/dynamic-fee transaction envelopes, transaction/receipt/block/log references, direct token `transferWithAuthorization` calldata, matching `AuthorizationUsed` and `Transfer` logs, and block timestamp bounds. It rejects blob, delegated-account and unknown transaction types, wrappers, multicalls and unknown selectors. It uses current canonical L2 inclusion, not safe/finalized or L1 finality. A successful historical authorization can be expired now as long as its inclusion timestamp was within its signed bounds.
 
 ## Schema and identity
 

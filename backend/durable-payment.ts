@@ -12,6 +12,7 @@ import {
   PaymentConfirmationUnavailable,
 } from "./payment-confirmation.ts";
 import { loadOperationalConfig } from "./config.ts";
+import { withBoundedFetchDeadline } from "./upstream.ts";
 
 type Facilitator = Pick<OKXFacilitatorClient, "getSupported" | "verify" | "settle" | "getSettleStatus">;
 type Context = {
@@ -29,6 +30,72 @@ function failure(ctx: Context, error: unknown) {
 }
 function noProviderError(value: unknown) {
   return value === undefined || value === null || value === "";
+}
+
+function retryableStatusError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return message === "PAYMENT_STATUS_TEMPORARY" || message === "UPSTREAM_TIMEOUT_OR_SIZE" ||
+    message === "UPSTREAM_UNAVAILABLE" || message === "UPSTREAM_CAPACITY" ||
+    /^Facilitator getSettleStatus failed \((?:408|429|5\d\d)\):/.test(message);
+}
+
+function statusIdentityMatches(value: Record<string, unknown>, record: PaymentRecord, hash: string) {
+  return typeof value.transaction === "string" && /^0x[0-9a-fA-F]{64}$/.test(value.transaction) &&
+    value.transaction.toLowerCase() === hash.toLowerCase() && value.network === record.network &&
+    typeof value.payer === "string" && value.payer.toLowerCase() === record.payer;
+}
+
+function classifySettleStatus(value: unknown, record: PaymentRecord, hash: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "invalid_response" as const;
+  const response = value as Record<string, unknown>;
+  const status = response.status;
+  if ((response.transaction != null || response.network != null || response.payer != null) &&
+    !statusIdentityMatches(response, record, hash)) return "identity_mismatch" as const;
+  if (response.success === true && (status === "success" || status === "pending")) {
+    if (!noProviderError(response.errorReason) || !noProviderError(response.errorMessage)) return "provider_error" as const;
+    return status;
+  }
+  if (response.success === false && status === "failed") return "failed" as const;
+  if (response.success === false && status == null && response.errorReason === "not_found" &&
+    response.transaction == null && response.network == null && response.payer == null) return "not_found" as const;
+  return "invalid_response" as const;
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollSettleStatus(official: Facilitator, record: PaymentRecord, hash: string,
+  budgetMs: number, diagnose: (event: Diagnostic) => void) {
+  const deadline = Date.now() + budgetMs;
+  let attempts = 0, lastClassification = "not_started";
+  while (Date.now() < deadline) {
+    attempts++;
+    try {
+      const result = await withBoundedFetchDeadline(deadline, () => official.getSettleStatus(hash));
+      lastClassification = classifySettleStatus(result, record, hash);
+      if (Date.now() > deadline) lastClassification = "transient_error";
+    } catch (error) {
+      lastClassification = retryableStatusError(error) ? "transient_error" : "provider_error";
+      diagnose({ event: "payment_settlement_status_poll", stage: "getSettleStatus", paymentId: record.id,
+        attempt: attempts, classification: lastClassification, level: "warn", ...errorFields(error) });
+      if (lastClassification !== "transient_error") return { resolved: false, attempts, classification: lastClassification };
+    }
+    if (lastClassification !== "transient_error") {
+      diagnose({ event: "payment_settlement_status_poll", stage: "getSettleStatus", paymentId: record.id,
+        attempt: attempts, classification: lastClassification, level: "info" });
+      if (lastClassification === "success") return { resolved: true, attempts, classification: lastClassification };
+      if (lastClassification !== "pending" && lastClassification !== "not_found") {
+        return { resolved: false, attempts, classification: lastClassification };
+      }
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await wait(Math.min(50 * 2 ** Math.min(attempts - 1, 4), remaining));
+  }
+  diagnose({ event: "payment_settlement_status_retry_exhausted", stage: "getSettleStatus", paymentId: record.id,
+    attempts, classification: lastClassification, level: "warn" });
+  return { resolved: false, attempts, classification: lastClassification };
 }
 
 const mainnetClient = createMainnetPaymentClient();
@@ -104,10 +171,12 @@ export function durablePayment(store: PaymentStore, official: Facilitator,
         diagnose({ event: "payment_settlement_failed", stage: "sqlite_in_flight_transition", paymentId: record.id, ...errorFields(error) });
         throw failure(ctx, error);
       }
+      diagnose({ event: "payment_sqlite_transition", stage: "sqlite_in_flight_transition", paymentId: record.id,
+        from: "VERIFIED", to: "SETTLEMENT_IN_FLIGHT", outcome: "success", level: "info" });
       let observedHash: string | null = null;
       let stage = "official.settle";
       try {
-        const result = await official.settle(payload, requirements);
+        let result = await official.settle(payload, requirements);
         stage = "facilitator_validation";
         const transaction = typeof result?.transaction === "string" ? result.transaction : "";
         const hash = observedHash = /^0x[0-9a-fA-F]{64}$/.test(transaction) ? transaction : null;
@@ -125,11 +194,33 @@ export function durablePayment(store: PaymentStore, official: Facilitator,
           errorReason: noProviderError(result?.errorReason),
           errorMessage: noProviderError(result?.errorMessage),
         };
-        if (Object.values(checks).some((passed) => !passed)) {
+        const initialStatus = result?.status === "success" || result?.status === "pending" || result?.status === "timeout"
+          ? result.status : "unsupported";
+        const statusNeedsPolling = initialStatus === "pending" || initialStatus === "timeout";
+        diagnose({ event: "payment_settlement_status_classified", stage: "official.settle", paymentId: record.id,
+          classification: initialStatus, pollRequired: statusNeedsPolling, level: "info" });
+        const settlementIdentityValid = checks.success && checks.transaction && checks.network && checks.payer &&
+          checks.errorReason && checks.errorMessage;
+        if (!settlementIdentityValid || initialStatus === "unsupported") {
           diagnose({ event: "payment_facilitator_validation_failed", stage, paymentId: record.id, checks });
           stage = "sqlite_unconfirmed_transition";
           store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", null, "SETTLEMENT_UNCONFIRMED");
           throw new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
+        }
+        if (statusNeedsPolling) {
+          stage = "getSettleStatus";
+          const statusResult = await pollSettleStatus(official, record, hash!, retryBudgetMs, diagnose);
+          if (!statusResult.resolved) {
+            diagnose({ event: "payment_settlement_status_rejected", stage, paymentId: record.id,
+              classification: statusResult.classification, attempts: statusResult.attempts, level: "warn" });
+            stage = "sqlite_unconfirmed_transition";
+            const error = statusResult.classification === "transient_error" ? "SETTLEMENT_AMBIGUOUS" : "SETTLEMENT_UNCONFIRMED";
+            store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", null, error);
+            diagnose({ event: "payment_sqlite_transition", stage, paymentId: record.id,
+              from: "SETTLEMENT_IN_FLIGHT", to: "UNKNOWN", outcome: "success", error, level: "info" });
+            throw new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
+          }
+          result = { ...result, status: "success" };
         }
         stage = "sqlite_confirmation_record_read";
         const persisted = store.get(record.id);
@@ -150,6 +241,8 @@ export function durablePayment(store: PaymentStore, official: Facilitator,
         }
         stage = "sqlite_settled_transition";
         store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "SETTLED");
+        diagnose({ event: "payment_sqlite_transition", stage, paymentId: record.id,
+          from: "SETTLEMENT_IN_FLIGHT", to: "SETTLED", outcome: "success", level: "info" });
         return result;
       } catch (error) {
         if (!(error instanceof PaymentError && error.code === "PAYMENT_RECONCILIATION_REQUIRED")) {

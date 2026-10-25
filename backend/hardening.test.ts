@@ -36,7 +36,7 @@ test("invalid requests never enter payment verification", async () => {
 import { request } from "node:http";
 import type { Express } from "express";
 import { loadOperationalConfig } from "./config.ts";
-import { createBoundedFetch } from "./upstream.ts";
+import { createBoundedFetch, settleStatusErrorCode, withBoundedFetch, withBoundedFetchDeadline } from "./upstream.ts";
 import { createDemandIndexState, refreshIndex } from "./server.ts";
 import { type Address, type PublicClient } from "viem";
 import { loadConfig } from "./contract.ts";
@@ -150,9 +150,26 @@ test("RPC transport rejects overload, aborts timeouts, caps response bytes, then
     await expect(bounded(server.url)).rejects.toThrow("UPSTREAM_CAPACITY");
     await expect(pending).rejects.toThrow("UPSTREAM_TIMEOUT_OR_SIZE");
     expect(await (await bounded(server.url)).text()).toBe("ok");
-    await expect(bounded(server.url + "large")).rejects.toThrow("UPSTREAM_TIMEOUT_OR_SIZE");
+    await expect(bounded(server.url + "large")).rejects.toThrow("UPSTREAM_RESPONSE_TOO_LARGE");
     expect((await bounded(server.url)).status).toBe(200);
+    const statusTransport = createBoundedFetch({ maxInFlight: 1, timeoutMs: 1000, maxBytes: 1024 });
+    const deadlineRead = withBoundedFetch(statusTransport, () => withBoundedFetchDeadline(Date.now() + 25,
+      () => withBoundedFetch(statusTransport, () => fetch(server.url + "slow"))));
+    await expect(deadlineRead).rejects.toThrow("UPSTREAM_TIMEOUT_OR_SIZE");
   } finally { await server.stop(true); }
+});
+
+test("settle status errors expose only safe transient or deterministic categories", () => {
+  for (const message of ["UPSTREAM_TIMEOUT_OR_SIZE", "UPSTREAM_UNAVAILABLE", "UPSTREAM_CAPACITY",
+    "Facilitator getSettleStatus failed (408): detail", "Facilitator getSettleStatus failed (429): detail",
+    "Facilitator getSettleStatus failed (503): detail"]) {
+    expect(settleStatusErrorCode(new Error(message))).toBe("PAYMENT_STATUS_TEMPORARY");
+  }
+  for (const message of ["Facilitator getSettleStatus failed (400): private detail", "UPSTREAM_RESPONSE_TOO_LARGE",
+    "malformed response private marker"]) {
+    expect(settleStatusErrorCode(new Error(message))).toBe("PAYMENT_STATUS_UNAVAILABLE");
+    expect(settleStatusErrorCode(new Error(message))).not.toContain("private");
+  }
 });
 
 test("unsafe configuration is rejected without echoing supplied values", () => {

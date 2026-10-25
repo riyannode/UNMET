@@ -4,7 +4,7 @@ import type { PaymentStore } from "./payment-store.ts";
 import { PaymentError } from "./payment-error.ts";
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
 import { admittedWork, concurrencyGate, rateLimiter } from "./admission.ts";
-import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
+import { createBoundedFetch, settleStatusErrorCode, withBoundedFetch } from "./upstream.ts";
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
@@ -498,6 +498,11 @@ async function facilitatorCall<T>(task: () => Promise<T>): Promise<T> {
   catch { throw new Error("PAYMENT_UPSTREAM_UNAVAILABLE"); }
 }
 
+async function facilitatorStatusCall<T>(task: () => Promise<T>): Promise<T> {
+  try { return await withBoundedFetch(facilitatorFetch, task); }
+  catch (error) { throw new Error(settleStatusErrorCode(error)); }
+}
+
 let paymentStore: PaymentStore | undefined;
 let storageInitialization: Promise<PaymentStore> | undefined;
 async function initializePaymentStorage() {
@@ -524,7 +529,7 @@ export function createOfficialFacilitator() {
     settle: (...args: Parameters<typeof facilitatorClient.settle>) =>
       facilitatorCall(() => facilitatorClient.settle(...args)),
     getSettleStatus: (...args: Parameters<typeof facilitatorClient.getSettleStatus>) =>
-      facilitatorCall(() => facilitatorClient.getSettleStatus(...args)),
+      facilitatorStatusCall(() => facilitatorClient.getSettleStatus(...args)),
   };
 }
 
