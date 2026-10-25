@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { PaymentStore, type Reservation } from "./payment-store.ts";
+import { reconcilePayments } from "./durable-payment.ts";
 
 export const reservation = (suffix = "a"): Reservation => ({
   payment: suffix.repeat(64), binding: "b".repeat(64), logicalKey: null,
@@ -119,30 +120,60 @@ test("WAL-consistent backup contains committed records", () => {
   });
 });
 
-test("actual SIGKILL crash retains WAL reservation and blocks a restart retry", async () => {
+test("SIGKILL after simulated facilitator success but before hash checkpoint stays blocked", async () => {
   const dir = mkdtempSync(tmpdir() + "/unmet-crash-");
-  const path = dir + "/payments.sqlite";
+  const path = dir + "/payments.sqlite", settledMarker = dir + "/facilitator-settled";
+  const checkpointMarker = dir + "/checkpoint-entered", responseMarker = dir + "/paid-response", statusMarker = dir + "/status-called";
   const modulePath = new URL("./payment-store.ts", import.meta.url).pathname;
-  const source = `import { PaymentStore } from ${JSON.stringify(modulePath)};
+  const durablePath = new URL("./durable-payment.ts", import.meta.url).pathname;
+  const source = `import { writeFileSync } from "node:fs";
+    import { PaymentStore } from ${JSON.stringify(modulePath)};
+    import { durablePayment } from ${JSON.stringify(durablePath)};
     const db = new PaymentStore(${JSON.stringify(path)});
-    const row = db.reserve(${JSON.stringify(reservation())});
-    db.transition(row.id, "VERIFIED", "SETTLEMENT_IN_FLIGHT");
-    console.log(row.id);
-    setInterval(() => {}, 1000);`;
+    const payer = "0x2222222222222222222222222222222222222222";
+    const payTo = "0x1111111111111111111111111111111111111111";
+    const requirements = { scheme: "exact", network: "eip155:196", asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+      amount: "10000", payTo, maxTimeoutSeconds: 300, extra: { name: "USD₮0", version: "1" } };
+    const payment = { x402Version: 2, accepted: requirements, payload: { signature: "0xfixture", authorization: {
+      from: payer, to: payTo, value: "10000", validAfter: "0", validBefore: String(Math.floor(Date.now()/1000)+600), nonce: "0x${"a".repeat(64)}" } } };
+    const official = { getSupported: async()=>({kinds:[],extensions:[],signers:{}}), verify: async()=>({isValid:true,payer}),
+      settle: async()=>{ writeFileSync(${JSON.stringify(settledMarker)}, "settle-call-count=1;success=true;hash-not-returned");
+        return {success:true,status:"success",transaction:"0x${"b".repeat(64)}",network:"eip155:196",payer}; },
+      getSettleStatus: async()=>{ writeFileSync(${JSON.stringify(statusMarker)}, "called"); return {success:true,status:"success"}; } };
+    const durable = durablePayment(db, official, async()=>true);
+    db.checkpointHash = () => { writeFileSync(${JSON.stringify(checkpointMarker)}, "entered");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000_000_000); };
+    const handler = durable.wrap(async(_req,res)=>{ await durable.client.verify(payment,requirements);
+      await durable.client.settle(payment,requirements); res.json({opportunities:["fixture"]}); });
+    await handler({method:"POST",path:"/v1/opportunities",get:()=>undefined},
+      {locals:{opportunityInput:{}},json:(body)=>{writeFileSync(${JSON.stringify(responseMarker)},JSON.stringify(body));return body;},
+        removeHeader(){},status(){return this;},setHeader(){}},()=>{});`;
   const child = Bun.spawn([process.execPath, "-e", source], { stdout: "pipe", stderr: "pipe" });
   try {
-    const reader = child.stdout.getReader();
-    const output = await reader.read();
-    reader.releaseLock();
-    const id = new TextDecoder().decode(output.value).trim();
-    expect(id.length).toBe(36);
+    for (let attempt = 0; attempt < 200 && !existsSync(checkpointMarker); attempt++) await Bun.sleep(10);
+    expect(existsSync(checkpointMarker)).toBe(true);
     child.kill("SIGKILL"); await child.exited;
+    expect(await Bun.file(settledMarker).text()).toContain("settle-call-count=1");
+    expect(await Bun.file(responseMarker).exists()).toBe(false);
     const recovered = new PaymentStore(path);
     try {
-      expect(recovered.get(id)?.state).toBe("SETTLEMENT_IN_FLIGHT");
+      const snapshot = new Database(path, { readonly: true });
+      const row = snapshot.query<{ id: string }, []>("SELECT id FROM payments").get();
+      snapshot.close();
+      expect(row).toBeDefined();
+      expect(recovered.get(row!.id)?.state).toBe("SETTLEMENT_IN_FLIGHT");
       expect(recovered.recoverInterrupted()).toBe(1);
-      expect(recovered.get(id)?.state).toBe("UNKNOWN");
-      expect(() => recovered.reserve(reservation())).toThrow("PAYMENT_ALREADY_RESERVED");
+      expect(recovered.get(row!.id)?.state).toBe("UNKNOWN");
+      expect(recovered.get(row!.id)?.txHash).toBeNull();
+      const saved = recovered.get(row!.id)!;
+      expect(() => recovered.reserve({ payment: saved.payment, binding: saved.binding, logicalKey: saved.logicalKey,
+        network: saved.network, recipient: saved.recipient, amount: saved.amount, payer: saved.payer, validBefore: saved.validBefore }))
+        .toThrow("PAYMENT_ALREADY_RESERVED");
+      let statusCalls = 0;
+      expect((await reconcilePayments(recovered, { getSettleStatus: async () => { statusCalls++; return { success: false }; } })).checked).toBe(0);
+      expect(statusCalls).toBe(0);
+      expect(await Bun.file(settledMarker).text()).toContain("settle-call-count=1");
+      expect(existsSync(statusMarker)).toBe(false);
     } finally { recovered.close(); }
   } finally {
     if (child.exitCode === null) { child.kill("SIGKILL"); await child.exited; }
@@ -205,4 +236,17 @@ test("failed replacement reservation rolls back cancelled-key release", () => {
     expect(() => store.reserve({ ...reservation("c"), logicalKey: key })).toThrow("PAYMENT_STORAGE_CAPACITY");
     expect(store.get(row.id)?.logicalKey).toBe(key);
   } finally { store.close(); rmSync(dir, { recursive: true }); }
+});
+
+test("settlement hash checkpoint is immutable and survives UNKNOWN recovery", () => {
+  fixture((store) => {
+    const row = store.reserve(reservation());
+    const hash = "0x" + "a".repeat(64);
+    store.transition(row.id, "VERIFIED", "SETTLEMENT_IN_FLIGHT");
+    store.checkpointHash(row.id, row.payment, hash);
+    expect(() => store.checkpointHash(row.id, row.payment, "0x" + "b".repeat(64))).toThrow("PAYMENT_STATE_CONFLICT");
+    store.transition(row.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN");
+    expect(store.get(row.id)?.txHash).toBe(hash);
+    expect(() => store.transition(row.id, "UNKNOWN", "SETTLED", "0x" + "b".repeat(64))).toThrow("PAYMENT_STATE_CONFLICT");
+  });
 });
