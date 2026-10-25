@@ -254,6 +254,7 @@ The profile defines:
 - network identifier
 - allowed payment schemes
 - allowed asset transfer methods
+- allowed payment flows and the reviewed default flow for each transfer method
 - signing-domain metadata for each enabled asset and transfer method
 - accepted assets
 - token contract addresses
@@ -291,6 +292,10 @@ Initial scheme: exact
 Initial x402 protocol version: 2.
 
 Every payment profile MUST explicitly declare its allowed asset transfer methods. Gate 0 MUST validate the observed method against that profile; an unsupported or ambiguous method cannot produce PASS. Enabling EIP-3009, Permit2, or another method for production requires verified asset/facilitator support and explicitly reviewed configuration.
+
+Every payment profile MUST explicitly declare its allowed payment flows per asset transfer method. For this initial X Layer exact profile, the only allowed paymentFlow is authorization. Explicit authorization is eligible; an omitted paymentFlow resolves to authorization only when the reviewed mechanism/profile defines authorization as that method's default. upfront and escrow are not eligible. Unknown, unsupported, ambiguous, or unresolved paymentFlow cannot produce PASS.
+
+Gate 0 MUST resolve and validate both assetTransferMethod and paymentFlow against the reviewed profile before an offer can qualify. Future upfront or escrow support requires separately reviewed profile/schema semantics and must not be enabled implicitly. These reserved extra fields follow the [x402 V2 mechanism and payment-flow model](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md#61-asset-transfer-methods-and-payment-flow-models); the initial UNMET profile permits only authorization.
 
 The /v1/opportunities billing policy, including PR #17, is not a universal Gate 0 policy. Do not inherit its method restrictions, token choices, or prices. Keep method-specific checks within the reviewed profile model without introducing a generic plugin framework.
 
@@ -569,11 +574,11 @@ This authorization concerns future service payments. Escrow settlement still pay
 
 Require HTTP 402 and a valid x402 V2 PAYMENT-REQUIRED header. A JSON body alone is insufficient. Validate the envelope and each accepts[] entry against the V2 schema before evaluating compatibility.
 
-Evaluate offers in their original accepts[] order. Select the first offer that passes every required profile, receiver, and demand-price check. One eligible offer is sufficient for PASS; no eligible offer means FAIL.
+Evaluate offers in their original accepts[] order. Select the first offer that passes every required profile, receiver, and demand-price check, including resolution and validation of both assetTransferMethod and paymentFlow. One eligible offer is sufficient for PASS; no eligible offer means FAIL.
 
 Structurally valid unsupported or incompatible alternatives do not invalidate an eligible offer. Report them as unvalidated alternatives, never as covered by the attestation. A malformed envelope or malformed offer fails the challenge.
 
-Return the selected offer and its zero-based index. Only the selected offer enters paymentRequirementsHash. Do not require or imply support for every advertised scheme, network, asset, or transfer method.
+Return the selected offer and its zero-based index. Only the selected offer enters paymentRequirementsHash. Do not require or imply support for every advertised scheme, network, asset, transfer method, or payment flow.
 
 
 ### Price Validation
@@ -820,15 +825,15 @@ All listed object keys are required, including nullable keys. No key may be omit
 | Object / field | Exact type or members |
 | --- | --- |
 | envelope | Object with schemaVersion, escrowChainId, escrowContract, profile, demandPriceAsset |
-| schemaVersion | String literal unmet-validation-policy-v1 |
+| schemaVersion | String literal unmet-validation-policy-v2 |
 | escrowChainId | Positive uint256 encoded as a decimal string |
 | escrowContract | Address |
 | profile | Object with id, enabled, network, x402Versions, schemes, assets, paymentRules, receiverRules, facilitator |
 | profile.id | String matching ^[a-z0-9][a-z0-9-]{0,63}$ |
 | profile.enabled | JSON boolean |
 | profile.network | Network string |
-| profile.x402Versions | Nonempty array of JSON integer protocol versions; v1 supports only 2 |
-| profile.schemes | Nonempty array of strings; v1 supports only exact |
+| profile.x402Versions | Nonempty array of JSON integer protocol versions; this schema version supports only 2 |
+| profile.schemes | Nonempty array of strings; this schema version supports only exact |
 | profile.assets | Nonempty array of asset objects |
 | asset object | Object with asset, decimals, enabled, defaultTransferMethod, transferMethods |
 | asset.asset | Address identifying the token on profile.network |
@@ -836,9 +841,11 @@ All listed object keys are required, including nullable keys. No key may be omit
 | asset.enabled | JSON boolean |
 | asset.defaultTransferMethod | Method identifier or null; a non-null value must name a transferMethods entry |
 | asset.transferMethods | Nonempty array of transfer-method objects |
-| transfer-method object | Object with method, enabled, tokenDomain, permit2Contract, settlementSpender |
+| transfer-method object | Object with method, enabled, paymentFlows, defaultPaymentFlow, tokenDomain, permit2Contract, settlementSpender |
 | method | Case-sensitive string eip3009 or permit2 in this schema version |
 | enabled in a transfer-method object | JSON boolean |
+| paymentFlows | Nonempty array of case-sensitive flow strings; this schema version permits only authorization |
+| defaultPaymentFlow | String authorization or null; a non-null value must appear in paymentFlows and identify the reviewed mechanism/profile default for this method |
 | tokenDomain | Object with nonempty UTF-8 string name and version, or null |
 | permit2Contract, settlementSpender | Address or null |
 | profile.paymentRules | Object with amountType, priceComparison, maxTimeoutSeconds |
@@ -855,9 +862,11 @@ Address means exactly 0x followed by 40 lowercase hexadecimal digits, excluding 
 
 For this EVM policy schema, Network string means eip155: followed by a positive canonical decimal uint256 chain ID of at most 32 digits, respecting the [CAIP-2 reference limit](https://standards.chainagnostic.org/CAIPs/caip-2#syntax). Preserve the exact string; reject aliases, whitespace, case variants, signs, and leading zeros. Decimal uint strings contain only ASCII digits, have no leading zero, and must fit uint256; zero is encoded as "0" only for fields permitting zero. Domain names and versions preserve their exact Unicode content without case folding or Unicode normalization.
 
-Only the policy's x402Versions, schemes, assets, and transferMethods arrays represent sets. This does not reorder the observed accepts[] array or request query pairs. Serialize x402Versions in ascending numeric order, schemes in ascending ASCII order, assets by lowercase asset address, and transferMethods by method in ascending ASCII order. Reject duplicates and unsorted envelopes. JCS sorts object keys but never sorts these arrays. Include every listed asset and method, including disabled entries; never filter them before hashing. Every enabled boolean participates in the digest, and an offer is eligible only when the profile, asset, and selected method are all enabled.
+Only the policy's x402Versions, schemes, assets, transferMethods, and paymentFlows arrays represent sets. This does not reorder the observed accepts[] array or request query pairs. Serialize x402Versions in ascending numeric order, schemes and paymentFlows in ascending ASCII order, assets by lowercase asset address, and transferMethods by method in ascending ASCII order. Reject duplicates and unsorted envelopes. JCS sorts object keys but never sorts these arrays. Include every listed asset and method, including disabled entries; never filter them before hashing. Every enabled boolean participates in the digest, and an offer is eligible only when the profile, asset, and selected method are all enabled and the resolved flow is allowed for that method.
 
 An eip3009 entry requires tokenDomain to be an object and permit2Contract/settlementSpender to be null. A permit2 entry requires tokenDomain to be null and both contract addresses to be non-null verified configuration. These are public validation inputs, not proof of future settlement. Null defaultTransferMethod means that the observed challenge must explicitly identify its method. A declared default may resolve an omitted method only when the scheme/version permits that default and the matching method is enabled and reviewed. Never infer a method from the token symbol, the number of entries, or intelligence billing code.
+
+Resolve the observed extra.paymentFlow only after resolving the method. An explicit authorization is eligible when listed in that method's paymentFlows. Omission may use defaultPaymentFlow only when it is authorization and the reviewed mechanism/profile defines that default; null means omission is ineligible. An explicit JSON null, non-string value, unknown identifier, or ambiguous/unsupported method-flow combination cannot qualify. Never infer a flow from a single allowed entry or from a different method's default. Both paymentFlows and defaultPaymentFlow participate in validationPolicyId. This schema rejects upfront and escrow even if an external mechanism supports them; enabling either requires separately reviewed profile/schema semantics.
 
 demandPriceAsset is the pinned denomination from Section 4.6; it cannot be chosen by a request. maxTimeoutSeconds caps the selected offer's payment authorization timeout; it does not replace Section 4.9's endpoint timeout or Section 4.11's 900-second lifetime and 60-second skew. Runtime secrets, RPC credentials, concurrency counters, and unrelated application settings are excluded from this public envelope. Section 4.8/4.9's fixed request rules are part of this schema version.
 
@@ -870,13 +879,13 @@ The Worker signs only its configured policy digest. Policy updates affect new va
 paymentRequirementsHash is SHA-256 of the UTF-8 RFC 8785/JCS bytes of this envelope, without a trailing newline:
 
 ```text
-{schemaVersion: "unmet-payment-requirements-v1", x402Version: 2,
+{schemaVersion: "unmet-payment-requirements-v2", x402Version: 2,
  resource: normalizedResource, requestHash, selected: normalizedSelectedOffer}
 ```
 
 normalizedResource preserves the observed resource fields, with resource.url resolved against the requested URL using the WHATWG URL serializer. Reject credentials, fragments, a different origin/path, or a nonempty resource query different from the requested query. A resource URL without query may identify the protected path; requestHash still binds the exact query and body.
 
-normalizedSelectedOffer contains scheme, network, asset, amount, payTo, maxTimeoutSeconds, and extra only. Preserve the exact scheme/network identifiers; lowercase EVM addresses; parse amount as uint256 and serialize it as a canonical decimal string; require maxTimeoutSeconds to be a positive safe integer in seconds within the profile's explicit limit. Preserve all extra fields, with extra.assetTransferMethod set to the resolved profile-approved method. Use an explicit observed method or the reviewed defaultTransferMethod under the policy rules above; no default or an unsupported/ambiguous method makes the offer ineligible. An absent extra becomes an object before normalization. This rule applies to each reviewed method and does not impose an EIP-3009-only policy.
+normalizedSelectedOffer contains scheme, network, asset, amount, payTo, maxTimeoutSeconds, and extra only. Preserve the exact scheme/network identifiers; lowercase EVM addresses; parse amount as uint256 and serialize it as a canonical decimal string; require maxTimeoutSeconds to be a positive safe integer in seconds within the profile's explicit limit. Preserve all extra fields, with extra.assetTransferMethod and extra.paymentFlow set to the resolved profile-approved method and flow. Resolve explicit values or reviewed defaults under the policy rules above; an unresolved, unsupported, or ambiguous method or flow makes the offer ineligible. An absent extra becomes an object before normalization. The resolved paymentFlow MUST be present in normalizedSelectedOffer.extra, including when the observed offer omitted it, so paymentRequirementsHash commits to the flow. An omitted flow resolved to authorization and explicit authorization produce the same normalized bytes when all other fields match. This rule applies to each reviewed method and does not impose an EIP-3009-only policy.
 
 Reject duplicate JSON keys and invalid I-JSON before canonicalization. JCS orders object properties; it does not reorder arrays. Do not include other accepts[] entries, their index, the error text, response body, or unrelated headers in this digest. Reordering alternatives may change which offer is selected; an unchanged selected offer and request produce the same digest. This digest attests only the selected payment option, not the complete advertised challenge.
 
@@ -889,10 +898,10 @@ SHA-256 digests above are bytes32 values represented as lowercase 0x-prefixed he
 requestHash: 0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8
 
 ```json
-{"requestHash":"0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8","resource":{"url":"https://example.com/weather"},"schemaVersion":"unmet-payment-requirements-v1","selected":{"amount":"10000","asset":"0x779ded0c9e1022225f8e0630b35a9b54be713736","extra":{"assetTransferMethod":"eip3009","name":"USD₮0","version":"1"},"maxTimeoutSeconds":60,"network":"eip155:196","payTo":"0x0000000000000000000000000000000000000001","scheme":"exact"},"x402Version":2}
+{"requestHash":"0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8","resource":{"url":"https://example.com/weather"},"schemaVersion":"unmet-payment-requirements-v2","selected":{"amount":"10000","asset":"0x779ded0c9e1022225f8e0630b35a9b54be713736","extra":{"assetTransferMethod":"eip3009","name":"USD₮0","paymentFlow":"authorization","version":"1"},"maxTimeoutSeconds":60,"network":"eip155:196","payTo":"0x0000000000000000000000000000000000000001","scheme":"exact"},"x402Version":2}
 ```
 
-paymentRequirementsHash: 0x4f8f956c8fea950a1cc5dd34fa6c012b8d325d91ec739f6be63d692607d9d72c
+paymentRequirementsHash: 0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49
 
 ### Literal Policy and EIP-712 Vectors
 
@@ -902,9 +911,11 @@ These are public, synthetic encoding fixtures. Their addresses, enabled flags, a
 
 Canonicalize this complete envelope with JCS and hash the resulting UTF-8 bytes with SHA-256:
 
+The fixture gives its synthetic eip3009 entry an authorization default; its permit2 entry requires explicit paymentFlow. These values exercise both cases without approving either production mechanism's default.
+
 ```json
 {
-  "schemaVersion": "unmet-validation-policy-v1",
+  "schemaVersion": "unmet-validation-policy-v2",
   "escrowChainId": "1952",
   "escrowContract": "0x1111111111111111111111111111111111111111",
   "profile": {
@@ -927,6 +938,10 @@ Canonicalize this complete envelope with JCS and hash the resulting UTF-8 bytes 
           {
             "method": "eip3009",
             "enabled": true,
+            "paymentFlows": [
+              "authorization"
+            ],
+            "defaultPaymentFlow": "authorization",
             "tokenDomain": {
               "name": "USD₮0",
               "version": "1"
@@ -938,6 +953,10 @@ Canonicalize this complete envelope with JCS and hash the resulting UTF-8 bytes 
             "method": "permit2",
             "enabled": true,
             "tokenDomain": null,
+            "paymentFlows": [
+              "authorization"
+            ],
+            "defaultPaymentFlow": null,
             "permit2Contract": "0x3333333333333333333333333333333333333333",
             "settlementSpender": "0x4444444444444444444444444444444444444444"
           }
@@ -963,7 +982,7 @@ Canonicalize this complete envelope with JCS and hash the resulting UTF-8 bytes 
 }
 ```
 
-Expected validationPolicyId: `0x2441de167e1d1d99e87cf223558505db618617d008ca8d676d15587011421df3`.
+Expected validationPolicyId: `0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691`.
 
 #### B. BuilderValidationAuthorization
 
@@ -1016,9 +1035,9 @@ Expected validationPolicyId: `0x2441de167e1d1d99e87cf223558505db618617d008ca8d67
     "builderWallet": "0x2222222222222222222222222222222222222222",
     "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
     "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
-    "paymentRequirementsHash": "0x4f8f956c8fea950a1cc5dd34fa6c012b8d325d91ec739f6be63d692607d9d72c",
+    "paymentRequirementsHash": "0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49",
     "submissionNonce": "1",
-    "validationPolicyId": "0x2441de167e1d1d99e87cf223558505db618617d008ca8d676d15587011421df3",
+    "validationPolicyId": "0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691",
     "issuedAt": "1792886400",
     "expiresAt": "1792887300"
   }
@@ -1029,8 +1048,8 @@ Expected validationPolicyId: `0x2441de167e1d1d99e87cf223558505db618617d008ca8d67
 | --- | --- |
 | typeHash | `0x67beb001f81b85e71e91091bf36753e1a578fbec204642b1bee40134161f22dd` |
 | domainSeparator | `0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a` |
-| structHash | `0x0e19333e6674e3a63fc9238b89c5fcbcfb2e6a324d608ab8605ea119b87df5d4` |
-| digest | `0x1887c1488333c7d5a3bc696fdaa4eff076faa6cc3922702337e6976d08dead82` |
+| structHash | `0x57d9261a3e04d73fc8c39e6d110b718b839c7816a76830d61ac2ff951e53927d` |
+| digest | `0x2917ee6a3d428ef2088a6f96d9873f46dbba4cf3da8c9cd75a3b0dd2ec284301` |
 
 For both EIP-712 vectors, digest = keccak256(0x1901 || domainSeparator || structHash), concatenating raw bytes rather than hex text. The URL preimage is https://example.com/weather; the evidence preimage is unmet-codec-fixture; paymentNetworkHash hashes the UTF-8 string eip155:196. requestHash and paymentRequirementsHash are the earlier literal fixtures. demandId deliberately exceeds the JavaScript safe-integer range and must remain a string until parsed as uint256.
 
@@ -1441,6 +1460,8 @@ Offer-rejection cases use a challenge with no eligible alternative. Mixed-offer 
 32. Same-asset atomic comparison accepts equality and rejects excess; cross-asset/network comparison, assumed parity, and inconsistent decimals cannot produce PASS.
 33. Authorization and attestation timing obey Section 4.11; current-verifier changes cannot produce a falsely usable attestation.
 34. The public policy envelope enforces exact keys/types, explicit nulls, canonical arrays, addresses/network strings, disabled flags, and method-specific rules; literal policy and both EIP-712 vectors match independent implementations.
+35. Both assetTransferMethod and paymentFlow must resolve against the reviewed profile. Explicit authorization and omission with a reviewed authorization default are eligible; omission without that default, explicit null, upfront, escrow, unknown flows, and unsupported/ambiguous combinations cannot produce PASS. An ineligible flow alternative does not poison an eligible authorization offer.
+36. The normalized selected offer always includes its resolved paymentFlow in extra. Equivalent omitted/defaulted and explicit authorization hash identically; changing the committed flow changes the digest and does not make that flow eligible. Profile flow/default changes alter validationPolicyId; upfront/escrow cannot be enabled under this schema.
 
 
 ### 5.3 Frontend Tests
@@ -2180,6 +2201,7 @@ Authoritative configuration for:
 
 - supported validation networks
 - schemes
+- allowed asset transfer methods, payment flows, and reviewed defaults
 - assets
 - token identity
 - validation rules
