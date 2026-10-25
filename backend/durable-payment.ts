@@ -4,6 +4,15 @@ import type { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import type { PaymentRecord, PaymentStore } from "./payment-store.ts";
 import { PaymentError } from "./payment-error.ts";
 import { authorizationFingerprint, paymentIdentity } from "./payment-identity.ts";
+import {
+  confirmPayment,
+  confirmPaymentWithRetry,
+  createMainnetPaymentClient,
+  PaymentConfirmationRetryExceeded,
+  PaymentConfirmationUnavailable,
+} from "./payment-confirmation.ts";
+import { loadOperationalConfig } from "./config.ts";
+import { withBoundedFetchDeadline } from "./upstream.ts";
 
 type Facilitator = Pick<OKXFacilitatorClient, "getSupported" | "verify" | "settle" | "getSettleStatus">;
 type Context = {
@@ -19,15 +28,117 @@ function context() {
 function failure(ctx: Context, error: unknown) {
   return ctx.failure = error instanceof PaymentError ? error : new PaymentError("PAYMENT_STORAGE_UNAVAILABLE");
 }
+function noProviderError(value: unknown) {
+  return value === undefined || value === null || value === "";
+}
 
-export function durablePayment(store: PaymentStore, official: Facilitator) {
+function retryableStatusError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return message === "PAYMENT_STATUS_TEMPORARY" || message === "UPSTREAM_TIMEOUT_OR_SIZE" ||
+    message === "UPSTREAM_UNAVAILABLE" || message === "UPSTREAM_CAPACITY" ||
+    /^Facilitator getSettleStatus failed \((?:408|429|5\d\d)\):/.test(message);
+}
+
+function statusIdentityMatches(value: Record<string, unknown>, record: PaymentRecord, hash: string) {
+  return typeof value.transaction === "string" && /^0x[0-9a-fA-F]{64}$/.test(value.transaction) &&
+    value.transaction.toLowerCase() === hash.toLowerCase() && value.network === record.network &&
+    typeof value.payer === "string" && value.payer.toLowerCase() === record.payer;
+}
+
+function classifySettleStatus(value: unknown, record: PaymentRecord, hash: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "invalid_response" as const;
+  const response = value as Record<string, unknown>;
+  const status = response.status;
+  if ((response.transaction != null || response.network != null || response.payer != null) &&
+    !statusIdentityMatches(response, record, hash)) return "identity_mismatch" as const;
+  if (response.success === true && (status === "success" || status === "pending")) {
+    if (!noProviderError(response.errorReason) || !noProviderError(response.errorMessage)) return "provider_error" as const;
+    return status;
+  }
+  if (response.success === false && status === "failed") return "failed" as const;
+  if (response.success === false && status == null && response.errorReason === "not_found" &&
+    response.transaction == null && response.network == null && response.payer == null) return "not_found" as const;
+  return "invalid_response" as const;
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollSettleStatus(official: Facilitator, record: PaymentRecord, hash: string,
+  budgetMs: number, diagnose: (event: Diagnostic) => void) {
+  const deadline = Date.now() + budgetMs;
+  let attempts = 0, lastClassification = "not_started";
+  while (Date.now() < deadline) {
+    attempts++;
+    try {
+      const result = await withBoundedFetchDeadline(deadline, () => official.getSettleStatus(hash));
+      lastClassification = classifySettleStatus(result, record, hash);
+      if (Date.now() > deadline) lastClassification = "transient_error";
+    } catch (error) {
+      lastClassification = retryableStatusError(error) ? "transient_error" : "provider_error";
+      diagnose({ event: "payment_settlement_status_poll", stage: "getSettleStatus", paymentId: record.id,
+        attempt: attempts, classification: lastClassification, level: "warn", ...errorFields(error) });
+      if (lastClassification !== "transient_error") return { resolved: false, attempts, classification: lastClassification };
+    }
+    if (lastClassification !== "transient_error") {
+      diagnose({ event: "payment_settlement_status_poll", stage: "getSettleStatus", paymentId: record.id,
+        attempt: attempts, classification: lastClassification, level: "info" });
+      if (lastClassification === "success") return { resolved: true, attempts, classification: lastClassification };
+      if (lastClassification !== "pending" && lastClassification !== "not_found") {
+        return { resolved: false, attempts, classification: lastClassification };
+      }
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await wait(Math.min(50 * 2 ** Math.min(attempts - 1, 4), remaining));
+  }
+  diagnose({ event: "payment_settlement_status_retry_exhausted", stage: "getSettleStatus", paymentId: record.id,
+    attempts, classification: lastClassification, level: "warn" });
+  return { resolved: false, attempts, classification: lastClassification };
+}
+
+const mainnetClient = createMainnetPaymentClient();
+const confirmationBudgetMs = loadOperationalConfig().rpcTimeoutMs;
+
+type Diagnostic = Record<string, unknown>;
+type DurablePaymentOptions = {
+  confirmationBudgetMs?: number;
+  onDiagnostic?: (event: Diagnostic) => void;
+};
+
+function errorFields(error: unknown) {
+  const knownNames = new Set(["Error", "TypeError", "RangeError", "AbortError", "TimeoutError"]);
+  const errorName = error instanceof Error && knownNames.has(error.name) ? error.name : error instanceof Error ? "Error" : "UnknownError";
+  const code = error instanceof PaymentError ? error.code
+    : error instanceof PaymentConfirmationRetryExceeded ? error.code
+    : error instanceof PaymentConfirmationUnavailable ? "CONFIRMATION_RPC_UNAVAILABLE" : undefined;
+  return {
+    errorName,
+    ...(code ? { errorCode: code } : {}),
+    ...(error instanceof PaymentConfirmationUnavailable ? { confirmationReadStage: error.stage } : {}),
+    ...(error instanceof PaymentConfirmationRetryExceeded ? { attempts: error.attempts, confirmationReadStage: error.stage } : {}),
+  };
+}
+
+export function durablePayment(store: PaymentStore, official: Facilitator,
+  confirm: (record: PaymentRecord) => Promise<boolean> = (record) => confirmPayment(record, mainnetClient),
+  options: DurablePaymentOptions = {}) {
+  const retryBudgetMs = options.confirmationBudgetMs ?? confirmationBudgetMs;
+  const diagnose = (event: Diagnostic) => {
+    try {
+      const entry = { time: new Date().toISOString(), level: "error", ...event };
+      if (options.onDiagnostic) options.onDiagnostic(entry);
+      else console.log(JSON.stringify(entry));
+    } catch { /* Diagnostics must not change payment outcomes. */ }
+  };
   const client: Facilitator = {
     getSupported: () => official.getSupported(),
     getSettleStatus: (hash) => official.getSettleStatus(hash),
     verify: async (payload, requirements) => {
       const result = await official.verify(payload, requirements);
       const ctx = context();
-      if (!result.isValid) {
+      if (result.isValid !== true || !noProviderError(result.invalidReason) || !noProviderError(result.invalidMessage)) {
         // A consumed nonce may fail official verification on retry. Reject a known
         // operation without issuing a misleading new-payment challenge or any content.
         let identity: string | undefined;
@@ -37,7 +148,7 @@ export function durablePayment(store: PaymentStore, official: Facilitator) {
             throw new PaymentError("PAYMENT_ALREADY_RESERVED", 409);
           }
         } catch (error) { throw failure(ctx, error); }
-        return result;
+        return { ...result, isValid: false };
       }
       try {
         ctx.record = store.reserve(paymentIdentity(payload, requirements, result.payer, ctx));
@@ -48,27 +159,110 @@ export function durablePayment(store: PaymentStore, official: Facilitator) {
       const ctx = context();
       const record = ctx.record;
       if (!record) throw failure(ctx, new PaymentError("PAYMENT_CONTEXT_UNAVAILABLE"));
+      try {
+        const current = paymentIdentity(payload, requirements, record.payer, ctx);
+        if (current.payment !== record.payment || current.binding !== record.binding || current.logicalKey !== record.logicalKey ||
+          current.network !== record.network || current.recipient !== record.recipient || current.amount !== record.amount ||
+          current.payer !== record.payer || current.validBefore !== record.validBefore) throw new PaymentError("PAYMENT_IDENTITY_UNSUPPORTED", 400);
+      } catch (error) { throw failure(ctx, error); }
       // This commit must finish before the official facilitator can submit anything.
       try { store.transition(record.id, "VERIFIED", "SETTLEMENT_IN_FLIGHT"); }
-      catch (error) { throw failure(ctx, error); }
+      catch (error) {
+        diagnose({ event: "payment_settlement_failed", stage: "sqlite_in_flight_transition", paymentId: record.id, ...errorFields(error) });
+        throw failure(ctx, error);
+      }
+      diagnose({ event: "payment_sqlite_transition", stage: "sqlite_in_flight_transition", paymentId: record.id,
+        from: "VERIFIED", to: "SETTLEMENT_IN_FLIGHT", outcome: "success", level: "info" });
       let observedHash: string | null = null;
+      let stage = "official.settle";
       try {
-        const result = await official.settle(payload, requirements);
-        const hash = observedHash = /^0x[0-9a-fA-F]{64}$/.test(result.transaction) ? result.transaction : null;
-        if (result.success && result.status === "success" && hash && result.network === record.network) {
-          store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "SETTLED", hash);
-          return result;
+        let result = await official.settle(payload, requirements);
+        stage = "facilitator_validation";
+        const transaction = typeof result?.transaction === "string" ? result.transaction : "";
+        const hash = observedHash = /^0x[0-9a-fA-F]{64}$/.test(transaction) ? transaction : null;
+        if (hash) {
+          stage = "checkpointHash";
+          store.checkpointHash(record.id, record.payment, hash);
         }
-        store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", hash, "SETTLEMENT_UNCONFIRMED");
-        // The SDK releases content for "pending". Durable mode requires confirmed success.
-        throw new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
-      } catch (error) {
-        try {
-          if (store.get(record.id)?.state === "SETTLEMENT_IN_FLIGHT") {
-            store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", observedHash, "SETTLEMENT_AMBIGUOUS");
+        stage = "facilitator_validation";
+        const checks = {
+          success: result?.success === true,
+          status: result?.status === "success",
+          transaction: hash !== null,
+          network: result?.network === record.network,
+          payer: typeof result?.payer === "string" && result.payer.toLowerCase() === record.payer,
+          errorReason: noProviderError(result?.errorReason),
+          errorMessage: noProviderError(result?.errorMessage),
+        };
+        const initialStatus = result?.status === "success" || result?.status === "pending" || result?.status === "timeout"
+          ? result.status : "unsupported";
+        const statusNeedsPolling = initialStatus === "pending" || initialStatus === "timeout";
+        diagnose({ event: "payment_settlement_status_classified", stage: "official.settle", paymentId: record.id,
+          classification: initialStatus, pollRequired: statusNeedsPolling, level: "info" });
+        const settlementIdentityValid = checks.success && checks.transaction && checks.network && checks.payer &&
+          checks.errorReason && checks.errorMessage;
+        if (!settlementIdentityValid || initialStatus === "unsupported") {
+          diagnose({ event: "payment_facilitator_validation_failed", stage, paymentId: record.id, checks });
+          stage = "sqlite_unconfirmed_transition";
+          store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", null, "SETTLEMENT_UNCONFIRMED");
+          throw new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
+        }
+        if (statusNeedsPolling) {
+          stage = "getSettleStatus";
+          const statusResult = await pollSettleStatus(official, record, hash!, retryBudgetMs, diagnose);
+          if (!statusResult.resolved) {
+            diagnose({ event: "payment_settlement_status_rejected", stage, paymentId: record.id,
+              classification: statusResult.classification, attempts: statusResult.attempts, level: "warn" });
+            stage = "sqlite_unconfirmed_transition";
+            const error = statusResult.classification === "transient_error" ? "SETTLEMENT_AMBIGUOUS" : "SETTLEMENT_UNCONFIRMED";
+            store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", null, error);
+            diagnose({ event: "payment_sqlite_transition", stage, paymentId: record.id,
+              from: "SETTLEMENT_IN_FLIGHT", to: "UNKNOWN", outcome: "success", error, level: "info" });
+            throw new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
           }
-        } catch { /* The durable in-flight marker remains blocked if storage fails. */ }
-        throw failure(ctx, error instanceof PaymentError ? error : new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409));
+          result = { ...result, status: "success" };
+        }
+        stage = "sqlite_confirmation_record_read";
+        const persisted = store.get(record.id);
+        if (!persisted?.txHash || persisted.txHash.toLowerCase() !== hash!.toLowerCase()) {
+          throw new PaymentError("PAYMENT_STATE_CONFLICT");
+        }
+        stage = "confirmPayment";
+        const confirmation = await confirmPaymentWithRetry(persisted, confirm, retryBudgetMs);
+        if (!confirmation.confirmed) {
+          diagnose({ event: "payment_confirmation_rejected", stage, paymentId: record.id, attempts: confirmation.attempts });
+          stage = "sqlite_unconfirmed_transition";
+          store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", null, "SETTLEMENT_UNCONFIRMED");
+          throw new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
+        }
+        if (confirmation.attempts > 1) {
+          diagnose({ event: "payment_confirmation_recovered", stage, paymentId: record.id,
+            level: "info", attempts: confirmation.attempts, confirmationReadStage: confirmation.lastStage });
+        }
+        stage = "sqlite_settled_transition";
+        store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "SETTLED");
+        diagnose({ event: "payment_sqlite_transition", stage, paymentId: record.id,
+          from: "SETTLEMENT_IN_FLIGHT", to: "SETTLED", outcome: "success", level: "info" });
+        return result;
+      } catch (error) {
+        if (!(error instanceof PaymentError && error.code === "PAYMENT_RECONCILIATION_REQUIRED")) {
+          diagnose({ event: "payment_settlement_failed", stage, paymentId: record.id,
+            transactionHashObserved: observedHash !== null, ...errorFields(error) });
+        }
+        let state: PaymentRecord | null | undefined;
+        try { state = store.get(record.id); }
+        catch (storageError) {
+          diagnose({ event: "payment_settlement_failed", stage: "sqlite_ambiguous_state_read", paymentId: record.id,
+            transactionHashObserved: observedHash !== null, ...errorFields(storageError) });
+        }
+        if (state?.state === "SETTLEMENT_IN_FLIGHT") {
+          try { store.transition(record.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", observedHash, "SETTLEMENT_AMBIGUOUS"); }
+          catch (storageError) {
+            diagnose({ event: "payment_settlement_failed", stage: "sqlite_ambiguous_transition", paymentId: record.id,
+              transactionHashObserved: observedHash !== null, ...errorFields(storageError) });
+          }
+        }
+        throw failure(ctx, new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409));
       }
     },
   };
@@ -108,7 +302,8 @@ export function durablePayment(store: PaymentStore, official: Facilitator) {
 }
 
 export async function reconcilePayments(store: PaymentStore, client: Pick<Facilitator, "getSettleStatus">,
-  limit = 20, budgetMs = 30_000) {
+  limit = 20, budgetMs = 30_000, confirm: (record: PaymentRecord) => Promise<boolean> =
+    (record) => confirmPayment(record, mainnetClient)) {
   const counts = { checked: 0, settled: 0, failed: 0, unresolved: 0 };
   const deadline = Date.now() + budgetMs;
   for (const record of store.pending(100, true)) {
@@ -117,13 +312,12 @@ export async function reconcilePayments(store: PaymentStore, client: Pick<Facili
     counts.checked++;
     try {
       const result = await client.getSettleStatus(record.txHash);
-      const matches = (!result.transaction || result.transaction.toLowerCase() === record.txHash.toLowerCase()) &&
-        (!result.network || result.network === record.network) &&
-        (!result.payer || result.payer.toLowerCase() === record.payer);
-      if (matches && result.status === "success" && result.success) {
+      const matches = result.transaction?.toLowerCase() === record.txHash.toLowerCase() &&
+        result.network === record.network && result.payer?.toLowerCase() === record.payer;
+      if (matches && result.status === "success" && result.success === true && noProviderError(result.errorReason) && noProviderError(result.errorMessage) && await confirm(record)) {
         store.transition(record.id, "UNKNOWN", "SETTLED");
         counts.settled++;
-      } else if (matches && result.status === "failed" && !result.success) {
+      } else if (matches && result.status === "failed" && result.success === false) {
         store.transition(record.id, "UNKNOWN", "FAILED", null, "SETTLEMENT_FAILED");
         counts.failed++;
       } else {

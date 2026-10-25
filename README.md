@@ -2,10 +2,11 @@
 
 UNMET is an onchain demand market for AI-agent capabilities. Requesters publish needs and commit funds; builders discover funded demand, propose a service, and receive funds only after commitment-weighted supporter approval. Eligible non-approver funds remain refundable.
 
-## Two separate flows
+## Demand funding and intelligence
 
 - **Demand funding:** wallet transactions create/support demands, vote, finalize or refund through `AgentDemand.sol` on **X Layer Testnet (1952)**.
-- **Paid demand intelligence:** `POST /v1/opportunities` ranks chain-derived demand. Official OKX x402 bills each query separately on **X Layer Mainnet (196)** in production. Buying intelligence does not fund escrow or move the demand market to Mainnet.
+- **Free discovery:** `GET /v1/demands` returns public market facts and its existing compatibility score, ordered by current escrow.
+- **Paid demand intelligence:** `POST /v1/opportunities` adds scoped ranks, score contributions, escrow-per-expected-call and review signals, and deterministic reasons to investigate or exercise caution. Official OKX x402 bills each query **$0.01** separately on **X Layer Mainnet (196)** in production. Buying intelligence does not fund escrow or move the demand market to Mainnet. See the [API contract](docs/API.md).
 
 ## Architecture
 
@@ -50,7 +51,7 @@ bun run test:contract
 bun run build:frontend
 ```
 
-`bun run check` runs all of these. Foundry dependencies must be installed first. No lint script or CI workflow is currently defined. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
+`bun run check` runs all of these. Foundry dependencies must be installed first. The CI workflow runs frontend, backend, contract and Docker checks; there is no lint script. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
 
 ## Documentation and limitations
 

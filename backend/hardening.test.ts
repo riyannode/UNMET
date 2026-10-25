@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createApp } from "./server.ts";
+import { PaymentError } from "./payment-error.ts";
 
 test("invalid requests never enter payment verification", async () => {
   let paid = 0;
@@ -35,7 +36,7 @@ test("invalid requests never enter payment verification", async () => {
 import { request } from "node:http";
 import type { Express } from "express";
 import { loadOperationalConfig } from "./config.ts";
-import { createBoundedFetch } from "./upstream.ts";
+import { createBoundedFetch, settleStatusErrorCode, withBoundedFetch, withBoundedFetchDeadline } from "./upstream.ts";
 import { createDemandIndexState, refreshIndex } from "./server.ts";
 import { type Address, type PublicClient } from "viem";
 import { loadConfig } from "./contract.ts";
@@ -149,9 +150,26 @@ test("RPC transport rejects overload, aborts timeouts, caps response bytes, then
     await expect(bounded(server.url)).rejects.toThrow("UPSTREAM_CAPACITY");
     await expect(pending).rejects.toThrow("UPSTREAM_TIMEOUT_OR_SIZE");
     expect(await (await bounded(server.url)).text()).toBe("ok");
-    await expect(bounded(server.url + "large")).rejects.toThrow("UPSTREAM_TIMEOUT_OR_SIZE");
+    await expect(bounded(server.url + "large")).rejects.toThrow("UPSTREAM_RESPONSE_TOO_LARGE");
     expect((await bounded(server.url)).status).toBe(200);
+    const statusTransport = createBoundedFetch({ maxInFlight: 1, timeoutMs: 1000, maxBytes: 1024 });
+    const deadlineRead = withBoundedFetch(statusTransport, () => withBoundedFetchDeadline(Date.now() + 25,
+      () => withBoundedFetch(statusTransport, () => fetch(server.url + "slow"))));
+    await expect(deadlineRead).rejects.toThrow("UPSTREAM_TIMEOUT_OR_SIZE");
   } finally { await server.stop(true); }
+});
+
+test("settle status errors expose only safe transient or deterministic categories", () => {
+  for (const message of ["UPSTREAM_TIMEOUT_OR_SIZE", "UPSTREAM_UNAVAILABLE", "UPSTREAM_CAPACITY",
+    "Facilitator getSettleStatus failed (408): detail", "Facilitator getSettleStatus failed (429): detail",
+    "Facilitator getSettleStatus failed (503): detail"]) {
+    expect(settleStatusErrorCode(new Error(message))).toBe("PAYMENT_STATUS_TEMPORARY");
+  }
+  for (const message of ["Facilitator getSettleStatus failed (400): private detail", "UPSTREAM_RESPONSE_TOO_LARGE",
+    "malformed response private marker"]) {
+    expect(settleStatusErrorCode(new Error(message))).toBe("PAYMENT_STATUS_UNAVAILABLE");
+    expect(settleStatusErrorCode(new Error(message))).not.toContain("private");
+  }
 });
 
 test("unsafe configuration is rejected without echoing supplied values", () => {
@@ -159,6 +177,13 @@ test("unsafe configuration is rejected without echoing supplied values", () => {
     { MAX_IN_FLIGHT: "0" }, { RATE_MAX_KEYS: "Infinity" }, { TRUSTED_PROXIES: "true" },
     { TRUSTED_PROXIES: "0.0.0.0/33" }, { XLAYER_RPC_URL: "unused", FRONTEND_ORIGIN: "https://host/path" },
   ]) expect(() => loadOperationalConfig(env)).toThrow("CONFIG_INVALID");
+});
+
+test("Mainnet payment confirmation RPC is validated independently of the market RPC", () => {
+  expect(loadOperationalConfig({ XLAYER_RPC_URL: "https://testnet.example", X402_RPC_URL: "https://mainnet.example" }).x402RpcUrl)
+    .toBe("https://mainnet.example");
+  expect(loadOperationalConfig({ XLAYER_RPC_URL: "https://testnet.example" }).x402RpcUrl).toBe("https://rpc.xlayer.tech");
+  expect(() => loadOperationalConfig({ X402_RPC_URL: "file:///tmp/rpc" })).toThrow("CONFIG_INVALID: X402_RPC_URL");
 });
 
 test("index capacity failure leaves the previous complete checkpoint intact", async () => {
@@ -204,6 +229,31 @@ test("request IDs are server-owned and public errors omit internal text and stac
     expect(text).not.toContain("credential-marker");
     expect(text).not.toContain("stack");
   });
+});
+
+test("payment errors retain their public status, code, and safe message through the HTTP handler", async () => {
+  const identityError = new PaymentError("PAYMENT_IDENTITY_UNSUPPORTED", 400);
+  identityError.stack = "payment-stack-marker";
+  const reconciliationError = new PaymentError("PAYMENT_RECONCILIATION_REQUIRED", 409);
+  reconciliationError.stack = "reconciliation-stack-marker";
+  for (const [error, status, message] of [
+    [identityError, 400, "Payment authorization is invalid or unsupported"],
+    [reconciliationError, 409, "Payment operation unavailable; do not submit a new payment"],
+    [new PaymentError("PAYMENT_STORAGE_UNAVAILABLE"), 503, "Service temporarily unavailable"],
+    [Object.assign(new Error("ordinary-private-marker"), { cause: new Error("ordinary-cause-marker") }), 503, "Service temporarily unavailable"],
+  ] as const) {
+    await withServer(createApp({ middleware: (_req, _res, next) => next(error) }), async (url) => {
+      const response = await post(url);
+      expect(response.status).toBe(status);
+      const text = await response.text();
+      expect(text).not.toContain("payment-stack-marker");
+      expect(text).not.toContain("reconciliation-stack-marker");
+      expect(text).not.toContain("ordinary-private-marker");
+      expect(text).not.toContain("ordinary-cause-marker");
+      expect(text).not.toContain("stack");
+      expect(JSON.parse(text)).toEqual({ error: { code: error instanceof PaymentError ? error.code : "CHAIN_RPC_UNAVAILABLE", message } });
+    });
+  }
 });
 
 test("minimum RPC capacity still completes a rebuild when a larger demand batch was requested", async () => {

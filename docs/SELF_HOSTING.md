@@ -47,7 +47,8 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | DEMAND_CONTRACT, PAYMENT_TOKEN | Required, public addresses | Nonzero valid EVM addresses on the intended market chain |
 | DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Existing metadata; index rebuild reads current contract state |
 | X402_CHAIN_ID | Required API runtime | **Must be 196 in production containers**, independently of Testnet market 1952 |
-| OPPORTUNITY_PRICE | Public, default 0.01 | Existing decimal API price, at most six decimals |
+| X402_RPC_URL | Public API runtime, default `https://rpc.xlayer.tech` | Bounded Mainnet receipt confirmation RPC; must return chain ID 196; never use the market RPC |
+| OPPORTUNITY_PRICE | Public, default 0.01 | Mainnet must remain exactly `0.01`; other values fail configuration |
 | OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE | Required private API runtime | Your official OKX facilitator credentials |
 | OKX_PAY_TO | Required public nonzero address | API fee recipient; does not change contract treasury/escrow beneficiary |
 | FRONTEND_ORIGIN | Required API runtime | Comma-separated exact browser origins including scheme/port |
@@ -62,7 +63,9 @@ VITE_* values are embedded in public JavaScript at build time: rebuild web after
 
 Docker host/daemon administrators can inspect runtime environment values. Docker is not a secret vault. Restrict file permissions, daemon/socket access, backups and log access. If credentials leak, revoke/rotate them through the provider, replace private configuration and recreate api; rotation is an operator action.
 
-The example uses Testnet demand state and Mainnet x402. It does not authorize payment. Local test billing on 1952 is available only for an explicitly configured nonproduction standalone process; Compose preserves the production X402_CHAIN_ID=196 invariant.
+The example uses Testnet demand state and Mainnet x402. It does not authorize payment. Testnet 1952 retains its existing challenge configuration, while durable paid acceptance is currently Mainnet-only; Compose preserves the production X402_CHAIN_ID=196 invariant.
+
+Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`, unpaid requests retain the official 402 challenge, but submitted payment headers fail with `503 PAYMENT_STORAGE_UNAVAILABLE`; `/ready` also fails closed. Mainnet responses are released after the official facilitator reports strict success and `X402_RPC_URL` confirms a matching successful canonical L2 inclusion. This check does not wait for safe/finalized or L1 finality.
 
 ## Routing and proxy trust
 
@@ -94,7 +97,7 @@ Both runtimes use non-root users and read-only root filesystems. Caddy binds unp
 | INDEX_BUDGET_MS | 15000 | 100..120000 ms checked between operations/waves; an active wave may add one RPC timeout |
 | INDEX_REFRESH_MS | 5000 | 0..60000 ms reuse of a successful complete snapshot |
 | DEPENDENCY_CACHE_MS | 5000 | 100..60000 ms health coalescing/cache and payment-initialization failure backoff |
-| FACILITATOR_TIMEOUT_MS | 15000 | 100..60000 ms/official SDK HTTP call; no settlement retry added |
+| FACILITATOR_TIMEOUT_MS | 15000 | 100..60000 ms/official SDK HTTP call; settlement is attempted once |
 | SHUTDOWN_TIMEOUT_MS | 20000 | 100..120000 ms drain deadline; keep Compose grace longer |
 
 The effective batch size is clamped to the RPC capacity (three reads/demand, reserving three slots where possible). At the minimum RPC capacity of four, one demand can run at a time; concurrent health work may still receive a bounded capacity rejection. Excess RPC work rejects immediately. A single shared refresh promise avoids duplicated rebuilds. Successful snapshots are reused for five seconds and keep their indexed block number. Rebuilds/incremental updates read at a pinned block, verify its canonical hash, then publish a complete checkpoint atomically. Failed required refreshes return unavailable, retaining the old checkpoint internally; they do not return a fabricated complete/truncated dataset.

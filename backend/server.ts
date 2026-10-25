@@ -1,8 +1,10 @@
 import { durablePayment } from "./durable-payment.ts";
+import { MAINNET_ASSETS } from "./payment-identity.ts";
 import type { PaymentStore } from "./payment-store.ts";
+import { PaymentError } from "./payment-error.ts";
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
 import { admittedWork, concurrencyGate, rateLimiter } from "./admission.ts";
-import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
+import { createBoundedFetch, settleStatusErrorCode, withBoundedFetch } from "./upstream.ts";
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
@@ -26,7 +28,7 @@ import {
 const cfg = loadConfig();
 const operations = loadOperationalConfig();
 
-type IndexEntry = {
+export type IndexEntry = {
   demandId: bigint;
   data: DemandTuple;
   approvalWeight: bigint;
@@ -271,32 +273,34 @@ async function ensureIndex(client: PublicClient, contract = cfg.contract) {
   return refreshPromise;
 }
 
-function percentileBig(values: bigint[], value: bigint): number {
-  if (values.length === 0) return 0;
-  if (values.length === 1) return 1;
-  const sorted = [...values].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  let below = 0;
-  for (const item of sorted) if (item < value) below += 1;
-  return below / (sorted.length - 1);
+function percentile(sorted: bigint[], value: bigint): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return 1;
+  let low = 0, high = sorted.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (sorted[mid]! < value) low = mid + 1;
+    else high = mid;
+  }
+  return low / (sorted.length - 1);
 }
 
-function percentileNumber(values: number[], value: number): number {
-  if (values.length === 0) return 0;
-  if (values.length === 1) return 1;
-  const sorted = [...values].sort((a, b) => a - b);
-  let below = 0;
-  for (const item of sorted) if (item < value) below += 1;
-  return below / (sorted.length - 1);
+function compareBigAsc(a: bigint, b: bigint) { return a < b ? -1 : a > b ? 1 : 0; }
+function scorePool(pool: ScoreInput[]) {
+  const committed = pool.map((p) => p.committed).sort(compareBigAsc);
+  const calls = pool.map((p) => p.expectedCalls).sort(compareBigAsc);
+  const supporters = pool.map((p) => BigInt(p.supporters)).sort(compareBigAsc);
+  return (item: ScoreInput, nowUnix: bigint) => {
+    const horizon = 30n * 24n * 3600n;
+    const remaining = item.deadlineUnix > nowUnix ? item.deadlineUnix - nowUnix : 0n;
+    const freshness = Number(remaining > horizon ? horizon : remaining) / Number(horizon);
+    const terms = { funding: percentile(committed, item.committed), expectedCalls: percentile(calls, item.expectedCalls), supporters: percentile(supporters, BigInt(item.supporters)), deadlineFreshness: freshness };
+    return { terms, score: 0.5 * terms.funding + 0.25 * terms.expectedCalls + 0.15 * terms.supporters + 0.1 * freshness };
+  };
 }
 
 export function scoreOpportunity(item: ScoreInput, pool: ScoreInput[], nowUnix: bigint): number {
-  const horizon = 30n * 24n * 3600n;
-  const remaining = item.deadlineUnix > nowUnix ? item.deadlineUnix - nowUnix : 0n;
-  const freshness = Number(remaining > horizon ? horizon : remaining) / Number(horizon);
-  return 0.5 * percentileBig(pool.map((p) => p.committed), item.committed)
-    + 0.25 * percentileBig(pool.map((p) => p.expectedCalls), item.expectedCalls)
-    + 0.15 * percentileNumber(pool.map((p) => p.supporters), item.supporters)
-    + 0.1 * freshness;
+  return scorePool(pool)(item, nowUnix).score;
 }
 
 function raw(entry: IndexEntry): ScoreInput {
@@ -320,7 +324,7 @@ function effectiveStatus(entry: IndexEntry, nowUnix: bigint): string {
   return base;
 }
 
-function toOpportunity(entry: IndexEntry, pool: ScoreInput[], nowUnix: bigint): Opportunity {
+function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint): Opportunity {
   return {
     demandId: entry.demandId.toString(),
     capability: entry.data.capability,
@@ -339,7 +343,7 @@ function toOpportunity(entry: IndexEntry, pool: ScoreInput[], nowUnix: bigint): 
     rejectionWeight: entry.rejectionWeight.toString(),
     rejectionThreshold: entry.rejectionThreshold.toString(),
     candidateRejected: entry.candidateRejected,
-    score: Number(scoreOpportunity(raw(entry), pool, nowUnix).toFixed(6)),
+    score: Number(score.toFixed(6)),
   };
 }
 
@@ -388,7 +392,7 @@ export function validateOpportunitiesInput(body: unknown): { ok: true; value: Qu
   return { ok: true, value: { minBounty, minSupporters, status, sort: sort as QueryInput["sort"], limit } };
 }
 
-export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000))): Opportunity[] {
+function matchingEntries(entries: IndexEntry[], input: QueryInput, nowUnix: bigint) {
   const filtered = entries.filter((entry) => {
     if (entry.data.committed < input.minBounty) return false;
     if (Number(entry.data.supporterCount) < input.minSupporters) return false;
@@ -396,27 +400,104 @@ export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix 
     return true;
   });
   const pool = filtered.map(raw);
-  const scored = filtered.map((entry) => toOpportunity(entry, pool, nowUnix));
-  scored.sort((a, b) => {
-    if (input.sort === "supporters") return b.supporters - a.supporters || compareIdDesc(a.demandId, b.demandId);
-    if (input.sort === "calls") return compareBigDesc(BigInt(a.expectedCalls), BigInt(b.expectedCalls)) || compareIdDesc(a.demandId, b.demandId);
-    if (input.sort === "deadline") {
-      if (a.deadline === null || b.deadline === null) {
-        if (a.deadline !== b.deadline) return a.deadline === null ? 1 : -1;
-      } else {
-        const byDeadline = Date.parse(a.deadline) - Date.parse(b.deadline);
-        if (byDeadline !== 0) return byDeadline;
-      }
-      return compareIdDesc(a.demandId, b.demandId);
-    }
-    if (input.sort === "score") return b.score - a.score || compareIdDesc(a.demandId, b.demandId);
-    return compareBigDesc(parseUnits6(a.currentEscrow), parseUnits6(b.currentEscrow)) || compareIdDesc(a.demandId, b.demandId);
+  const getScore = scorePool(pool);
+  const scored = filtered.map((entry) => {
+    const scoreInput = raw(entry);
+    const result = getScore(scoreInput, nowUnix);
+    return { entry, raw: scoreInput, ...result, score: Number(result.score.toFixed(6)), deadline: isoFromUnix(entry.data.deadline) };
   });
-  return scored.slice(0, input.limit);
+  scored.sort((a, b) => compareScored(a, b, input.sort));
+  return { filtered, scored };
+}
+
+function compareScored(a: { entry: IndexEntry; score: number; deadline: string | null }, b: { entry: IndexEntry; score: number; deadline: string | null }, sort: QueryInput["sort"]) {
+  if (sort === "supporters") return Number(b.entry.data.supporterCount) - Number(a.entry.data.supporterCount) || compareBigDesc(a.entry.demandId, b.entry.demandId);
+  if (sort === "calls") return compareBigDesc(a.entry.data.expectedCalls, b.entry.data.expectedCalls) || compareBigDesc(a.entry.demandId, b.entry.demandId);
+  if (sort === "deadline") {
+    if (a.deadline === null || b.deadline === null) {
+      if (a.deadline !== b.deadline) return a.deadline === null ? 1 : -1;
+    } else {
+      if (a.entry.data.deadline !== b.entry.data.deadline) return a.entry.data.deadline < b.entry.data.deadline ? -1 : 1;
+    }
+    return compareBigDesc(a.entry.demandId, b.entry.demandId);
+  }
+  if (sort === "score") return b.score - a.score || compareBigDesc(a.entry.demandId, b.entry.demandId);
+  return compareBigDesc(a.entry.data.committed, b.entry.data.committed) || compareBigDesc(a.entry.demandId, b.entry.demandId);
+}
+
+export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000))): Opportunity[] {
+  const { scored } = matchingEntries(entries, input, nowUnix);
+  return scored.slice(0, input.limit).map(({ entry, score }) => toOpportunity(entry, score, nowUnix));
 }
 
 function compareBigDesc(a: bigint, b: bigint): number { return b > a ? 1 : b < a ? -1 : 0; }
-function compareIdDesc(a: string, b: string): number { return compareBigDesc(BigInt(a), BigInt(b)); }
+function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint, marketToken: Address) {
+  const { filtered, scored } = matchingEntries(entries, input, nowUnix);
+  const ranked = [...scored].sort((a, b) => b.score - a.score || compareBigDesc(a.entry.demandId, b.entry.demandId));
+  const ranks = new Map(ranked.map((row, index) => [row.entry.demandId.toString(), index + 1]));
+  const varies = {
+    funding: scored.some((peer) => peer.raw.committed !== scored[0]?.raw.committed),
+    expectedCalls: scored.some((peer) => peer.raw.expectedCalls !== scored[0]?.raw.expectedCalls),
+    supporters: scored.some((peer) => peer.raw.supporters !== scored[0]?.raw.supporters),
+    deadlineFreshness: scored.some((peer) => peer.terms.deadlineFreshness !== scored[0]?.terms.deadlineFreshness),
+  };
+  const allEconomicFactorsTied = filtered.length > 1 && !varies.funding && !varies.expectedCalls && !varies.supporters;
+  const allRoundedScoresTied = filtered.length > 1 && scored.every((peer) => peer.score === scored[0]?.score);
+  const opportunities = scored.slice(0, input.limit).map((row) => {
+    const { entry, score, terms } = row;
+    const base = toOpportunity(entry, score, nowUnix);
+    const remaining = entry.data.deadline > nowUnix ? entry.data.deadline - nowUnix : 0n;
+    const timeLeft = remaining.toString();
+    const positive: string[] = [], cautions: string[] = [
+      "Expected calls and supporter counts are historical signals, not purchased usage or independent people.",
+      "Escrow and fundedBounty do not guarantee builder earnings; only approved funds can settle, minus fees.",
+    ];
+    if (filtered.length === 1) cautions.push("Only one demand matches; percentiles have no peer comparison.");
+    else {
+      if (varies.funding && terms.funding >= 0.75) positive.push("Current escrow ranks in the upper quartile of matching demands.");
+      if (varies.expectedCalls && terms.expectedCalls >= 0.75) positive.push("Historical expected calls rank in the upper quartile of matching demands.");
+      if (varies.supporters && terms.supporters >= 0.75) positive.push("Historical supporter count ranks in the upper quartile of matching demands.");
+      if (varies.funding && terms.funding <= 0.25) cautions.push("Current escrow is at or below the lower quartile of matching demands.");
+      if (varies.expectedCalls && terms.expectedCalls <= 0.25) cautions.push("Historical expected calls are at or below the lower quartile of matching demands.");
+      if (varies.supporters && terms.supporters <= 0.25) cautions.push("Historical supporter count is at or below the lower quartile of matching demands.");
+    }
+    if (base.status === "OPEN" && remaining > 0n) positive.push("Open demand can receive builder proposals before its deadline.");
+    if (entry.data.committed === 0n) cautions.push("No current escrow is committed.");
+    if (entry.data.supporterCount === 0) cautions.push("No supporters are recorded.");
+    if (entry.data.expectedCalls === 0n) cautions.push("No expected calls are recorded.");
+    if (remaining <= 86400n) cautions.push("The demand deadline is within one day or has passed.");
+    if (base.status === "READY") cautions.push("The review quorum is reached; finalization is still required.");
+    if (base.status === "FULFILLED") cautions.push("Residual escrow may be refundable to non-approvers.");
+    if (base.status === "CLOSED" || base.status === "EXPIRED" || base.status === "REJECTED") cautions.push(`Current status is ${base.status}; new proposals are unavailable.`);
+    if (Number(entry.data.status) === 1 && base.status === "SUBMITTED") cautions.push("A builder candidate is under commitment-weighted review; approval does not imply all escrow settles to the builder.");
+    if (allEconomicFactorsTied) cautions.push("All peer economic factors are tied; economic percentiles do not distinguish these demands.");
+    if (allRoundedScoresTied) cautions.push("Rounded scores are tied; numeric demand ID descending breaks rank ties.");
+    else if (allEconomicFactorsTied && varies.deadlineFreshness) cautions.push("Deadline freshness distinguishes rounded scores among demands with tied economic factors.");
+    const submitted = Number(entry.data.status) === 1;
+    const review = submitted ? {
+      approvalGap: formatUnits6(entry.approvalRequired > entry.approvalWeight ? entry.approvalRequired - entry.approvalWeight : 0n),
+      rejectionHeadroom: formatUnits6(entry.rejectionThreshold > entry.rejectionWeight ? entry.rejectionThreshold - entry.rejectionWeight : 0n),
+      reviewTimeRemainingSeconds: (entry.data.reviewEndsAt > nowUnix ? entry.data.reviewEndsAt - nowUnix : 0n).toString(),
+    } : null;
+    return {
+      ...base,
+      rank: ranks.get(entry.demandId.toString())!,
+      scoreBreakdown: {
+        funding: { percentile: terms.funding, contribution: terms.funding * 0.5 },
+        expectedCalls: { percentile: terms.expectedCalls, contribution: terms.expectedCalls * 0.25 },
+        supporters: { percentile: terms.supporters, contribution: terms.supporters * 0.15 },
+        deadlineFreshness: { factor: terms.deadlineFreshness, contribution: terms.deadlineFreshness * 0.1 },
+      },
+      economicSignals: {
+        escrowPerExpectedCall: entry.data.expectedCalls === 0n ? null : formatUnits6(entry.data.committed / entry.data.expectedCalls),
+        timeRemainingSeconds: timeLeft,
+        review,
+      },
+      reasoning: { positive, cautions },
+    };
+  });
+  return { poolSize: filtered.length, rankingScope: "matching_filters_before_limit", scoreVersion: "escrow-percentiles-v1", marketToken, tokenDecimals: 6, opportunities };
+}
 
 type X402PaymentEnv = {
   NODE_ENV?: string;
@@ -434,20 +515,44 @@ export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, core
   if (x402ChainId !== "1952" && x402ChainId !== "196") throw new Error("X402_CHAIN_ID must be 1952 or 196");
   const priceRaw = env.OPPORTUNITY_PRICE || "0.01";
   if (!/^\d+(\.\d{1,6})?$/.test(priceRaw)) throw new Error("OPPORTUNITY_PRICE must be a decimal amount with <=6 decimals");
+  const priceAmount = parseUnits6(priceRaw);
+  if (x402ChainId === "196" && priceAmount !== parseUnits6("0.01")) throw new Error("CONFIG_INVALID: OPPORTUNITY_PRICE");
   return {
     network: `eip155:${x402ChainId}` as `eip155:${number}`,
+    assets: x402ChainId === "196" ? MAINNET_ASSETS.map(({ asset, name, version }) => ({ asset, extra: { name, version } })) : null,
     price: `$${priceRaw}`,
   };
 }
 
-function requirePaymentEnv() {
+export function opportunityPaymentOptions(pay: ReturnType<typeof resolveX402PaymentConfig>, payTo: Address) {
+  return pay.assets ? pay.assets.map(({ asset, extra }) => ({
+    scheme: "exact" as const, network: pay.network, payTo,
+    price: { asset, amount: parseUnits6("0.01").toString(), extra },
+  })) : [{ scheme: "exact" as const, network: pay.network, payTo, price: pay.price }];
+}
+
+export function paymentStorageGuard(available: boolean): RequestHandler {
+  return (req, res, next) => {
+    if (!available && (req.get("payment-signature") || req.get("x-payment"))) {
+      res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+      return;
+    }
+    next();
+  };
+}
+
+function requireFacilitatorCredentials() {
   const apiKey = process.env.OKX_API_KEY?.trim();
   const secretKey = process.env.OKX_SECRET_KEY?.trim();
   const passphrase = process.env.OKX_PASSPHRASE?.trim();
+  if (!apiKey || !secretKey || !passphrase) throw new Error("OKX_API_KEY, OKX_SECRET_KEY and OKX_PASSPHRASE are required");
+  return { apiKey, secretKey, passphrase };
+}
+
+function requirePaymentEnv() {
+  const credentials = requireFacilitatorCredentials();
   const payToRaw = process.env.OKX_PAY_TO || process.env.PAY_TO_ADDRESS;
-  if (!apiKey || !secretKey || !passphrase || !payToRaw) {
-    throw new Error("OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE and OKX_PAY_TO are required");
-  }
+  if (!payToRaw) throw new Error("OKX_PAY_TO is required");
   let payTo: Address;
   try {
     payTo = getAddress(payToRaw);
@@ -455,9 +560,7 @@ function requirePaymentEnv() {
   } catch { throw new Error("CONFIG_INVALID: OKX_PAY_TO"); }
   const payment = resolveX402PaymentConfig();
   return {
-    apiKey,
-    secretKey,
-    passphrase,
+    ...credentials,
     payTo,
     ...payment,
   };
@@ -474,6 +577,11 @@ async function facilitatorCall<T>(task: () => Promise<T>): Promise<T> {
   catch { throw new Error("PAYMENT_UPSTREAM_UNAVAILABLE"); }
 }
 
+async function facilitatorStatusCall<T>(task: () => Promise<T>): Promise<T> {
+  try { return await withBoundedFetch(facilitatorFetch, task); }
+  catch (error) { throw new Error(settleStatusErrorCode(error)); }
+}
+
 let paymentStore: PaymentStore | undefined;
 let storageInitialization: Promise<PaymentStore> | undefined;
 async function initializePaymentStorage() {
@@ -488,11 +596,9 @@ async function initializePaymentStorage() {
 }
 
 export function createOfficialFacilitator() {
-  const pay = requirePaymentEnv();
+  const credentials = requireFacilitatorCredentials();
   const facilitatorClient = new OKXFacilitatorClient({
-    apiKey: pay.apiKey,
-    secretKey: pay.secretKey,
-    passphrase: pay.passphrase,
+    ...credentials,
     syncSettle: true,
   });
   return {
@@ -502,11 +608,11 @@ export function createOfficialFacilitator() {
     settle: (...args: Parameters<typeof facilitatorClient.settle>) =>
       facilitatorCall(() => facilitatorClient.settle(...args)),
     getSettleStatus: (...args: Parameters<typeof facilitatorClient.getSettleStatus>) =>
-      facilitatorCall(() => facilitatorClient.getSettleStatus(...args)),
+      facilitatorStatusCall(() => facilitatorClient.getSettleStatus(...args)),
   };
 }
 
-export async function createPaymentMiddleware(): Promise<RequestHandler> {
+export async function createPaymentMiddleware(): Promise<RequestHandler & { ready: () => Promise<void> }> {
   const store = await initializePaymentStorage();
   const pay = requirePaymentEnv();
   const boundedFacilitator = createOfficialFacilitator();
@@ -516,24 +622,27 @@ export async function createPaymentMiddleware(): Promise<RequestHandler> {
 
   const middleware = paymentMiddleware({
     "POST /v1/opportunities": {
-      accepts: [{
-        scheme: "exact",
-        network: pay.network,
-        payTo: pay.payTo,
-        price: pay.price,
-      }],
+    accepts: opportunityPaymentOptions(pay, pay.payTo),
       description: "Rank funded AI-agent capabilities that still need builders",
       mimeType: "application/json",
     },
   }, resourceServer, undefined, undefined, false);
   const protectedMiddleware = durable ? durable.wrap(middleware) : middleware;
-  return (req, res, next) => {
-    return withBoundedFetch(facilitatorFetch, async () => { await protectedMiddleware(req, res, next); }).catch(next);
-  };
+  const storageGuard = paymentStorageGuard(!!store);
+  const handler: RequestHandler = (req, res, next) => storageGuard(req, res, (error) => error ? next(error)
+    : withBoundedFetch(facilitatorFetch, async () => { await protectedMiddleware(req, res, next); }).catch(next));
+  return Object.assign(handler, { ready: async () => {
+    if (!store) throw new Error("PAYMENT_STORAGE_UNAVAILABLE");
+    store.integrity();
+  } });
 }
 
-let vercelPaymentMiddlewarePromise: Promise<RequestHandler> | null = null;
+let vercelPaymentMiddlewarePromise: ReturnType<typeof createPaymentMiddleware> | null = null;
 const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
+  if (!operations.paymentDbPath && (req.get("payment-signature") || req.get("x-payment"))) {
+    res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+    return;
+  }
   return initializedPayment().then((middleware) => {
     if (req.aborted || res.destroyed) {
       res.statusCode = 503;
@@ -555,15 +664,18 @@ function initializedPayment() {
     throw error;
   });
 }
+const paymentReady = async () => { const middleware = await initializedPayment(); await middleware.ready(); };
 
-export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware, ready: initializedPayment }, options: {
+export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware, ready: paymentReady }, options: {
   config?: OperationalConfig;
   client?: PublicClient;
   market?: ReturnType<typeof loadConfig>;
   now?: () => number;
+  indexState?: DemandIndexState;
 } = {}) {
   const config = options.config || operations;
   const market = options.market || cfg;
+  const indexState = options.indexState || demandIndex;
   const app = express();
   let client = options.client;
   const rpc = () => client ??= getPublicClient();
@@ -608,10 +720,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.get("/ready", (_req, res, next) => {
     void (async () => {
       try {
-        if (operations.paymentDbPath) {
-          const store = await initializePaymentStorage();
-          store?.get("readiness");
-        }
+        if (operations.paymentDbPath) await initializePaymentStorage();
         await payment.ready?.();
       }
       catch {
@@ -626,15 +735,17 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.get("/v1/demands", limiter("demands", config.demandsPerWindow), gate, admittedWork(async (req, res, next) => {
     try {
       if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
-      await ensureIndex(rpc(), market.contract);
+      if (indexState === demandIndex) await ensureIndex(rpc(), market.contract);
+      else if (!indexState.ready) await refreshIndex(rpc(), market.contract, indexState);
       if (req.aborted || res.destroyed) {
         res.statusCode = 503;
         res.end();
         return;
       }
-      const entries = [...demandIndex.entries.values()];
-      const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 });
-      res.json({ chainId: market.chainId, contract: market.contract, blockNumber: demandIndex.lastIndexedBlock.toString(), generatedAt: new Date().toISOString(), demands });
+      const entries = [...indexState.entries.values()];
+      const evaluationTime = options.now?.() ?? Date.now();
+      const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 }, BigInt(Math.floor(evaluationTime / 1000)));
+      res.json({ chainId: market.chainId, contract: market.contract, blockNumber: indexState.lastIndexedBlock.toString(), generatedAt: new Date(evaluationTime).toISOString(), demands });
     } catch (error) { next(error); }
   }));
 
@@ -654,20 +765,24 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.post("/v1/opportunities", validate, limiter("opportunities", config.opportunitiesPerWindow), gate, admittedWork(payment.middleware), admittedWork(async (req, res, next) => {
     try {
       if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
-      await ensureIndex(rpc(), market.contract);
+      if (indexState === demandIndex) await ensureIndex(rpc(), market.contract);
+      else if (!indexState.ready) await refreshIndex(rpc(), market.contract, indexState);
       if (req.aborted || res.destroyed) {
         res.statusCode = 503;
         res.end();
         return;
       }
       const input: QueryInput = res.locals.opportunityInput;
-      const opportunities = filterAndSort([...demandIndex.entries.values()], input);
+      const evaluationTime = options.now?.() ?? Date.now();
+      const nowUnix = BigInt(Math.floor(evaluationTime / 1000));
+      const result = paidAnalysis([...indexState.entries.values()], input, nowUnix, market.paymentToken);
       res.json({
         chainId: market.chainId,
         contract: market.contract,
-        blockNumber: demandIndex.lastIndexedBlock.toString(),
-        generatedAt: new Date().toISOString(),
-        opportunities,
+        blockNumber: indexState.lastIndexedBlock.toString(),
+        generatedAt: new Date(evaluationTime).toISOString(),
+        analysis: { poolSize: result.poolSize, rankingScope: result.rankingScope, scoreVersion: result.scoreVersion, marketToken: result.marketToken, tokenDecimals: result.tokenDecimals },
+        opportunities: result.opportunities,
       });
     } catch (error) { next(error); }
   }));
@@ -685,14 +800,19 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     }
     if (res.headersSent) return;
     const parserStatus = typeof error === "object" && error !== null && "status" in error ? error.status : undefined;
-    const code = parserStatus === 413 ? "BODY_TOO_LARGE"
+    const code = error instanceof PaymentError ? error.code
+      : parserStatus === 413 ? "BODY_TOO_LARGE"
       : parserStatus === 415 ? "UNSUPPORTED_MEDIA_TYPE"
       : error instanceof SyntaxError && "body" in error ? "INVALID_JSON"
       : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
       : "CHAIN_RPC_UNAVAILABLE";
-    const status = code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    const status = error instanceof PaymentError ? error.status
+      : code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
+    const message = error instanceof PaymentError && status === 400 ? "Payment authorization is invalid or unsupported"
+      : error instanceof PaymentError && status === 409 ? "Payment operation unavailable; do not submit a new payment"
+      : status >= 500 ? "Service temporarily unavailable" : "Invalid request body";
     log({ level: "error", event: "request_error", requestId: res.getHeader("x-request-id"), code });
-    res.status(status).json({ error: { code, message: status >= 500 ? "Service temporarily unavailable" : "Invalid request body" } });
+    res.status(status).json({ error: { code, message } });
   });
   return app;
 }
@@ -705,7 +825,7 @@ export async function startServer() {
   const pay = requirePaymentEnv();
   if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_ORIGIN?.trim()) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
   const middleware = await createPaymentMiddleware();
-  const application = createApp({ middleware });
+  const application = createApp({ middleware, ready: middleware.ready });
   const port = operations.port;
   const host = process.env.HOST || "0.0.0.0";
   const server = application.listen(port, host, () => {
