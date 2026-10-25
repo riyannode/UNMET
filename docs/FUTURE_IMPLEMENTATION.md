@@ -290,7 +290,9 @@ Initial scheme: exact
 
 Initial x402 protocol version: 2.
 
-Initial asset transfer method: native EIP-3009. Permit2 and other transfer methods are outside this initial profile.
+Every payment profile MUST explicitly declare its allowed asset transfer methods. Gate 0 MUST validate the observed method against that profile; an unsupported or ambiguous method cannot produce PASS. Enabling EIP-3009, Permit2, or another method for production requires verified asset/facilitator support and explicitly reviewed configuration.
+
+The /v1/opportunities billing policy, including PR #17, is not a universal Gate 0 policy. Do not inherit its method restrictions, token choices, or prices. Keep method-specific checks within the reviewed profile model without introducing a generic plugin framework.
 
 Accepted assets: Only assets explicitly enabled in the approved deployment configuration.
 
@@ -809,7 +811,57 @@ serviceUrlHash is keccak256 of the exact UTF-8 serialized serviceUrl accepted in
 
 AgentDemandV2 must match the domain and signed escrowChainId/verifyingContract fields to block.chainid and address(this), builderWallet to msg.sender, demandId to the target demand, URL/evidence hashes to the submitted arguments, and submissionNonce to the current nonce plus one. Accepting the submission consumes that nonce atomically. Reopen never makes a consumed nonce reusable.
 
-validationPolicyId is SHA-256 of the UTF-8 JCS bytes of {schemaVersion: "unmet-validation-policy-v1", escrowChainId, escrowContract, profile, demandPriceAsset}. profile is the complete approved public payment-profile configuration; demandPriceAsset contains network, asset, and decimals from Section 4.6. Use canonical decimal strings for escrowChainId and lowercase addresses. Never include signing secrets or facilitator credentials. Policy changes produce a new digest.
+### Public Validation Policy Encoding
+
+validationPolicyId is SHA-256 of the UTF-8 RFC 8785/JCS bytes of the public envelope defined below, with no BOM or trailing newline. Represent the 32-byte output as lowercase 0x-prefixed hex. Do not hash a runtime configuration object or serialize additional implementation fields.
+
+All listed object keys are required, including nullable keys. No key may be omitted; no unknown key is allowed at any level. Null is a JSON null, never the string "null". A missing optional value is represented by null at its declared key. Other values have the exact types below; there are no implicit defaults.
+
+| Object / field | Exact type or members |
+| --- | --- |
+| envelope | Object with schemaVersion, escrowChainId, escrowContract, profile, demandPriceAsset |
+| schemaVersion | String literal unmet-validation-policy-v1 |
+| escrowChainId | Positive uint256 encoded as a decimal string |
+| escrowContract | Address |
+| profile | Object with id, enabled, network, x402Versions, schemes, assets, paymentRules, receiverRules, facilitator |
+| profile.id | String matching ^[a-z0-9][a-z0-9-]{0,63}$ |
+| profile.enabled | JSON boolean |
+| profile.network | Network string |
+| profile.x402Versions | Nonempty array of JSON integer protocol versions; v1 supports only 2 |
+| profile.schemes | Nonempty array of strings; v1 supports only exact |
+| profile.assets | Nonempty array of asset objects |
+| asset object | Object with asset, decimals, enabled, defaultTransferMethod, transferMethods |
+| asset.asset | Address identifying the token on profile.network |
+| asset.decimals | JSON integer from 0 through 255, not a string |
+| asset.enabled | JSON boolean |
+| asset.defaultTransferMethod | Method identifier or null; a non-null value must name a transferMethods entry |
+| asset.transferMethods | Nonempty array of transfer-method objects |
+| transfer-method object | Object with method, enabled, tokenDomain, permit2Contract, settlementSpender |
+| method | Case-sensitive string eip3009 or permit2 in this schema version |
+| enabled in a transfer-method object | JSON boolean |
+| tokenDomain | Object with nonempty UTF-8 string name and version, or null |
+| permit2Contract, settlementSpender | Address or null |
+| profile.paymentRules | Object with amountType, priceComparison, maxTimeoutSeconds |
+| amountType, priceComparison | String literals uint256 and same-asset-exact, respectively |
+| maxTimeoutSeconds | Positive JSON integer no larger than 9007199254740991; seconds, not milliseconds or a numeric string |
+| profile.receiverRules | Object with mode and allowZeroAddress |
+| mode, allowZeroAddress | String literal builder-authorized and JSON boolean false, respectively |
+| profile.facilitator | Object with id and url, or null when public facilitator metadata is absent |
+| facilitator.id | String using the profile.id syntax |
+| facilitator.url | Absolute HTTPS URL in WHATWG serialized form, without credentials, query, or fragment |
+| demandPriceAsset | Object with network, asset, decimals; Network string, Address, and JSON integer 0 through 255, respectively |
+
+Address means exactly 0x followed by 40 lowercase hexadecimal digits, excluding the zero address. Construct normalized lowercase addresses from verified configuration; reject a public envelope that is not already normalized. Do not perform checksum-case serialization.
+
+For this EVM policy schema, Network string means eip155: followed by a positive canonical decimal uint256 chain ID of at most 32 digits, respecting the [CAIP-2 reference limit](https://standards.chainagnostic.org/CAIPs/caip-2#syntax). Preserve the exact string; reject aliases, whitespace, case variants, signs, and leading zeros. Decimal uint strings contain only ASCII digits, have no leading zero, and must fit uint256; zero is encoded as "0" only for fields permitting zero. Domain names and versions preserve their exact Unicode content without case folding or Unicode normalization.
+
+Only the policy's x402Versions, schemes, assets, and transferMethods arrays represent sets. This does not reorder the observed accepts[] array or request query pairs. Serialize x402Versions in ascending numeric order, schemes in ascending ASCII order, assets by lowercase asset address, and transferMethods by method in ascending ASCII order. Reject duplicates and unsorted envelopes. JCS sorts object keys but never sorts these arrays. Include every listed asset and method, including disabled entries; never filter them before hashing. Every enabled boolean participates in the digest, and an offer is eligible only when the profile, asset, and selected method are all enabled.
+
+An eip3009 entry requires tokenDomain to be an object and permit2Contract/settlementSpender to be null. A permit2 entry requires tokenDomain to be null and both contract addresses to be non-null verified configuration. These are public validation inputs, not proof of future settlement. Null defaultTransferMethod means that the observed challenge must explicitly identify its method. A declared default may resolve an omitted method only when the scheme/version permits that default and the matching method is enabled and reviewed. Never infer a method from the token symbol, the number of entries, or intelligence billing code.
+
+demandPriceAsset is the pinned denomination from Section 4.6; it cannot be chosen by a request. maxTimeoutSeconds caps the selected offer's payment authorization timeout; it does not replace Section 4.9's endpoint timeout or Section 4.11's 900-second lifetime and 60-second skew. Runtime secrets, RPC credentials, concurrency counters, and unrelated application settings are excluded from this public envelope. Section 4.8/4.9's fixed request rules are part of this schema version.
+
+Reject duplicate JSON keys, invalid Unicode, non-finite numbers, and type/range violations before JCS. Changing the schema or interpretation of a field requires a reviewed schema version. Other transfer methods or network families require a reviewed schema extension and corresponding checks, not an arbitrary metadata/plugin object or an automatic escrow redeployment. Policy value changes produce a new digest.
 
 The Worker signs only its configured policy digest. Policy updates affect new validations; issued attestations remain valid until expiry unless their verifier is rotated out. The contract authenticates that observation through the current verifier and records validationPolicyId and paymentRequirementsHash with the accepted submission. It does not parse HTTP, recompute the payment observation, or hardcode the initial payment network/profile as its only allowable policy ID. A reviewed profile for another payment network must not itself require a new escrow deployment.
 
@@ -824,7 +876,7 @@ paymentRequirementsHash is SHA-256 of the UTF-8 RFC 8785/JCS bytes of this envel
 
 normalizedResource preserves the observed resource fields, with resource.url resolved against the requested URL using the WHATWG URL serializer. Reject credentials, fragments, a different origin/path, or a nonempty resource query different from the requested query. A resource URL without query may identify the protected path; requestHash still binds the exact query and body.
 
-normalizedSelectedOffer contains scheme, network, asset, amount, payTo, maxTimeoutSeconds, and extra only. Preserve the exact scheme/network identifiers; lowercase EVM addresses; parse amount as uint256 and serialize it as a canonical decimal string; require maxTimeoutSeconds to be a positive safe integer in seconds within the profile's explicit limit. Preserve all extra fields. For the initial native exact profile only, normalize omitted extra.assetTransferMethod to "eip3009"; reject other transfer methods. An absent extra becomes an object before that normalization.
+normalizedSelectedOffer contains scheme, network, asset, amount, payTo, maxTimeoutSeconds, and extra only. Preserve the exact scheme/network identifiers; lowercase EVM addresses; parse amount as uint256 and serialize it as a canonical decimal string; require maxTimeoutSeconds to be a positive safe integer in seconds within the profile's explicit limit. Preserve all extra fields, with extra.assetTransferMethod set to the resolved profile-approved method. Use an explicit observed method or the reviewed defaultTransferMethod under the policy rules above; no default or an unsupported/ambiguous method makes the offer ineligible. An absent extra becomes an object before normalization. This rule applies to each reviewed method and does not impose an EIP-3009-only policy.
 
 Reject duplicate JSON keys and invalid I-JSON before canonicalization. JCS orders object properties; it does not reorder arrays. Do not include other accepts[] entries, their index, the error text, response body, or unrelated headers in this digest. Reordering alternatives may change which offer is selected; an unchanged selected offer and request produce the same digest. This digest attests only the selected payment option, not the complete advertised challenge.
 
@@ -841,6 +893,148 @@ requestHash: 0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8
 ```
 
 paymentRequirementsHash: 0x4f8f956c8fea950a1cc5dd34fa6c012b8d325d91ec739f6be63d692607d9d72c
+
+### Literal Policy and EIP-712 Vectors
+
+These are public, synthetic encoding fixtures. Their addresses, enabled flags, and method settings do not approve a production profile or imply an available service. No signing key, signature, RPC call, or transaction is needed to reproduce the digests. Use the exact struct definitions above; the domain type is EIP712Domain(string name,string version,uint256 chainId,address verifyingContract).
+
+#### A. validationPolicyId
+
+Canonicalize this complete envelope with JCS and hash the resulting UTF-8 bytes with SHA-256:
+
+```json
+{
+  "schemaVersion": "unmet-validation-policy-v1",
+  "escrowChainId": "1952",
+  "escrowContract": "0x1111111111111111111111111111111111111111",
+  "profile": {
+    "id": "codec-fixture",
+    "enabled": true,
+    "network": "eip155:196",
+    "x402Versions": [
+      2
+    ],
+    "schemes": [
+      "exact"
+    ],
+    "assets": [
+      {
+        "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        "decimals": 6,
+        "enabled": true,
+        "defaultTransferMethod": null,
+        "transferMethods": [
+          {
+            "method": "eip3009",
+            "enabled": true,
+            "tokenDomain": {
+              "name": "USD₮0",
+              "version": "1"
+            },
+            "permit2Contract": null,
+            "settlementSpender": null
+          },
+          {
+            "method": "permit2",
+            "enabled": true,
+            "tokenDomain": null,
+            "permit2Contract": "0x3333333333333333333333333333333333333333",
+            "settlementSpender": "0x4444444444444444444444444444444444444444"
+          }
+        ]
+      }
+    ],
+    "paymentRules": {
+      "amountType": "uint256",
+      "priceComparison": "same-asset-exact",
+      "maxTimeoutSeconds": 300
+    },
+    "receiverRules": {
+      "mode": "builder-authorized",
+      "allowZeroAddress": false
+    },
+    "facilitator": null
+  },
+  "demandPriceAsset": {
+    "network": "eip155:196",
+    "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+    "decimals": 6
+  }
+}
+```
+
+Expected validationPolicyId: `0x2441de167e1d1d99e87cf223558505db618617d008ca8d676d15587011421df3`.
+
+#### B. BuilderValidationAuthorization
+
+```json
+{
+  "domain": {
+    "name": "UNMET AgentDemand",
+    "version": "2",
+    "chainId": "1952",
+    "verifyingContract": "0x1111111111111111111111111111111111111111"
+  },
+  "primaryType": "BuilderValidationAuthorization",
+  "message": {
+    "demandId": "9007199254740993",
+    "builderWallet": "0x2222222222222222222222222222222222222222",
+    "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
+    "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
+    "requestHash": "0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8",
+    "paymentNetworkHash": "0xefa922b302ee91bbef8a50fbd535e6277fb2e0c069dbc7cf376483bd56ca7095",
+    "authorizedPayTo": "0x0000000000000000000000000000000000000001",
+    "submissionNonce": "1",
+    "issuedAt": "1792886400",
+    "expiresAt": "1792887300"
+  }
+}
+```
+
+| Result | Literal expected value |
+| --- | --- |
+| typeHash | `0x3106130d2f2debb598f33e31a4a5c4de61d71023209b265d6bd7d65004a304fe` |
+| domainSeparator | `0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a` |
+| structHash | `0x7f295adbc67658dfd5561880112a18fc8302ca4bbe4d21ce3f07f8c8c03d0beb` |
+| digest | `0xad07348d634d39a1aecc174a1eaa6b3316a349f257fc30c1d3f9347745da7cc7` |
+
+#### C. ValidationAttestation
+
+```json
+{
+  "domain": {
+    "name": "UNMET AgentDemand",
+    "version": "2",
+    "chainId": "1952",
+    "verifyingContract": "0x1111111111111111111111111111111111111111"
+  },
+  "primaryType": "ValidationAttestation",
+  "message": {
+    "escrowChainId": "1952",
+    "verifyingContract": "0x1111111111111111111111111111111111111111",
+    "demandId": "9007199254740993",
+    "builderWallet": "0x2222222222222222222222222222222222222222",
+    "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
+    "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
+    "paymentRequirementsHash": "0x4f8f956c8fea950a1cc5dd34fa6c012b8d325d91ec739f6be63d692607d9d72c",
+    "submissionNonce": "1",
+    "validationPolicyId": "0x2441de167e1d1d99e87cf223558505db618617d008ca8d676d15587011421df3",
+    "issuedAt": "1792886400",
+    "expiresAt": "1792887300"
+  }
+}
+```
+
+| Result | Literal expected value |
+| --- | --- |
+| typeHash | `0x67beb001f81b85e71e91091bf36753e1a578fbec204642b1bee40134161f22dd` |
+| domainSeparator | `0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a` |
+| structHash | `0x0e19333e6674e3a63fc9238b89c5fcbcfb2e6a324d608ab8605ea119b87df5d4` |
+| digest | `0x1887c1488333c7d5a3bc696fdaa4eff076faa6cc3922702337e6976d08dead82` |
+
+For both EIP-712 vectors, digest = keccak256(0x1901 || domainSeparator || structHash), concatenating raw bytes rather than hex text. The URL preimage is https://example.com/weather; the evidence preimage is unmet-codec-fixture; paymentNetworkHash hashes the UTF-8 string eip155:196. requestHash and paymentRequirementsHash are the earlier literal fixtures. demandId deliberately exceeds the JavaScript safe-integer range and must remain a string until parsed as uint256.
+
+These literal outputs were independently reproduced with Python eth-account 0.14.0 plus rfc8785 0.1.4, and Node.js ethers 6.17.0 plus canonicalize 5.1.0. The implementations agreed on canonical policy bytes, SHA-256, EIP-712 type hashes, domain separator, struct hashes, and final digests. Acceptance tests must compare against the published literals, not regenerate expected values with the encoder under test.
 
 Contract, Worker, and frontend acceptance tests must share literal domain, type-hash, authorization, attestation, URL/evidence, and request/payment-digest vectors. Include reordered object keys, changed request/receiver/policy fields, reordered alternatives, and a large atomic amount encoded as a string. A shared implementation producing its own expected values is not a golden-vector test.
 
@@ -1246,6 +1440,7 @@ Offer-rejection cases use a challenge with no eligible alternative. Mixed-offer 
 31. Request and selected-offer digests match shared literal vectors; changed request, receiver, or policy cannot reuse a signed result.
 32. Same-asset atomic comparison accepts equality and rejects excess; cross-asset/network comparison, assumed parity, and inconsistent decimals cannot produce PASS.
 33. Authorization and attestation timing obey Section 4.11; current-verifier changes cannot produce a falsely usable attestation.
+34. The public policy envelope enforces exact keys/types, explicit nulls, canonical arrays, addresses/network strings, disabled flags, and method-specific rules; literal policy and both EIP-712 vectors match independent implementations.
 
 
 ### 5.3 Frontend Tests
@@ -1740,6 +1935,8 @@ Do not blindly retry unknown payments.
 ### 9.5 External Distribution
 
 OKX.AI HTTP A2MCP is the initial external distribution integration for suitable fulfilled APIs. Publication is optional and non-canonical. The provider supplies service name, description including returned results, GET/POST method, input parameter names/types/meaning/required status, and the public endpoint. Price and payment requirements come from the endpoint's actual x402 behavior, not a replacement listing price declared by UNMET.
+
+Initial OKX.AI distribution does not assume a public programmatic listing API. Publication must use the currently supported OKX registration flow unless a programmatic interface is separately verified and approved.
 
 Gate 0 compatibility does not imply OKX registration approval or successful paid execution. Registration, publication, and paid acceptance require their own approval and evidence; Gate 0 does not perform them.
 
