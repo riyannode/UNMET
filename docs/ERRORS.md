@@ -34,23 +34,23 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 
 | Code | HTTP / context | Recovery |
 | --- | --- | --- |
-| BODY_TOO_LARGE | 413; body exceeds 32 KiB | Send a smaller JSON body |
-| UNSUPPORTED_MEDIA_TYPE | 415 | Use application/json and supported encoding |
-| RATE_LIMITED | 429 | Respect Retry-After |
-| CLIENT_IP_UNAVAILABLE | 503; invalid or absent trusted client identity | On Vercel check platform ingress headers; never fall back to a shared proxy quota |
-| LIMITER_CAPACITY | 503; bounded client table full | Back off; inspect traffic/key limits |
-| OVER_CAPACITY | 503; no request slot | Respect Retry-After |
-| INDEX_CAPACITY | 503; index exceeds bounds | Review chain size and measured capacity |
-| INDEX_BUDGET_EXCEEDED | 503; refresh deadline/window bound | Check RPC latency/budget |
-| INDEX_REORG | 503; pinned block changed | Retry; previous checkpoint remains intact |
-| PAYMENT_UNAVAILABLE | 503 readiness | Check official facilitator initialization |
-| CONFIG_INVALID | Startup failure | Correct the named environment field |
-| STARTUP_UNAVAILABLE | Nonzero startup exit | Verify required config/dependencies |
-| DRAIN_TIMEOUT | Nonzero shutdown exit | Deadline elapsed; do not blindly retry signed payments |
-| UPSTREAM_CAPACITY, UPSTREAM_TIMEOUT_OR_SIZE, UPSTREAM_UNAVAILABLE | Internal transport failure | Check RPC capacity/time/size bounds; public errors are sanitized |
-| UPSTREAM_RESPONSE_TOO_LARGE | Internal bounded transport body limit | Review the configured byte limit and provider response; public errors are sanitized |
-| PAYMENT_SDK_DIAGNOSTIC | Sanitized SDK warning/error log | Inspect status and request ID; raw provider/payment data is omitted |
-| PAYMENT_UPSTREAM_UNAVAILABLE | Internal official SDK failure | Check facilitator access; no automatic settlement retry |
+| `BODY_TOO_LARGE` | 413; body exceeds 32 KiB | Send a smaller JSON body |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | Use application/json and supported encoding |
+| `RATE_LIMITED` | 429 | Respect Retry-After |
+| `CLIENT_IP_UNAVAILABLE` | 503; invalid or absent trusted client identity | On Vercel check platform ingress headers; never fall back to a shared proxy quota |
+| `LIMITER_CAPACITY` | 503; bounded client table full | Back off; inspect traffic/key limits |
+| `OVER_CAPACITY` | 503; no request slot | Respect Retry-After |
+| `INDEX_CAPACITY` | 503; index exceeds bounds | Review chain size and measured capacity |
+| `INDEX_BUDGET_EXCEEDED` | 503; refresh deadline/window bound | Check RPC latency/budget |
+| `INDEX_REORG` | 503; pinned block changed | Retry; previous checkpoint remains intact |
+| `PAYMENT_UNAVAILABLE` | 503 readiness | Check official facilitator initialization |
+| `CONFIG_INVALID` | Startup failure | Correct the named environment field |
+| `STARTUP_UNAVAILABLE` | Nonzero startup exit | Verify required config/dependencies |
+| `DRAIN_TIMEOUT` | Nonzero shutdown exit | Deadline elapsed; do not blindly retry signed payments |
+| `UPSTREAM_CAPACITY, UPSTREAM_TIMEOUT_OR_SIZE, UPSTREAM_UNAVAILABLE` | Internal transport failure | Check RPC capacity/time/size bounds; public errors are sanitized |
+| `UPSTREAM_RESPONSE_TOO_LARGE` | Internal bounded transport body limit` | Review the configured byte limit and provider response; public errors are sanitized |
+| `PAYMENT_SDK_DIAGNOSTIC` | Sanitized SDK warning/error log | Inspect status and request ID; raw provider/payment data is omitted |
+| `PAYMENT_UPSTREAM_UNAVAILABLE` | Internal official SDK failure | Check facilitator access; no automatic settlement retry |
 
 Official x402 payment errors/challenges are produced by the OKX x402 middleware/facilitator; UNMET does not substitute custom payment-proof headers.
 
@@ -60,17 +60,17 @@ These codes apply to durable self-hosted payment handling. Error responses never
 
 | Code | HTTP | Meaning / action |
 | --- | --- | --- |
-| IDEMPOTENCY_KEY_INVALID | 400 | Optional key must contain 1–128 printable non-space ASCII characters |
-| PAYMENT_IDENTITY_UNSUPPORTED | 400 | Authorization/payer/requirements cannot be safely bound; no settlement started |
-| IDEMPOTENCY_CONFLICT | 409 | Existing logical key or authorization is bound to a different operation; do not pay again automatically |
-| PAYMENT_ALREADY_RESERVED | 409 | Retained authorization already belongs to an operation; no paid content replay |
-| PAYMENT_RECONCILIATION_REQUIRED | 409 | Settlement outcome ambiguous; operator status reconciliation required |
-| PAYMENT_STORAGE_UNAVAILABLE | 503 | No durable store is available or storage cannot protect settlement; configure/restore persistent SQLite and do not submit a new authorization for an ambiguous operation |
-| PAYMENT_STORAGE_CAPACITY | 503 | Record cap reached; operator cleanup/recovery needed |
-| PAYMENT_CONTEXT_UNAVAILABLE | 503 | SDK call has no protected request context; no settlement |
-| PAYMENT_STATE_INVALID / PAYMENT_STATE_CONFLICT | 503 | Invalid or conflicting atomic state transition; investigate operation |
-| PAYMENT_OPERATION_FAILED | CLI exit 1 | Invalid operator command or storage/upstream failure; no private details printed |
-| PAYMENT_BACKUP_INVALID | Internal backup validation | Use a fresh absolute destination; the operator CLI reports PAYMENT_OPERATION_FAILED |
+| `IDEMPOTENCY_KEY_INVALID` | 400 | Optional key must contain 1–128 printable non-space ASCII characters |
+| `PAYMENT_IDENTITY_UNSUPPORTED` | 400 | Authorization/payer/requirements cannot be safely bound; no settlement started |
+| `IDEMPOTENCY_CONFLICT` | 409 | Existing logical key or authorization is bound to a different operation; do not pay again automatically |
+| `PAYMENT_ALREADY_RESERVED` | 409 | Retained authorization already belongs to an operation; no paid content replay |
+| `PAYMENT_RECONCILIATION_REQUIRED` | 409 | Settlement outcome ambiguous; operator status reconciliation required |
+| `PAYMENT_STORAGE_UNAVAILABLE` | 503 | No durable store is available or storage cannot durably protect settlement; configure/restore persistent SQLite, fail closed and do not submit a new authorization for an ambiguous operation |
+| `PAYMENT_STORAGE_CAPACITY` | 503 | Record cap reached; operator cleanup/recovery needed |
+| `PAYMENT_CONTEXT_UNAVAILABLE` | 503 | SDK call has no protected request context; no settlement |
+| `PAYMENT_STATE_INVALID / PAYMENT_STATE_CONFLICT` | 503 | Invalid or conflicting atomic state transition; investigate operation |
+| `PAYMENT_OPERATION_FAILED` | CLI exit 1 | Invalid operator command or storage/upstream failure; no private details printed |
+| `PAYMENT_BACKUP_INVALID` | Internal backup validation | Use a fresh absolute destination; the operator CLI reports PAYMENT_OPERATION_FAILED |
 
 A retry header is guidance to retry observation/request later, never permission to sign a new payment. See [payment recovery](PAYMENT_RECOVERY.md).
 
