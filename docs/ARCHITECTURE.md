@@ -29,6 +29,14 @@ Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Prod
 
 `AgentDemand.sol` is canonical for demand and escrow state. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
 
+## Free discovery and paid intelligence
+
+`GET /v1/demands` retains its public market fields and legacy score for API compatibility. The frontend reads the contract directly; its board, detail and analytics views do not consume either API response.
+
+`POST /v1/opportunities` uses the same index and filters, with no additional RPC reads. It adds rank within the full matching pool before the response limit, a reproducible score breakdown, current escrow per historically expected call, remaining deadline/review time, review gaps, and deterministic reasons and cautions. Requested response order remains independent of score rank. Percentile tables are prepared once per pool; premium row enrichment applies only to the returned rows.
+
+Premium serialization executes after the existing official payment middleware. SDK response buffering and durable settlement confirmation continue to control release. Free and unpaid challenge responses contain no new premium fields. All existing onchain facts remain public; paid value is the scoped comparison and interpretation. Scores are relative signals, and escrow is not guaranteed builder earnings. See [API calculations and examples](API.md#deterministic-demand-score).
+
 ## Contract state
 
 `Demand` stores:

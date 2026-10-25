@@ -9,8 +9,8 @@ Default local base URL: `http://127.0.0.1:8787`.
 | `GET /live` | Public | Cheap process liveness: `{ "ok": true, "name": "UNMET" }`; no dependency calls |
 | `GET /health` | Public | Checks market RPC chain ID, latest block and contract bytecode |
 | `GET /ready` | Public | Payment middleware/storage readiness, then the health check |
-| `GET /v1/demands` | Public | Up to 50 chain-derived demands |
-| `POST /v1/opportunities` | Official x402 | Filtered and ranked demand intelligence |
+| `GET /v1/demands` | Free | Up to 50 public chain-derived demands and the legacy score |
+| `POST /v1/opportunities` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
 
 `OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure, then uses the same health result. It sends no payment and does not guarantee future settlement or index capacity.
 
@@ -30,11 +30,44 @@ Free chain dependency check. Returns `503` if the configured contract is missing
 
 ## GET /v1/demands
 
-Free UI/discovery read. Returns up to 50 chain-derived demands sorted by committed bounty. The envelope is `chainId`, `contract`, `blockNumber` (decimal string), `generatedAt` (ISO timestamp), and `demands` (the opportunity schema below). It has no filter or pagination contract; the query string is not used. The disposable index is not the payment database.
+Free discovery returns up to 50 chain-derived demands of all statuses, sorted by **current escrow descending**, then numeric demand ID descending. The envelope is `chainId`, `contract`, `blockNumber` (decimal string), `generatedAt` (ISO timestamp), and `demands`. It has no filter or pagination contract; the query string is not used. The disposable index is not the payment database.
+
+All existing fields remain available, including public review/accounting details and `score`, for compatibility with API consumers. The legacy score is computed across the entire indexed pool before the 50-row limit. The new paid-only `analysis`, `rank`, `scoreBreakdown`, `economicSignals` and `reasoning` fields are absent. The current frontend reads contracts directly, so its market/detail/analytics views do not depend on this JSON response.
+
+Synthetic example (one returned row shown):
+
+```json
+{
+  "chainId": 1952,
+  "contract": "0x3333333333333333333333333333333333333333",
+  "blockNumber": "100",
+  "generatedAt": "2026-10-26T00:00:00.000Z",
+  "demands": [{
+    "demandId": "3",
+    "capability": "vendor-kyb-singapore",
+    "currentEscrow": "100.000000",
+    "fundedBounty": "100.000000",
+    "reviewCommitted": "0.000000",
+    "supporters": 4,
+    "expectedCalls": "1000",
+    "maxUnitPrice": "0.200000",
+    "deadline": "2026-11-25T00:00:00.000Z",
+    "status": "OPEN",
+    "creator": "0x1111111111111111111111111111111111111111",
+    "builder": "0x0000000000000000000000000000000000000000",
+    "approvalWeight": "0",
+    "approvalRequired": "0",
+    "rejectionWeight": "0",
+    "rejectionThreshold": "0",
+    "candidateRejected": false,
+    "score": 1
+  }]
+}
+```
 
 ## POST /v1/opportunities
 
-Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `OPPORTUNITY_PRICE` fails configuration.
+Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `OPPORTUNITY_PRICE` fails configuration. Agents receive a comparison within their matching demand pool, inspectable factor contributions, escrow/usage and review calculations, and deterministic evidence and cautions for further investigation. Public blockchain facts remain free; payment buys the comparison and interpretation.
 
 The returned opportunity data is read from the core market network (`CHAIN_ID=1952` in production). The payment network is configured independently with `X402_CHAIN_ID=196` in production; this does not change demand reads or escrow.
 
@@ -77,34 +110,69 @@ Rules:
 - `sort`: `bounty | supporters | calls | deadline | score`
 - `limit`: integer `1..50`, default `10`
 
+`minBounty` and `sort: "bounty"` use current escrow, not the historical `fundedBounty` snapshot. Default sort remains `bounty`; explicitly request `score` to order the response by intelligence rank. There is no offset/cursor pagination.
+
 ### Success
+
+Synthetic example for `{"sort":"score","limit":1}`: three OPEN demands match before the limit, and demand 3 has strictly more escrow, calls and supporters than both peers. Its deadline is 30 days away. This is fixture data, not live market or payment evidence.
 
 ```json
 {
   "chainId": 1952,
-  "contract": "0x...",
-  "blockNumber": "123456",
-  "generatedAt": "2026-09-18T12:00:00.000Z",
+  "contract": "0x3333333333333333333333333333333333333333",
+  "blockNumber": "100",
+  "generatedAt": "2026-10-26T00:00:00.000Z",
+  "analysis": {
+    "poolSize": 3,
+    "rankingScope": "matching_filters_before_limit",
+    "scoreVersion": "escrow-percentiles-v1",
+    "marketToken": "0x4444444444444444444444444444444444444444",
+    "tokenDecimals": 6
+  },
   "opportunities": [
     {
-      "demandId": "12",
+      "demandId": "3",
       "capability": "vendor-kyb-singapore",
-      "currentEscrow": "360.000000",
-      "fundedBounty": "360.000000",
+      "currentEscrow": "100.000000",
+      "fundedBounty": "100.000000",
       "reviewCommitted": "0.000000",
-      "supporters": 37,
-      "expectedCalls": "25000",
-      "maxUnitPrice": "0.020000",
-      "deadline": "2026-10-15T00:00:00.000Z",
+      "supporters": 4,
+      "expectedCalls": "1000",
+      "maxUnitPrice": "0.200000",
+      "deadline": "2026-11-25T00:00:00.000Z",
       "status": "OPEN",
-      "creator": "0x...",
+      "creator": "0x1111111111111111111111111111111111111111",
       "builder": "0x0000000000000000000000000000000000000000",
       "approvalWeight": "0",
       "approvalRequired": "0",
       "rejectionWeight": "0",
       "rejectionThreshold": "0",
       "candidateRejected": false,
-      "score": 0.87
+      "score": 1,
+      "rank": 1,
+      "scoreBreakdown": {
+        "funding": { "percentile": 1, "contribution": 0.5 },
+        "expectedCalls": { "percentile": 1, "contribution": 0.25 },
+        "supporters": { "percentile": 1, "contribution": 0.15 },
+        "deadlineFreshness": { "factor": 1, "contribution": 0.1 }
+      },
+      "economicSignals": {
+        "escrowPerExpectedCall": "0.100000",
+        "timeRemainingSeconds": "2592000",
+        "review": null
+      },
+      "reasoning": {
+        "positive": [
+          "Current escrow ranks in the upper quartile of matching demands.",
+          "Historical expected calls rank in the upper quartile of matching demands.",
+          "Historical supporter count ranks in the upper quartile of matching demands.",
+          "Open demand can receive builder proposals before its deadline."
+        ],
+        "cautions": [
+          "Expected calls and supporter counts are historical signals, not purchased usage or independent people.",
+          "Escrow and fundedBounty do not guarantee builder earnings; only approved funds can settle, minus fees."
+        ]
+      }
     }
   ]
 }
@@ -112,6 +180,23 @@ Rules:
 
 Large integer values are serialized as decimal strings so JSON never loses EVM integer precision.
 `deadline` is an ISO timestamp, or `null` when a valid onchain `uint64` deadline exceeds JavaScript's supported date range. Deadline sorting places these `null` values last.
+
+All existing opportunity fields and request defaults are preserved. Additions are paid-only and additive; clients that reject unknown JSON fields must allow the new fields. An empty matching pool legitimately returns `analysis.poolSize: 0` and `opportunities: []`, including after successful mock or live settlement; payment does not guarantee a non-empty market.
+
+### Paid economic signals and reasoning
+
+| Field | Calculation and interpretation |
+| --- | --- |
+| `escrowPerExpectedCall` | `currentEscrowAtomic / expectedCalls`, integer division rounded down, then formatted with six decimals. `null` when expected calls is zero. Units: **market tokens per historically expected call**, not service price, revenue, cost coverage or payout. Values below one atomic unit become `"0.000000"`. |
+| `timeRemainingSeconds` | `max(deadlineUnix - evaluationUnix, 0)`, exact decimal integer string. Still available for deadlines outside the ISO date range. |
+| `review` | `null` unless the underlying contract status is SUBMITTED, including derived READY, REJECTED or EXPIRED states. It is also null for FULFILLED and CLOSED. |
+| `review.approvalGap` | `max(approvalRequiredAtomic - approvalWeightAtomic, 0)`, formatted as six-decimal market tokens. Zero does not prove settlement occurred. |
+| `review.rejectionHeadroom` | `max(rejectionThresholdAtomic - rejectionWeightAtomic, 0)`, formatted as six-decimal market tokens: additional rejection weight that would block the candidate. |
+| `review.reviewTimeRemainingSeconds` | `max(reviewEndsAtUnix - evaluationUnix, 0)`, exact decimal integer string. |
+
+`analysis.marketToken` and `tokenDecimals: 6` identify these monetary units. They are independent of the Mainnet asset used to buy intelligence. Existing `approvalWeight`, `approvalRequired`, `rejectionWeight` and `rejectionThreshold` retain their **atomic integer string** units; `currentEscrow`, `fundedBounty`, `reviewCommitted` and `maxUnitPrice` retain six-decimal token strings.
+
+Reasoning uses only the indexed facts, evaluation time and matching-pool percentiles. A positive nonzero funding/call/supporter signal at or above the 75th percentile can appear as a strength when peers exist; values at or below the 25th percentile and zeros can appear as weaknesses. Open proposal availability, at-most-one-day deadline urgency, candidate/review state, singleton comparison limits and historical-data/escrow qualifications are explained where applicable. Arrays are bounded by a fixed set of rules. No LLM, external AI call, supporter-concentration estimate or profitability prediction is involved. Wallet counts do not establish independent people or Sybil resistance. Agents must inspect specifications, execution feasibility and current onchain state separately.
 
 ## Derived status
 
@@ -135,7 +220,7 @@ Economic field semantics:
 
 ## Deterministic demand score
 
-Ranking only. It is not quality, probability, financial advice, or builder reputation.
+Ranking only. It does not measure service quality, builder reputation, build cost, profit or success probability. The existing formula and six-decimal score are preserved on both endpoints; its breakdown and explicit rank are new paid fields.
 
 ```text
 0.50 * current-escrow percentile
@@ -145,6 +230,16 @@ Ranking only. It is not quality, probability, financial advice, or builder reput
 ```
 
 EVM integers and percentile comparisons remain `bigint`. The deadline freshness ratio converts only a remaining duration already capped at 30 days to `number` for scoring.
+
+For a matching pool of size `N > 1`, each percentile is `count(peer value < this value) / (N - 1)`. Equal values receive equal percentiles; all-equal multi-demand pools have percentile zero. A singleton retains percentile one for compatibility, even for zero values; it provides no peer-strength evidence. An empty pool has no score rows.
+
+The deadline factor is `min(max(deadline - evaluationTime, 0), 2592000) / 2592000`. A longer remaining deadline contributes more score; urgency does not increase it. `scoreBreakdown` exposes unrounded percentiles/factor and their weighted contributions. Add the four contributions in the documented order, then apply `Number(total.toFixed(6))` to reproduce `score`; do not round each contribution first.
+
+Paid scoring and rank use **all entries matching the validated filters before limit** (`analysis.rankingScope`), not merely returned rows or the entire market. Rank is a unique 1-based ordinal by rounded score descending, then numeric demand ID descending. `sort` controls response order independently; a bounty-ordered first row need not have rank 1. Changing only sort or limit preserves scores/ranks; changing filters can change both. No score/rank is a cross-pool benchmark. Free uses all indexed statuses with zero minimums, so its legacy score may differ from a filtered paid score.
+
+Percentile tables are prepared once per evaluated pool with sorting and exact integer comparisons; scoring/ranking is O(N log N), and premium explanations/economic calculations are generated only for up to 50 returned rows. Both endpoints reuse the same bounded index and add no RPC requests.
+
+Historical Mainnet E2E acceptance passed for USD₮0, USDC and USDG at commit `cb346e2a73de917a01e2555363d6b54f4e4a58a7`, with empty opportunity results because no OPEN demands matched. The additive intelligence contract is verified with synthetic fixtures and mock settlement; it has not received new live Mainnet acceptance. No payment settlement logic is changed for this response differentiation.
 
 ## Error shape
 

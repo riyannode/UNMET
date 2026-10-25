@@ -10,17 +10,19 @@ import { PaymentStore } from "./payment-store.ts";
 import { durablePayment, reconcilePayments } from "./durable-payment.ts";
 import { PaymentConfirmationUnavailable } from "./payment-confirmation.ts";
 import { paymentIdentity } from "./payment-identity.ts";
-import { createApp } from "./server.ts";
+import { createApp, createDemandIndexState, type IndexEntry, type DemandIndexState } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
 import { loadConfig } from "./contract.ts";
 import { withBoundedFetch } from "./upstream.ts";
 import { MAINNET_ASSETS } from "./payment-identity.ts";
 import express from "express";
-import type { PublicClient } from "viem";
+import type { Address, Hex, PublicClient } from "viem";
 import type { PaymentRecord } from "./payment-store.ts";
 
-const payer = "0x" + "2".repeat(40), recipient = "0x" + "1".repeat(40), asset = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
-const hash = "0x" + "a".repeat(64);
+const payer: Address = "0x2222222222222222222222222222222222222222", recipient: Address = "0x1111111111111111111111111111111111111111";
+const asset: Address = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+const hash: Hex = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const marketNowMs = 1_700_000_000_000;
 const requirements: PaymentRequirements = {
   scheme: "exact", network: "eip155:196", asset, amount: "10000", payTo: recipient,
   maxTimeoutSeconds: 300, extra: { name: "USD₮0", version: "1" },
@@ -34,6 +36,27 @@ function payload(nonce = "a", accepted: PaymentRequirements = requirements): Pay
       validAfter: "0", validBefore: String(Math.floor(Date.now() / 1000) + 600), nonce: "0x" + nonce.repeat(64) } },
   };
 }
+function nonemptyMarket() {
+  const state = createDemandIndexState();
+  state.ready = true;
+  state.lastIndexedBlock = 42n;
+  for (const id of [1n, 2n]) state.entries.set(id.toString(), {
+    demandId: id,
+    data: { creator: recipient, builder: "0x0000000000000000000000000000000000000000", maxUnitPrice: 200_000n,
+      committed: id * 1_000_000n, reviewCommitted: 0n, approvalRequired: 0n, expectedCalls: id * 10n,
+      deadline: BigInt(Math.floor(marketNowMs / 1000) + 86_400), reviewEndsAt: 0n, supporterCount: Number(id),
+      status: 0, capability: `synthetic-${id}`, specification: "fixture", serviceUrl: "", evidenceHash: hash },
+    approvalWeight: 0n, approvalRequired: 0n, quorumReached: false, rejectionWeight: 0n,
+    rejectionThreshold: 0n, candidateRejected: false,
+  } satisfies IndexEntry);
+  return state;
+}
+function expectNoPaidFields(body: string, headers: Headers) {
+  for (const field of ["analysis", "rank", "scoreBreakdown", "economicSignals", "reasoning"]) {
+    expect(body).not.toContain(`"${field}"`);
+    expect([...headers.values()].join(" ")).not.toContain(`"${field}"`);
+  }
+}
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => { resolve = r; });
@@ -43,13 +66,15 @@ function deferred() {
 type Official = Pick<OKXFacilitatorClient, "getSupported" | "verify" | "settle" | "getSettleStatus">;
 async function fixture(run: (ctx: {
   store: PaymentStore; path: string; post: (p?: PaymentPayload, body?: string, key?: string, signal?: AbortSignal) => Promise<Response>;
-  calls: { verify: number; settle: number; status: number }; official: Official; url: string;
+  calls: { verify: number; settle: number; status: number }; marketCalls: () => number; official: Official; url: string;
 }) => Promise<void>, options: {
   failExecution?: () => boolean;
   settle?: () => Promise<SettleResponse>; verify?: () => Promise<{ isValid: boolean; payer: string }>;
   settleStatus?: (hash: string) => Promise<SettleStatusResponse>;
   confirm?: (record: PaymentRecord) => Promise<boolean>;
   confirmationBudgetMs?: number; onDiagnostic?: (event: Record<string, unknown>) => void;
+  indexState?: DemandIndexState;
+  now?: () => number;
 } = {}) {
   const dir = mkdtempSync(tmpdir() + "/unmet-durable-");
   const path = dir + "/payments.sqlite", store = new PaymentStore(path);
@@ -82,11 +107,12 @@ async function fixture(run: (ctx: {
     }
     next(error);
   }));
-  const client = { getBlock: async () => ({ number: 1n, hash }),
-    readContract: async () => 1n } as unknown as PublicClient;
+  let marketReadCount = 0;
+  const client = { getBlock: async () => { marketReadCount++; return { number: 1n, hash }; },
+    readContract: async () => { marketReadCount++; return 1n; } } as unknown as PublicClient;
   const app = createApp({ middleware }, {
     config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1000" }), client,
-    market: { ...loadConfig(), contract: "0x0000000000000000000000000000000000000001" },
+    market: { ...loadConfig(), contract: "0x0000000000000000000000000000000000000001" }, indexState: options.indexState, now: options.now,
   });
   const server = app.listen(0, "127.0.0.1"), address = server.address();
   if (!address || typeof address === "string") throw new Error();
@@ -96,7 +122,7 @@ async function fixture(run: (ctx: {
       ...(p ? { "payment-signature": Buffer.from(JSON.stringify(p)).toString("base64") } : {}),
       ...(key ? { "idempotency-key": key } : {}) },
   });
-  try { await run({ store, path, post, calls, official, url }); }
+  try { await run({ store, path, post, calls, marketCalls: () => marketReadCount, official, url }); }
   finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -130,14 +156,109 @@ test("nonce identity is token-scoped while logical request keys remain payer/net
   expect(second.logicalKey).toBe(first.logicalKey);
 });
 
-test("official unpaid challenge remains; arbitrary keys never reveal paid response", async () => {
-  await fixture(async ({ post, calls }) => {
+test("official unpaid challenge over nonempty market never reveals paid response", async () => {
+  await fixture(async ({ post, calls, marketCalls }) => {
     const response = await post(undefined, "{}", "arbitrary");
     expect(response.status).toBe(402);
     expect(response.headers.has("payment-required")).toBe(true);
     expect(calls.settle).toBe(0);
-    expect((await response.text()).includes("opportunities")).toBe(false);
-  });
+    expectNoPaidFields(await response.text(), response.headers);
+    expect(marketCalls()).toBe(0);
+  }, { indexState: nonemptyMarket(), now: () => marketNowMs });
+});
+
+test("confirmed paid responses include full intelligence for each supported asset", async () => {
+  const indexState = createDemandIndexState();
+  indexState.ready = true;
+  indexState.lastIndexedBlock = 42n;
+  for (const id of [1n, 2n, 3n]) {
+    indexState.entries.set(id.toString(), {
+      demandId: id,
+      data: { creator: recipient, builder: "0x0000000000000000000000000000000000000000", maxUnitPrice: 200_000n,
+        committed: id * 1_000_000n, reviewCommitted: 0n, approvalRequired: 0n, expectedCalls: 40n - id * 10n,
+        deadline: BigInt(Math.floor(marketNowMs / 1000) + 86_400), reviewEndsAt: 0n, supporterCount: Number(id),
+        status: 0, capability: `synthetic-${id}`, specification: "fixture", serviceUrl: "", evidenceHash: hash },
+      approvalWeight: 0n, approvalRequired: 0n, quorumReached: false, rejectionWeight: 0n,
+      rejectionThreshold: 0n, candidateRejected: false,
+    } satisfies IndexEntry);
+  }
+  await fixture(async ({ post, calls, url }) => {
+    for (let i = 0; i < paymentOptions.length; i++) {
+      const response = await post(payload(String.fromCharCode(97 + i), paymentOptions[i]));
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.analysis).toMatchObject({ poolSize: 3, rankingScope: "matching_filters_before_limit", scoreVersion: "escrow-percentiles-v1", tokenDecimals: 6 });
+      expect(body.opportunities).toHaveLength(3);
+      expect(body.opportunities[0]).toHaveProperty("rank");
+      expect(body.opportunities[0]).toHaveProperty("scoreBreakdown");
+      expect(body.opportunities[0]).toHaveProperty("economicSignals");
+      expect(body.opportunities[0]).toHaveProperty("reasoning");
+      expect(body.opportunities[0].rank).toBe(1);
+      expect(Number((body.opportunities[0].scoreBreakdown.funding.contribution
+        + body.opportunities[0].scoreBreakdown.expectedCalls.contribution
+        + body.opportunities[0].scoreBreakdown.supporters.contribution
+        + body.opportunities[0].scoreBreakdown.deadlineFreshness.contribution).toFixed(6))).toBe(body.opportunities[0].score);
+      expect(body.opportunities[0].economicSignals.escrowPerExpectedCall).toBe("0.300000");
+      expect(BigInt(body.opportunities[0].economicSignals.timeRemainingSeconds)).toBeGreaterThan(0n);
+      expect(body.opportunities[0].reasoning.cautions.join(" ")).toContain("do not guarantee builder earnings");
+    }
+    const limited = await post(payload("d"), '{"sort":"calls","limit":1}');
+    expect(limited.status).toBe(200);
+    const limitedBody = await limited.json();
+    expect(limitedBody.analysis.poolSize).toBe(3);
+    expect(limitedBody.opportunities).toHaveLength(1);
+    expect(limitedBody.opportunities[0]).toMatchObject({ demandId: "1", rank: 3 });
+    const filtered = await post(payload("e"), '{"minBounty":"99.000000"}');
+    expect(filtered.status).toBe(200);
+    expect(await filtered.json()).toMatchObject({ analysis: { poolSize: 0 }, opportunities: [] });
+    const midpoint = await post(payload("f"), '{"sort":"score","limit":3}');
+    const midpointBody = await midpoint.json();
+    const middle = midpointBody.opportunities.find((item: { demandId: string }) => item.demandId === "2");
+    expect(middle.reasoning.cautions.join(" ")).not.toContain("All peer values are tied");
+    for (const entry of indexState.entries.values()) {
+      entry.data.committed = 1_000_000n;
+      entry.data.expectedCalls = 10n;
+      entry.data.supporterCount = 1;
+    }
+    const tied = await post(payload("8"));
+    const tiedBody = await tied.json();
+    expect(tiedBody.opportunities[0].reasoning.cautions.join(" ")).toContain("All peer values are tied");
+    expect(calls.settle).toBe(7);
+    const free = await fetch(url + "/v1/demands");
+    expect(free.status).toBe(200);
+    const { demands } = await free.json();
+    expect(demands).toHaveLength(3);
+    expect(demands[0]).not.toHaveProperty("rank");
+    expect(demands[0]).not.toHaveProperty("scoreBreakdown");
+  }, { indexState, now: () => marketNowMs });
+});
+
+test("nonempty paid content stays withheld on facilitator failure, ambiguity, and confirmation failure", async () => {
+  for (const mode of ["failed", "ambiguous", "confirmation-failure"] as const) {
+    await fixture(async ({ post, calls, store }) => {
+      const signed = payload(mode === "failed" ? "9" : mode === "ambiguous" ? "8" : "7");
+      const first = await post(signed, "{}", "nonempty-failure");
+      expect(first.status).toBe(409);
+      const firstText = await first.text();
+      expectNoPaidFields(firstText, first.headers);
+      expect(firstText).not.toContain("synthetic-");
+      expect(calls.settle).toBe(1);
+      expect(store.pending(100, true)[0]?.state).toBe("UNKNOWN");
+      const replay = await post(signed, "{}", "nonempty-failure");
+      expect(replay.status).toBe(409);
+      expectNoPaidFields(await replay.text(), replay.headers);
+      expect(calls.settle).toBe(1);
+    }, {
+      indexState: nonemptyMarket(), now: () => marketNowMs, confirmationBudgetMs: 25,
+      settle: async () => mode === "confirmation-failure"
+        ? { success: true, status: "success", transaction: hash, network: requirements.network, payer }
+        : { success: true, status: "pending", transaction: hash, network: requirements.network, payer },
+      settleStatus: async (transaction) => mode === "failed"
+        ? { success: false, status: "failed", transaction, network: requirements.network, payer }
+        : { success: true, status: "pending", transaction, network: requirements.network, payer },
+      confirm: async () => mode !== "confirmation-failure",
+    });
+  }
 });
 
 test("installed official facilitator settle makes one HTTP attempt on success, HTTP error and transport loss", async () => {
