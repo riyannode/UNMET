@@ -51,7 +51,7 @@ bun run test:contract
 bun run build:frontend
 ```
 
-`bun run check` runs all of these. Foundry dependencies must be installed first. No lint script or CI workflow is currently defined. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
+`bun run check` runs all of these. Foundry dependencies must be installed first. The CI workflow runs frontend, backend, contract and Docker checks; there is no lint script. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
 
 ## Documentation and limitations
 
