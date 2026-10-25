@@ -8,6 +8,7 @@ import type { PaymentPayload, PaymentRequirements, SettleResponse, SettleStatusR
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import { PaymentStore } from "./payment-store.ts";
 import { durablePayment, reconcilePayments } from "./durable-payment.ts";
+import { PaymentConfirmationUnavailable } from "./payment-confirmation.ts";
 import { paymentIdentity } from "./payment-identity.ts";
 import { createApp } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
@@ -47,6 +48,7 @@ async function fixture(run: (ctx: {
   failExecution?: () => boolean;
   settle?: () => Promise<SettleResponse>; verify?: () => Promise<{ isValid: boolean; payer: string }>;
   confirm?: (record: PaymentRecord) => Promise<boolean>;
+  confirmationBudgetMs?: number; onDiagnostic?: (event: Record<string, unknown>) => void;
 } = {}) {
   const dir = mkdtempSync(tmpdir() + "/unmet-durable-");
   const path = dir + "/payments.sqlite", store = new PaymentStore(path);
@@ -58,7 +60,9 @@ async function fixture(run: (ctx: {
       { success: true, status: "success", transaction: hash, network: "eip155:196", payer }; },
     getSettleStatus: async () => ({ success: true, status: "success", transaction: hash, network: "eip155:196", payer }),
   };
-  const durable = durablePayment(store, official, options.confirm || (async () => true));
+  const durable = durablePayment(store, official, options.confirm || (async () => true), {
+    confirmationBudgetMs: options.confirmationBudgetMs, onDiagnostic: options.onDiagnostic,
+  });
   const resource = new x402ResourceServer(durable.client).register("eip155:196", new ExactEvmScheme());
   await resource.initialize();
   const paid = paymentMiddleware({
@@ -314,6 +318,7 @@ for (const outcome of ["no hash", "timeout hash", "pending", "failed"] as const)
 
 test("false or unavailable receipt proof persists hash and recovery uses only stored terms", async () => {
   for (const proofFailure of ["false", "throw"] as const) {
+    const diagnostics: Record<string, unknown>[] = [];
     await fixture(async ({ post, store, path, official, calls }) => {
       const response = await post(payload());
       expect(response.status).toBe(409);
@@ -323,6 +328,11 @@ test("false or unavailable receipt proof persists hash and recovery uses only st
       expect(row.txHash).toBe(hash);
       expect(row.recipient).toBe(recipient);
       expect(row.amount).toBe("10000");
+      expect(row.error).toBe(proofFailure === "false" ? "SETTLEMENT_UNCONFIRMED" : "SETTLEMENT_AMBIGUOUS");
+      expect(diagnostics).toContainEqual(expect.objectContaining(proofFailure === "false" ?
+        { event: "payment_confirmation_rejected", stage: "confirmPayment" } :
+        { event: "payment_settlement_failed", stage: "confirmPayment", errorName: "Error" }));
+      expect(JSON.stringify(diagnostics)).not.toContain("fixture proof unavailable");
       const reopened = new PaymentStore(path);
       try {
         const counts = await reconcilePayments(reopened, official, 20, 30_000, async (saved) => {
@@ -336,13 +346,135 @@ test("false or unavailable receipt proof persists hash and recovery uses only st
         expect(reopened.get(row.id)?.state).toBe("SETTLED");
         expect(calls.settle).toBe(1);
       } finally { reopened.close(); }
-    }, { confirm: async (record) => {
+    }, { onDiagnostic: (event) => diagnostics.push(event), confirm: async (record) => {
       expect(record.txHash).toBe(hash);
       expect(record.state).toBe("SETTLEMENT_IN_FLIGHT");
       if (proofFailure === "throw") throw new Error("fixture proof unavailable");
       return false;
     } });
   }
+});
+
+test("settlement diagnostics identify facilitator failures without logging response values", async () => {
+  for (const outcome of ["throws", "invalid response"] as const) {
+    const diagnostics: Record<string, unknown>[] = [];
+    await fixture(async ({ post, calls }) => {
+      expect((await post(payload())).status).toBe(409);
+      expect(calls.settle).toBe(1);
+      const event = diagnostics.find((entry) => entry.event === (outcome === "throws" ?
+        "payment_settlement_failed" : "payment_facilitator_validation_failed"));
+      expect(event?.stage).toBe(outcome === "throws" ? "official.settle" : "facilitator_validation");
+      expect(JSON.stringify(diagnostics)).not.toContain("private facilitator detail");
+      expect(JSON.stringify(diagnostics)).not.toContain("SECRET_API_KEY");
+      expect(JSON.stringify(diagnostics)).not.toContain(payer);
+      expect(JSON.stringify(diagnostics)).not.toContain(hash);
+      if (outcome === "invalid response") {
+        expect(event?.checks).toEqual(expect.objectContaining({ success: true, status: false, transaction: true }));
+      }
+    }, { onDiagnostic: (event) => diagnostics.push(event), settle: async () => {
+      if (outcome === "throws") throw Object.assign(new Error("private facilitator detail"), { name: "SECRET_API_KEY" });
+      return { success: true, status: "timeout", transaction: hash, network: "eip155:196", payer };
+    } });
+  }
+});
+
+test("retries a temporarily unavailable confirmation once, releases content only after proof, and never settles twice", async () => {
+  const p = payload(), entered = deferred(), resume = deferred();
+  let confirmCalls = 0, responseReady = false;
+  const diagnostics: Record<string, unknown>[] = [];
+  await fixture(async ({ post, store, calls }) => {
+    const responsePromise = post(p).then((response) => { responseReady = true; return response; });
+    await entered.promise;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(responseReady).toBe(false);
+    resume.resolve();
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    expect((await response.text()).includes('"opportunities":')).toBe(true);
+    expect(confirmCalls).toBe(2);
+    expect(calls.settle).toBe(1);
+    const row = store.findPayment(paymentIdentity(p, requirements, payer,
+      { method: "POST", route: "/v1/opportunities", input: {} }).payment)!;
+    expect(row.state).toBe("SETTLED");
+    expect(row.txHash).toBe(hash);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ event: "payment_confirmation_recovered", attempts: 2 }));
+  }, { confirmationBudgetMs: 500, onDiagnostic: (event) => diagnostics.push(event), confirm: async () => {
+    confirmCalls++;
+    if (confirmCalls === 1) { entered.resolve(); await resume.promise; throw new PaymentConfirmationUnavailable("receipt"); }
+    return true;
+  } });
+});
+
+test("keeps content blocked when confirmation RPC stays unavailable through its deadline", async () => {
+  const p = payload(), diagnostics: Record<string, unknown>[] = [];
+  let confirmCalls = 0;
+  await fixture(async ({ post, store, calls }) => {
+    const response = await post(p);
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body.includes('"opportunities":')).toBe(false);
+    expect(confirmCalls).toBeGreaterThan(1);
+    expect(calls.settle).toBe(1);
+    const row = store.pending(100, true)[0];
+    expect(row.state).toBe("UNKNOWN");
+    expect(row.error).toBe("SETTLEMENT_AMBIGUOUS");
+    expect(row.txHash).toBe(hash);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      event: "payment_settlement_failed", stage: "confirmPayment", errorCode: "CONFIRMATION_RETRY_EXHAUSTED",
+    }));
+    expect((await post(p)).status).toBe(409);
+    expect(calls.settle).toBe(1);
+  }, { confirmationBudgetMs: 250, onDiagnostic: (event) => diagnostics.push(event), confirm: async () => {
+    confirmCalls++;
+    throw new PaymentConfirmationUnavailable("receipt");
+  } });
+});
+
+test("checkpoint failure is diagnosed, preserves the hash in UNKNOWN, and does not retry confirmation", async () => {
+  let confirmCalls = 0;
+  const diagnostics: Record<string, unknown>[] = [];
+  await fixture(async ({ post, store, calls }) => {
+    const checkpoint = store.checkpointHash.bind(store);
+    let failOnce = true;
+    store.checkpointHash = (id, payment, transaction) => {
+      if (failOnce) { failOnce = false; throw new Error("checkpoint unavailable"); }
+      checkpoint(id, payment, transaction);
+    };
+    const response = await post(payload());
+    expect(response.status).toBe(409);
+    expect((await response.text()).includes('"opportunities":')).toBe(false);
+    const row = store.pending(100, true)[0];
+    expect(row.state).toBe("UNKNOWN");
+    expect(row.error).toBe("SETTLEMENT_AMBIGUOUS");
+    expect(row.txHash).toBe(hash);
+    expect(confirmCalls).toBe(0);
+    expect(calls.settle).toBe(1);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ event: "payment_settlement_failed", stage: "checkpointHash" }));
+  }, { onDiagnostic: (event) => diagnostics.push(event), confirm: async () => { confirmCalls++; return true; } });
+});
+
+test("failed final SQLite transition stays ambiguous without retrying settlement or releasing content", async () => {
+  let confirmCalls = 0;
+  const diagnostics: Record<string, unknown>[] = [];
+  await fixture(async ({ post, store, calls }) => {
+    const transition = store.transition.bind(store);
+    store.transition = (id, from, to, transaction, error) => {
+      if (to === "SETTLED") throw new Error("final transition unavailable");
+      return transition(id, from, to, transaction, error);
+    };
+    const response = await post(payload());
+    expect(response.status).toBe(409);
+    expect((await response.text()).includes('"opportunities":')).toBe(false);
+    const row = store.pending(100, true)[0];
+    expect(row.state).toBe("UNKNOWN");
+    expect(row.error).toBe("SETTLEMENT_AMBIGUOUS");
+    expect(row.txHash).toBe(hash);
+    expect(confirmCalls).toBe(1);
+    expect(calls.settle).toBe(1);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      event: "payment_settlement_failed", stage: "sqlite_settled_transition",
+    }));
+  }, { onDiagnostic: (event) => diagnostics.push(event), confirm: async () => { confirmCalls++; return true; } });
 });
 
 test("success-shaped settlement with missing payer or contradictory errors stays UNKNOWN", async () => {

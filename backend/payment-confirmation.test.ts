@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { encodeFunctionData, keccak256, toBytes, type PublicClient } from "viem";
 import { eip3009ABI } from "@okxweb3/x402-evm";
 import { MAINNET_ASSETS } from "./payment-identity.ts";
-import { confirmPayment } from "./payment-confirmation.ts";
+import { confirmPayment, confirmPaymentWithRetry, PaymentConfirmationUnavailable } from "./payment-confirmation.ts";
 import { reconcilePayments } from "./durable-payment.ts";
 import { PaymentStore } from "./payment-store.ts";
 import { fingerprint } from "./payment-identity.ts";
@@ -143,12 +143,34 @@ test("rejects missing receipt, altered tx/receipt/block references, nonce, expir
   expect(await confirmPayment(blobTransaction.record, unsupportedType)).toBe(false);
   const base = proof();
   const missingTx = { ...base.client, getTransaction: async () => null } as unknown as PublicClient;
-  expect(await confirmPayment(base.record, missingTx)).toBe(false);
+  await expect(confirmPayment(base.record, missingTx)).rejects.toBeInstanceOf(PaymentConfirmationUnavailable);
   const missing = { ...base.client, getTransactionReceipt: async () => null } as unknown as PublicClient;
-  expect(await confirmPayment(base.record, missing)).toBe(false);
+  await expect(confirmPayment(base.record, missing)).rejects.toBeInstanceOf(PaymentConfirmationUnavailable);
   const brokenRpc = { ...base.client, getTransaction: async () => { throw new Error("rpc unavailable"); } } as unknown as PublicClient;
-  await expect(confirmPayment(base.record, brokenRpc)).rejects.toThrow("rpc unavailable");
+  await expect(confirmPayment(base.record, brokenRpc)).rejects.toBeInstanceOf(PaymentConfirmationUnavailable);
   const unsupportedCall = { ...base, tx: { ...base.tx, input: "0x12345678" } };
   const unsupportedClient = { ...base.client, getTransaction: async () => unsupportedCall.tx } as unknown as PublicClient;
-  await expect(confirmPayment(base.record, unsupportedClient)).rejects.toThrow();
+  expect(await confirmPayment(base.record, unsupportedClient)).toBe(false);
+});
+
+test("marks a missing receipt or block as temporarily unavailable and reruns the full proof", async () => {
+  const fixture = proof();
+  let chainCalls = 0, transactionCalls = 0, receiptCalls = 0, blockCalls = 0;
+  const client = {
+    ...fixture.client,
+    getChainId: async () => { chainCalls++; return 196; },
+    getTransaction: async () => { transactionCalls++; return fixture.tx; },
+    getTransactionReceipt: async () => { receiptCalls++; return receiptCalls === 1 ? null : fixture.receipt; },
+    getBlock: async () => {
+      blockCalls++;
+      if (blockCalls === 1) throw new Error("block not indexed yet");
+      return fixture.block;
+    },
+  } as unknown as PublicClient;
+
+  const confirmation = await confirmPaymentWithRetry(fixture.record, (record) => confirmPayment(record, client), 1000);
+  expect(confirmation).toEqual({ confirmed: true, attempts: 3, lastStage: "block" });
+  expect({ chainCalls, transactionCalls, receiptCalls, blockCalls }).toEqual({
+    chainCalls: 3, transactionCalls: 3, receiptCalls: 3, blockCalls: 2,
+  });
 });
