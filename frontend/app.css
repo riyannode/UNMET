@@ -207,23 +207,6 @@ html { min-width: 320px; overflow-x: clip; scroll-behavior: smooth; scroll-paddi
 body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: clip; background: #fff; }
 #root { position: relative; z-index: 1; width: 100%; max-width: 1880px; margin: 0; padding: 0 32px 28px 24px; }
 #root:has(.unmet-app-shell) { max-width: none; padding: 0; }
-#root:has(.unmet-docs-page) { max-width: none; padding: 0; }
-html:has(.unmet-docs-page) { overflow-y: scroll; }
-.unmet-docs-page { min-height: 100vh; background: #fff; }
-.unmet-docs-soon {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  padding: 112px 24px;
-  font-family: "Satoshi", sans-serif;
-  font-size: clamp(64px, 10vw, 112px);
-  font-weight: 500;
-  letter-spacing: -0.04em;
-  line-height: 1;
-  pointer-events: none;
-}
 .unmet-app-shell ::selection { color: #fff; background: #5b8c32; }
 .legacy-content ::selection { color: var(--text-inverse); background: var(--signal-glow); }
 .legacy-content :focus-visible { outline: 2px solid var(--signal-glow); outline-offset: 3px; }

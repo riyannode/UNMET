@@ -55,11 +55,13 @@ function LandingNavigationLink({
   className,
   animated = false,
   onNavigate,
+  documentNavigation = false,
 }: {
   item: { label: string; href: string; external?: boolean };
   className?: string;
   animated?: boolean;
   onNavigate?: () => void;
+  documentNavigation?: boolean;
 }) {
   const content = animated ? <RollText text={item.label} /> : item.label;
   if (item.external) {
@@ -69,13 +71,13 @@ function LandingNavigationLink({
       </a>
     );
   }
-  if (item.href.startsWith("#")) {
+  if (item.href.startsWith("#") || item.href === ROUTES.docs.href) {
     return <a className={className} href={item.href} onClick={onNavigate}>{content}</a>;
   }
-  return <Link className={className} to={item.href} onClick={onNavigate}>{content}</Link>;
+  return <Link className={className} to={item.href} reloadDocument={documentNavigation} onClick={onNavigate}>{content}</Link>;
 }
 
-export default function UnmetNavigation() {
+export default function UnmetNavigation({ documentNavigation = false }: { documentNavigation?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname, hash } = useLocation();
   const sectionHref = (section: string) => pathname === ROUTES.landing.path ? section : "/" + section;
@@ -103,6 +105,7 @@ export default function UnmetNavigation() {
               <LandingNavigationLink
                 key={item.label}
                 item={item}
+                documentNavigation={documentNavigation}
                 className="unmet-nav-link"
                 animated
                 onNavigate={() => setMenuOpen(false)}
@@ -110,7 +113,7 @@ export default function UnmetNavigation() {
             ))}
           </nav>
 
-          <Link className="unmet-book" to={ROUTES.createDemand.href}>
+          <Link className="unmet-book" to={ROUTES.createDemand.href} reloadDocument={documentNavigation}>
             <RollText text="Create Demand" variant="dark" />
             <MiniBars />
           </Link>
@@ -139,10 +142,11 @@ export default function UnmetNavigation() {
             <LandingNavigationLink
               key={item.label}
               item={item}
+              documentNavigation={documentNavigation}
               onNavigate={() => setMenuOpen(false)}
             />
           ))}
-          <Link className="unmet-mobile-cta" to={ROUTES.createDemand.href}>
+          <Link className="unmet-mobile-cta" to={ROUTES.createDemand.href} reloadDocument={documentNavigation}>
             Create Demand
           </Link>
         </div>

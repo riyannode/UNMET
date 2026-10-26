@@ -59,7 +59,7 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 
 ## System architecture
 
-- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Coming Soon page. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
+- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite, Caddy and Vercel. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
 - The app shell owns wallet/session orchestration. Reown AppKit is configured in `frontend/reown.ts`; `frontend/contract.ts` uses viem for direct RPC reads, approvals and contract writes. Ordinary demand actions do not pass through the Bun API.
 - `backend/AgentDemand.sol` is authoritative for demand state, escrow balances, voting, settlement and refunds. Frontend and backend ABIs are hand-maintained consumers of that contract.
 - `backend/server.ts` exports the Express app and implements API routes, health/readiness, demand indexing and ranking. `backend/start.ts` is the standalone Bun/container entrypoint.

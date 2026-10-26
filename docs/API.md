@@ -2,6 +2,8 @@
 
 Default local base URL: `http://127.0.0.1:8787`.
 
+The public frontend serves the [OpenAPI 3.1 description](../frontend/public/openapi.json), an [RFC 9727 API catalog](../frontend/public/.well-known/api-catalog), a concise [Markdown API reference](../frontend/public/api.md), and [payment guide](../frontend/public/payment.md). These discovery documents describe the deployed API schema. API clients should send `Accept: application/json`; the pinned x402 SDK can return an HTML payment page for a request with both `Accept: text/html` and a Mozilla browser user agent, and that browser-specific 402 may omit `PAYMENT-REQUIRED`.
+
 ## Routes
 
 | Method / route | Payment | Behavior |
@@ -267,6 +269,6 @@ Historical Mainnet E2E acceptance passed for USD₮0, USDC and USDG at commit `c
 
 Default per-IP route quotas are 60 demands and 20 opportunities per 60 seconds, including unpaid challenges. Invalid input precedes quotas/admission; limits and admission precede x402. Limits are process-local. Retry guidance never authorizes a new payment. The error handler sanitizes unexpected execution failures as `CHAIN_RPC_UNAVAILABLE`. Readiness uses `{ ok: false, error: ... }`; normal API failures use `{ error: ... }`; official SDK challenge/payment bodies retain SDK format.
 
-API responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a server-generated `X-Request-ID`. CORS allows configured exact origins and exposes `payment-required` / `payment-response`; it permits `idempotency-key`.
+API responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a server-generated `X-Request-ID`. CORS allows configured exact origins, exposes `link`, `payment-required`, and `payment-response`, and permits `idempotency-key`.
 
 See the canonical [error reference](ERRORS.md) and [operational limits](SELF_HOSTING.md#limits-and-bounded-work).

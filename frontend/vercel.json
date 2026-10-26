@@ -5,7 +5,8 @@
   "outputDirectory": "dist",
   "installCommand": "bun install --frozen-lockfile",
   "rewrites": [
-    { "source": "/docs", "destination": "/" },
+    { "source": "/docs", "destination": "/docs/index.html" },
+    { "source": "/docs/", "destination": "/docs/index.html" },
     { "source": "/market", "destination": "/" },
     { "source": "/market/:demandId", "destination": "/" },
     { "source": "/create-demand", "destination": "/" },

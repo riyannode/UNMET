@@ -110,7 +110,7 @@ function cors(req: Request, res: Response, next: NextFunction) {
   }
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
   res.setHeader("access-control-allow-headers", "content-type,payment-signature,payment-required,payment-response,idempotency-key");
-  res.setHeader("access-control-expose-headers", "payment-required,payment-response");
+  res.setHeader("access-control-expose-headers", "payment-required,payment-response,link");
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
@@ -686,6 +686,17 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.use(requestLog);
   app.use(secureHeaders);
   app.use(cors);
+  app.use((req, res, next) => {
+    if (req.path === "/" || req.path === "/v1/demands" || req.path === "/v1/opportunities") {
+      res.append("Link", [
+        "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"; profile=\"https://www.rfc-editor.org/info/rfc9727\"",
+        "</openapi.json>; rel=\"service-desc\"; type=\"application/vnd.oai.openapi+json;version=3.1\"",
+        "</docs>; rel=\"service-doc\"",
+        "</payment.md>; rel=\"service-doc\"; title=\"Payment guide\"",
+      ]);
+    }
+    next();
+  });
   app.use(express.json({ limit: "32kb", strict: true }));
 
   type Health = { status: number; body: Record<string, unknown> };

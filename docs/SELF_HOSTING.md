@@ -4,6 +4,8 @@ One Compose stack runs a Bun/Express API and Caddy containing the production Rea
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
 
+The public frontend build includes `robots.txt`, `sitemap.xml`, an RFC 9727 API catalog, OpenAPI, and Markdown API/payment guides. The default canonical metadata and public URLs use `https://unmetxyz.my.id`; when self-hosting on another public origin, update the origin in `frontend/main.tsx`, `docker/Caddyfile` deployment settings, `frontend/public/robots.txt`, `frontend/public/sitemap.xml`, `frontend/public/.well-known/api-catalog`, and `frontend/docs/index.html`. Caddy serves known public files before its SPA fallback and returns 404 for unsupported `/.well-known/*` paths; ACME challenge paths remain available to Caddy's certificate handler.
+
 ## WSL2 prerequisites
 
 On Windows, enable Ubuntu WSL2 and Docker Desktop integration for that distribution. Alternatively use a compatible Docker Engine and Compose plugin inside Linux; do not start a second daemon alongside working Docker Desktop integration.
@@ -69,7 +71,7 @@ Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`
 
 ## Routing and proxy trust
 
-Caddy handles /v1, /v1/*, /live, /ready and /health before static fallback. Unknown versioned API endpoints return Express JSON 404. Other paths use index.html, preserving existing React routes and its UI 404. Hashed /assets/* are cached for one year; HTML revalidates after deployment.
+Caddy serves the API catalog and `/docs` static documentation before other handlers, then handles `/v1`, `/v1/*`, `/live`, `/ready` and `/health` before SPA fallback. Unsupported `/.well-known/*` routes return 404, except ACME challenge paths. Unknown versioned API endpoints return Express JSON 404. Other paths use `index.html`, preserving existing React routes and its UI 404. Hashed `/assets/*` are cached for one year; HTML revalidates after deployment.
 
 Caddy replaces X-Forwarded-For with the actual TCP peer address. Express trusts only Caddy's fixed internal IP, not an arbitrary hop count. Direct access from an untrusted API peer ignores forwarding headers, including forged Vercel identity headers. Keep api without published ports and do not attach arbitrary containers to its network. Another CDN/proxy requires a separately designed trusted client-IP chain. CORS is not authentication or abuse protection.
 
@@ -78,6 +80,18 @@ On Vercel, the platform-owned VERCEL=1 runtime flag selects a validated single-I
 Caddy forwards x402 headers/statuses unchanged. Its upstream response-header deadline is 90 seconds; RPC/facilitator calls have shorter independent deadlines. Interrupted paid requests may have ambiguous settlement state: never automatically replay signed payments.
 
 Both runtimes use non-root users and read-only root filesystems. Caddy binds unprivileged container ports 8080/8443, mapped to host 80/443. Its process probe uses unpublished port 8090. Only certificate/config volumes and small temporary filesystems are writable.
+
+### Cloudflare proxy activation gate
+
+Cloudflare proxying is a production change and requires separate operational authorization before changing production DNS from DNS-only to proxied. The current deployment is DNS-only. Do not enable the proxy until staging/runtime evidence demonstrates all of the following for the actual ingress and origin path:
+
+- Cloudflare ingress is authenticated/restricted as designed, and the complete trusted-proxy chain through Cloudflare and Caddy/Express assigns the original client IP. Test spoofed `CF-Connecting-IP` and `X-Forwarded-For` values from direct or untrusted requests to confirm they cannot alter identity or bypass limits.
+- Per-client quotas remain correct behind shared Cloudflare edges; clients do not collapse into an edge-wide quota.
+- WAF permits real programmatic JSON requests without JavaScript challenges or CAPTCHA, while application validation and quotas remain active.
+- API responses bypass caching and use `no-store`, including 402 challenges, paid 200 responses, and errors, regardless of payment headers.
+- Payment request headers and response status, body, and payment headers are preserved. The proxy does not retry requests or risk double settlement; ambiguous/unknown payment outcomes remain fail-closed.
+
+Record the tested configuration and runtime evidence before requesting the production DNS change. Local fixtures and DNS-only public checks do not pass this gate or establish proxied behavior. Synthetic fixtures may validate forwarding without a real payment; live paid acceptance requires separate explicit authorization.
 
 ## Limits and bounded work
 

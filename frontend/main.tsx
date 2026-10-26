@@ -1,9 +1,8 @@
-import { lazy, StrictMode, Suspense } from "react";
+import { lazy, StrictMode, Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Route, Routes, useLocation } from "react-router";
 import { Toaster } from "sonner";
 import UnmetLanding from "./UnmetLanding.tsx";
-import UnmetNavigation from "./UnmetNavigation.tsx";
 import { ROUTES } from "./routing.ts";
 import "./app.css";
 
@@ -28,13 +27,18 @@ function NotFoundRoute() {
   );
 }
 
-function DocsRoute() {
-  return (
-    <main className="unmet-docs-page" aria-label="Documentation">
-      <UnmetNavigation />
-      <h1 className="unmet-docs-soon">Coming Soon</h1>
-    </main>
-  );
+function CanonicalRoute() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.append(canonical);
+    }
+    canonical.href = "https://unmetxyz.my.id" + (pathname === "/" ? "/" : pathname);
+  }, [pathname]);
+  return null;
 }
 
 const el = document.getElementById("root");
@@ -43,9 +47,9 @@ if (!el) throw new Error("root missing");
 createRoot(el).render(
   <StrictMode>
     <BrowserRouter>
+      <CanonicalRoute />
       <Routes>
         <Route path={ROUTES.landing.path} element={<UnmetLanding />} />
-        <Route path={ROUTES.docs.path} element={<DocsRoute />} />
         <Route element={<Suspense fallback={<WorkspaceLoading />}><App /></Suspense>}>
           <Route id="market" path={ROUTES.market.path} element={<MarketRoute />} />
           <Route id="demand-detail" path={ROUTES.demandDetail.path} element={<DemandDetailRoute />} />

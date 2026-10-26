@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { encodeEventTopics, type Address, type PublicClient } from "viem";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-core/server";
@@ -243,6 +244,108 @@ describe("Vercel Express entrypoint", () => {
 });
 
 describe("free and paid discovery responses", () => {
+  test("API discovery links preserve synthetic x402 challenge and settlement headers", async () => {
+    const indexState = createDemandIndexState();
+    indexState.ready = true;
+    indexState.entries.set("1", syntheticEntry(1n));
+    indexState.lastIndexedBlock = 42n;
+    const app = createApp({ middleware: (req, res, next) => {
+      if (!req.get("payment-signature")) {
+        res.setHeader("PAYMENT-REQUIRED", "e30=");
+        res.status(402).end();
+        return;
+      }
+      res.setHeader("PAYMENT-RESPONSE", "e30=");
+      next();
+    } }, {
+      config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_OPPORTUNITIES: "1000" }),
+      market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken },
+      client: fakeClient(), indexState, now: () => fixedNow,
+    });
+    const server = app.listen(0, "127.0.0.1");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test listener unavailable");
+    try {
+      const base = `http://127.0.0.1:${address.port}`;
+      const get = await fetch(base + "/v1/demands");
+      expect(get.status).toBe(200);
+      expect(get.headers.get("link")).toContain("rel=\"api-catalog\"");
+      const head = await fetch(base + "/v1/demands", { method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(head.headers.get("link")).toContain("rel=\"service-desc\"");
+      const paid = await fetch(base + "/v1/opportunities", {
+        method: "POST", headers: { "content-type": "application/json", accept: "text/markdown", origin: "http://localhost:5173" }, body: "{}",
+      });
+      expect(paid.status).toBe(402);
+      expect(paid.headers.get("content-type")).toBeNull();
+      expect(paid.headers.get("cache-control")).toBe("no-store");
+      expect(paid.headers.get("link")).toContain("rel=\"api-catalog\"");
+      expect(paid.headers.get("payment-required")).toBe("e30=");
+      expect(paid.headers.get("access-control-expose-headers")).toContain("link");
+      expect(await paid.text()).toBe("");
+      const settled = await fetch(base + "/v1/opportunities", {
+        method: "POST", headers: { "content-type": "application/json", "payment-signature": "synthetic", accept: "text/markdown" }, body: "{}",
+      });
+      expect(settled.status).toBe(200);
+      expect(settled.headers.get("content-type")).toContain("application/json");
+      expect(settled.headers.get("cache-control")).toBe("no-store");
+      expect(settled.headers.get("link")).toContain("rel=\"service-desc\"");
+      expect(settled.headers.get("payment-response")).toBe("e30=");
+      const result = await settled.json();
+      expect(result.opportunities).toHaveLength(1);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("published linkset and OpenAPI describe only the implemented public endpoints", () => {
+    const catalog = JSON.parse(readFileSync(new URL("../frontend/public/.well-known/api-catalog", import.meta.url), "utf8"));
+    expect(catalog.linkset[0].anchor).toBe("https://unmetxyz.my.id/.well-known/api-catalog");
+    expect(catalog.linkset[0].item.map((link: { href: string }) => link.href)).toEqual([
+      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/opportunities",
+    ]);
+    expect(catalog.linkset.every((entry: { anchor: string }) => new URL(entry.anchor).protocol === "https:")).toBe(true);
+    expect(catalog.linkset.slice(1).every((entry: Record<string, Array<{ href: string }>>) =>
+      Object.values(entry).filter(Array.isArray).flat().every((link) => new URL(link.href).protocol === "https:"))).toBe(true);
+    expect(catalog.linkset[2]["service-doc"].some((link: { href: string }) => link.href === "https://unmetxyz.my.id/payment.md")).toBe(true);
+    const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
+    expect(spec.info.description).toContain("Mozilla browser user agent");
+    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/opportunities"]);
+    expect(spec.paths["/.well-known/api-catalog"].get.responses["200"].content).toHaveProperty("application/linkset+json");
+    expect(spec.paths["/v1/opportunities"].post.responses).toHaveProperty("402");
+    expect(spec.paths["/v1/opportunities"].post.responses["402"].headers).toHaveProperty("PAYMENT-REQUIRED");
+    expect(Object.keys(spec.paths["/v1/opportunities"].post.responses["402"].content)).toEqual(["application/json", "text/html"]);
+    expect(spec.paths["/v1/opportunities"].post.responses["200"].headers).toHaveProperty("PAYMENT-RESPONSE");
+    expect(spec.paths["/v1/opportunities"].post.parameters).toContainEqual(expect.objectContaining({ name: "PAYMENT-SIGNATURE", required: false }));
+    expect(spec.paths["/v1/opportunities"].post.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", required: false }));
+    const query = spec.components.schemas.OpportunityQuery;
+    expect(query.additionalProperties).toBe(false);
+    expect(query.properties.status.description).toContain("case-insensitive");
+    expect(query.properties.status.description).toContain("Omit the property");
+    expect(spec.paths["/v1/opportunities"].post.responses["200"].content["application/json"].schema.$ref).toBe("#/components/schemas/OpportunitiesResponse");
+    expect(Object.keys(spec.components.schemas.Demand.properties)).toEqual([
+      "demandId", "capability", "currentEscrow", "fundedBounty", "reviewCommitted", "supporters", "expectedCalls", "maxUnitPrice", "deadline", "status", "creator", "builder", "approvalWeight", "approvalRequired", "rejectionWeight", "rejectionThreshold", "candidateRejected", "score",
+    ]);
+    const robots = readFileSync(new URL("../frontend/public/robots.txt", import.meta.url), "utf8");
+    const sitemap = readFileSync(new URL("../frontend/public/sitemap.xml", import.meta.url), "utf8");
+    const html = readFileSync(new URL("../frontend/index.html", import.meta.url), "utf8");
+    expect(robots).toContain("Content-Signal: search=yes, ai-input=yes, ai-train=no");
+    expect(robots).toContain("Sitemap: https://unmetxyz.my.id/sitemap.xml");
+    expect(sitemap).toContain("https://unmetxyz.my.id/");
+    expect(sitemap).toContain("https://unmetxyz.my.id/docs");
+    expect(html).toContain('rel="service-desc"');
+    expect(html).not.toContain('rel="canonical"');
+    const staticDocs = readFileSync(new URL("../frontend/docs/index.html", import.meta.url), "utf8");
+    const paymentGuide = readFileSync(new URL("../frontend/public/payment.md", import.meta.url), "utf8");
+    expect(staticDocs).toContain('<link rel="canonical" href="https://unmetxyz.my.id/docs"');
+    expect(staticDocs).toContain("GET /v1/demands");
+    expect(paymentGuide).toContain("PAYMENT-RESPONSE");
+    expect(paymentGuide).toContain("USDG");
+    expect(paymentGuide).toContain("Idempotency-Key");
+    expect(paymentGuide).toContain("Ethereum L1 finality");
+  });
+
   test("free keeps exactly the legacy 18 row fields and caps results at 50", async () => {
     await routeFixture(Array.from({ length: 55 }, (_, index) => syntheticEntry(BigInt(index + 1))), async (url, marketCalls) => {
       const response = await fetch(url + "/v1/demands");
@@ -573,6 +676,17 @@ describe("independent market and x402 networks", () => {
         amount: (option.price as { amount: string }).amount, payTo: option.payTo,
         maxTimeoutSeconds: 300, extra: (option.price as { extra: unknown }).extra,
       })));
+      const browser = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
+        method: "POST", headers: { accept: "text/html", "user-agent": "Mozilla/5.0" },
+      });
+      expect(browser.status).toBe(402);
+      expect(browser.headers.get("content-type")).toContain("text/html");
+      expect(browser.headers.get("payment-required")).toBeNull();
+      const alias = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities/`, {
+        method: "POST", headers: { accept: "application/json" },
+      });
+      expect(alias.status).toBe(402);
+      expect(alias.headers.get("payment-required")).toBeTruthy();
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
