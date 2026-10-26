@@ -3,9 +3,11 @@
   "info": {
     "title": "UNMET Demand API",
     "version": "1.0.0",
-    "description": "Public demand reads and OKX-paid demand intelligence. Machine-readable API resources retain JSON regardless of Accept, including text/markdown. The pinned x402 SDK may return an HTML payment page for POST requests that include both Accept: text/html and a Mozilla browser user agent. POST request bodies are limited to 32 KiB."
+    "description": "Public demand reads and OKX-paid demand intelligence. Machine-readable API resources retain JSON regardless of Accept, including text/markdown. The pinned x402 SDK may return an HTML payment page for POST requests that include both Accept: text/html and a Mozilla browser user agent. POST request bodies are limited to 32 KiB.",
+    "x-guidance": "GET /v1/demands is free and returns public demand records. POST /v1/opportunities returns paid ranked records with score breakdowns, economic signals, and reasoning; send a JSON filter body to choose minimum bounty/supporters, status, sort, and result limit. Send Content-Type: application/json and Accept: application/json. A request without payment returns HTTP 402 with an unsigned x402 v2 challenge in PAYMENT-REQUIRED (base64-encoded JSON). Decode it, choose one listed accept option, obtain explicit user authorization, sign that exact authorization with a compatible wallet, then retry the same POST and body with it in PAYMENT-SIGNATURE. The challenge recipient, network, asset, amount, and validity window are authoritative; do not substitute terms. Never reuse an authorization after an ambiguous result or pay again to bypass a conflict. There is no public operation-status endpoint; ask the operator to investigate an ambiguous operation before acting again. Payment buys demand intelligence only; it does not fund a demand or buy service execution."
   },
   "servers": [{ "url": "/" }],
+  "externalDocs": {"description": "API and payment documentation", "url": "https://unmetxyz.my.id/docs"},
   "paths": {
     "/.well-known/api-catalog": {
       "get": {
@@ -49,6 +51,7 @@
       "post": {
         "operationId": "rankOpportunities",
         "summary": "Get paid demand intelligence",
+        "x-payment-info": {"price":{"mode":"fixed","currency":"USD","amount":"0.01"},"protocols":[{"x402":{"version":2,"accepts":[{"scheme":"exact","network":"eip155:196","asset":"0x779ded0c9e1022225f8e0630b35a9b54be713736","amount":"10000","extra":{"name":"USD₮0","version":"1"}},{"scheme":"exact","network":"eip155:196","asset":"0xb6ceceab302e2e4948951ee7843fc24e92933061","amount":"10000","extra":{"name":"USDC","version":"2"}},{"scheme":"exact","network":"eip155:196","asset":"0x4ae46a509f6b1d9056937ba4500cb143933d2dc8","amount":"10000","extra":{"name":"Global Dollar","version":"1"}}]}}]},
         "description": "Official OKX x402 payment is required. For machine clients, send Accept: application/json. An unpaid request, including a valid empty object, receives HTTP 402 with the challenge in PAYMENT-REQUIRED. The pinned SDK may return an HTML payment page without PAYMENT-REQUIRED when both Accept: text/html and a Mozilla browser user agent are present. Follow the returned JSON challenge and send the authorization in PAYMENT-SIGNATURE. Payment does not fund a demand or buy service execution.",
         "parameters": [
           { "name": "PAYMENT-SIGNATURE", "in": "header", "required": false, "description": "x402 v2 payment authorization. Omit to receive the 402 challenge.", "schema": { "type": "string" } },

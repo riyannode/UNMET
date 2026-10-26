@@ -20,15 +20,7 @@ For machine requests, the server returns HTTP `402` and an x402 v2 challenge in 
 
 Machine clients should send `Accept: application/json`. The pinned x402 SDK has a browser-specific branch: when a request includes both `Accept: text/html` and a Mozilla browser user agent, it may return an HTML payment page without `PAYMENT-REQUIRED`.
 
-The source configuration currently advertises three exact Mainnet options on `eip155:196`, each costing `10000` atomic units (6 decimals), or `$0.01`:
-
-| Token | Contract on X Layer Mainnet |
-| --- | --- |
-| USD₮0 | `0x779ded0c9e1022225f8e0630b35a9b54be713736` |
-| USDC | `0xb6ceceab302e2e4948951ee7843fc24e92933061` |
-| USDG | `0x4ae46a509f6b1d9056937ba4500cb143933d2dc8` |
-
-The challenge returned by the running service is authoritative; supported options may differ between releases or environments. In particular, never infer the receiver from the token or contract treasury. Clients need x402 v2 and native EIP-3009 exact-payment support for an offered chain and token; OKX operates the service's facilitator, but the client does not have to use an OKX-specific wallet.
+The [OpenAPI description](/openapi.json) includes machine-readable `x-payment-info` discovery hints for the configured fixed USD price and x402 version, scheme, network, assets, and amounts. It omits the recipient and timeout; use the unsigned `PAYMENT-REQUIRED` challenge from the running service for those authoritative terms. The current production profile uses USD₮0, USDC, and USDG on X Layer Mainnet. Clients need x402 v2 and native EIP-3009 exact-payment support for an offered chain and token; OKX operates the service's facilitator, but the client does not have to use an OKX-specific wallet.
 
 After the client authorizes an offered option, it replays the same method, path, and JSON body with the standard `PAYMENT-SIGNATURE` header. A successful response returns the paid JSON and a base64-encoded settlement result in `PAYMENT-RESPONSE`. Decode that result as x402 metadata; it is not by itself proof of Ethereum L1 finality.
 

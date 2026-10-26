@@ -11,6 +11,8 @@ ENV NODE_ENV=production
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/backend/node_modules ./backend/node_modules
 COPY backend/start.ts backend/server.ts backend/contract.ts backend/config.ts backend/admission.ts backend/upstream.ts backend/payment-store.ts backend/payment-error.ts backend/payment-identity.ts backend/payment-confirmation.ts backend/durable-payment.ts backend/payment-ops.ts backend/package.json ./backend/
+COPY backend/payment-discovery.ts backend/payment-config.ts ./backend/
+COPY frontend/public/openapi.json ./frontend/public/openapi.json
 RUN mkdir /data && chown bun:bun /data && chmod 700 /data
 USER bun
 EXPOSE 8787
