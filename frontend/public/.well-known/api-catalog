@@ -1,0 +1,28 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://unmetxyz.my.id/.well-known/api-catalog",
+      "item": [
+        { "href": "https://unmetxyz.my.id/v1/demands" },
+        { "href": "https://unmetxyz.my.id/v1/opportunities" }
+      ]
+    },
+    {
+      "anchor": "https://unmetxyz.my.id/v1/demands",
+      "service-desc": [{ "href": "https://unmetxyz.my.id/openapi.json", "type": "application/vnd.oai.openapi+json;version=3.1" }],
+      "service-doc": [
+        { "href": "https://unmetxyz.my.id/docs", "type": "text/html" },
+        { "href": "https://unmetxyz.my.id/api.md", "type": "text/markdown" }
+      ]
+    },
+    {
+      "anchor": "https://unmetxyz.my.id/v1/opportunities",
+      "service-desc": [{ "href": "https://unmetxyz.my.id/openapi.json", "type": "application/vnd.oai.openapi+json;version=3.1" }],
+      "service-doc": [
+        { "href": "https://unmetxyz.my.id/docs", "type": "text/html" },
+        { "href": "https://unmetxyz.my.id/api.md", "type": "text/markdown" },
+        { "href": "https://unmetxyz.my.id/payment.md", "type": "text/markdown", "title": "Payment guide" }
+      ]
+    }
+  ]
+}

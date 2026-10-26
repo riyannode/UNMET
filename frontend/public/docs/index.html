@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="UNMET public demand API and paid demand intelligence documentation." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <title>UNMET API Documentation</title>
+    <style>
+      body { max-width: 840px; margin: 48px auto; padding: 0 24px; color: #192800; font: 18px/1.6 system-ui, sans-serif; }
+      h1, h2 { line-height: 1.15; }
+      h1 { font-size: clamp(2.5rem, 7vw, 4rem); }
+      code, pre { font-family: ui-monospace, monospace; }
+      pre { overflow-x: auto; padding: 16px; background: #f3f6ef; }
+      a { color: #31551f; }
+      li { margin-block: 8px; }
+    </style>
+  </head>
+  <body>
+    <p><a href="/">UNMET home</a></p>
+    <h1>UNMET API documentation</h1>
+    <p>UNMET exposes public chain-derived demands and a separate paid endpoint for ranked demand intelligence.</p>
+    <h2>Free demand data</h2>
+    <p><code>GET /v1/demands</code> returns up to 50 public demands, with no payment. Its JSON contains chain metadata and legacy public demand fields; it does not include the paid ranking analysis.</p>
+    <h2>Paid demand intelligence</h2>
+    <p><code>POST /v1/opportunities</code> accepts a JSON filter object and returns ranked opportunities with score breakdowns, economic signals, and deterministic cautions.</p>
+    <pre><code>curl -i "$API_ORIGIN/v1/opportunities" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  --data '{}'</code></pre>
+    <p>An unpaid request returns HTTP 402 and an x402 challenge in <code>PAYMENT-REQUIRED</code>. Use an x402-compatible OKX client to follow the challenge, then replay the same request with <code>PAYMENT-SIGNATURE</code>. A successful response includes <code>PAYMENT-RESPONSE</code>. Payment buys analysis only; it does not fund a demand or purchase service execution.</p>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI 3.1 machine-readable specification</a></li>
+      <li><a href="/api.md">Complete API reference (Markdown)</a></li>
+      <li><a href="/payment.md">Payment and recovery guide (Markdown)</a></li>
+      <li><a href="/.well-known/api-catalog">RFC 9727 API catalog</a></li>
+    </ul>
+  </body>
+</html>

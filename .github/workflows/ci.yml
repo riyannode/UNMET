@@ -98,3 +98,15 @@ jobs:
       - run: docker compose config --quiet
       - run: docker compose build api
       - run: docker compose build web
+      - name: Smoke test packaged discovery routes
+        run: |
+          set -euo pipefail
+          container="unmet-web-discovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          temp="$RUNNER_TEMP/unmet-web-discovery"
+          mkdir -p "$temp/dist"
+          docker create --name "$container" "unmet-web:${IMAGE_TAG}" >/dev/null
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/bin/caddy" "$temp/caddy"
+          docker cp "$container:/srv/." "$temp/dist/"
+          chmod +x "$temp/caddy"
+          CADDY_BIN="$temp/caddy" DIST_DIR="$temp/dist" python3 scripts/check-discovery.py

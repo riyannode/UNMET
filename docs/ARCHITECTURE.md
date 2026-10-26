@@ -15,7 +15,7 @@ flowchart TD
     B -->|official verify / settle / status| O[Official OKX x402: Mainnet billing rail]
 ```
 
-The browser's demand actions use `frontend/contract.ts` directly, not the Bun API. `frontend/main.tsx` lazy-loads app routes; `/` is the landing page, `/docs` a placeholder, `/market`, `/market/:demandId`, `/create-demand`, `/analytics` are app routes.
+The browser's demand actions use `frontend/contract.ts` directly, not the Bun API. `frontend/main.tsx` lazy-loads app routes; `/` is the landing page, `/docs` links to the public API documentation served from `frontend/public/docs/index.html`, and `/market`, `/market/:demandId`, `/create-demand`, `/analytics` are app routes.
 
 Docker starts `backend/start.ts` through `docker/Dockerfile.api`; Caddy serves the web image and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready`. One **Bun API replica** owns a local payment volume. Indexes, quotas and admission limits are process-local. SQLite and OKX do not share an atomic transaction; no distributed exactly-once guarantee is made. See [Self-hosting](SELF_HOSTING.md) and [Payment recovery](PAYMENT_RECOVERY.md).
 

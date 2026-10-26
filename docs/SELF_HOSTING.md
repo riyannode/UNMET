@@ -4,6 +4,8 @@ One Compose stack runs a Bun/Express API and Caddy containing the production Rea
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
 
+The public frontend build includes `robots.txt`, `sitemap.xml`, an RFC 9727 API catalog, OpenAPI, and Markdown API/payment guides. The default canonical metadata and public URLs use `https://unmetxyz.my.id`; when self-hosting on another public origin, update the origin in `frontend/main.tsx`, `docker/Caddyfile` deployment settings, `frontend/public/robots.txt`, `frontend/public/sitemap.xml`, `frontend/public/.well-known/api-catalog`, and `frontend/public/docs/index.html`. Caddy serves known public files before its SPA fallback and returns 404 for unsupported `/.well-known/*` paths; ACME challenge paths remain available to Caddy's certificate handler.
+
 ## WSL2 prerequisites
 
 On Windows, enable Ubuntu WSL2 and Docker Desktop integration for that distribution. Alternatively use a compatible Docker Engine and Compose plugin inside Linux; do not start a second daemon alongside working Docker Desktop integration.
@@ -69,7 +71,7 @@ Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`
 
 ## Routing and proxy trust
 
-Caddy handles /v1, /v1/*, /live, /ready and /health before static fallback. Unknown versioned API endpoints return Express JSON 404. Other paths use index.html, preserving existing React routes and its UI 404. Hashed /assets/* are cached for one year; HTML revalidates after deployment.
+Caddy serves the API catalog and `/docs` static documentation before other handlers, then handles `/v1`, `/v1/*`, `/live`, `/ready` and `/health` before SPA fallback. Unsupported `/.well-known/*` routes return 404, except ACME challenge paths. Unknown versioned API endpoints return Express JSON 404. Other paths use `index.html`, preserving existing React routes and its UI 404. Hashed `/assets/*` are cached for one year; HTML revalidates after deployment.
 
 Caddy replaces X-Forwarded-For with the actual TCP peer address. Express trusts only Caddy's fixed internal IP, not an arbitrary hop count. Direct access from an untrusted API peer ignores forwarding headers, including forged Vercel identity headers. Keep api without published ports and do not attach arbitrary containers to its network. Another CDN/proxy requires a separately designed trusted client-IP chain. CORS is not authentication or abuse protection.
 

@@ -1,0 +1,127 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "UNMET Demand API",
+    "version": "1.0.0",
+    "description": "Public demand reads and OKX-paid demand intelligence. Machine-readable API resources retain JSON regardless of Accept, including text/markdown. The pinned x402 SDK may return an HTML payment page for POST requests that include both Accept: text/html and a Mozilla browser user agent. POST request bodies are limited to 32 KiB."
+  },
+  "servers": [{ "url": "/" }],
+  "paths": {
+    "/.well-known/api-catalog": {
+      "get": {
+        "operationId": "apiCatalog",
+        "summary": "Read the API catalog",
+        "responses": {
+          "200": {
+            "description": "RFC 9727 API catalog linkset.",
+            "content": {
+            "application/linkset+json": {
+                "schema": { "type": "object", "required": ["linkset"], "properties": { "linkset": { "type": "array", "items": { "type": "object" } } } }
+              }
+            }
+          }
+        }
+      },
+      "head": { "operationId": "apiCatalogHead", "responses": { "200": { "description": "API catalog metadata without a response body.", "headers": { "Link": { "$ref": "#/components/headers/ApiCatalogLink" }, "Content-Type": { "schema": { "type": "string", "const": "application/linkset+json; profile=\"https://www.rfc-editor.org/info/rfc9727\"" } } } } } }
+    },
+    "/live": {
+      "get": { "operationId": "liveness", "summary": "Check process liveness", "responses": { "200": { "description": "The API process is responding.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LiveResponse" } } } } } }
+    },
+    "/health": {
+      "get": { "operationId": "health", "summary": "Check market dependency health", "responses": { "200": { "description": "Market RPC and configured contract are available.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } } }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/ready": {
+      "get": { "operationId": "readiness", "summary": "Check service readiness", "responses": { "200": { "description": "Payment and market dependencies are ready.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } } }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/v1/demands": {
+      "get": {
+        "operationId": "listDemands",
+        "summary": "List public demands",
+        "responses": {
+          "200": { "description": "Up to 50 public chain-derived demands.", "headers": { "Link": { "$ref": "#/components/headers/DiscoveryLinks" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DemandsResponse" } } } },
+          "429": { "description": "Rate limit exceeded; respect Retry-After before retrying.", "headers": { "Retry-After": { "$ref": "#/components/headers/RetryAfter" }, "Link": { "$ref": "#/components/headers/DiscoveryLinks" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
+      "head": { "operationId": "listDemandsHead", "responses": { "200": { "description": "Demand response metadata without a body.", "headers": { "Link": { "$ref": "#/components/headers/DiscoveryLinks" } } } } }
+    },
+    "/v1/opportunities": {
+      "post": {
+        "operationId": "rankOpportunities",
+        "summary": "Get paid demand intelligence",
+        "description": "Official OKX x402 payment is required. For machine clients, send Accept: application/json. An unpaid request, including a valid empty object, receives HTTP 402 with the challenge in PAYMENT-REQUIRED. The pinned SDK may return an HTML payment page without PAYMENT-REQUIRED when both Accept: text/html and a Mozilla browser user agent are present. Follow the returned JSON challenge and send the authorization in PAYMENT-SIGNATURE. Payment does not fund a demand or buy service execution.",
+        "parameters": [
+          { "name": "PAYMENT-SIGNATURE", "in": "header", "required": false, "description": "x402 v2 payment authorization. Omit to receive the 402 challenge.", "schema": { "type": "string" } },
+          { "name": "Idempotency-Key", "in": "header", "required": false, "description": "Optional with durable SQLite storage; it binds the verified payer, network, and validated operation but does not replay the paid response.", "schema": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[\\x21-\\x7E]{1,128}$" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpportunityQuery" } } } },
+        "responses": {
+          "200": { "description": "Paid ranked analysis.", "headers": { "PAYMENT-RESPONSE": { "description": "Base64-encoded JSON settlement response from the x402 facilitator.", "schema": { "type": "string" } }, "Link": { "$ref": "#/components/headers/DiscoveryLinks" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpportunitiesResponse" } } } },
+          "400": { "description": "Invalid JSON, filter field, or payment authorization.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "402": { "description": "Payment is required. Machine requests receive the x402 v2 challenge in PAYMENT-REQUIRED and the body may be empty or a JSON object. Browser-like requests with Accept: text/html and a Mozilla user agent may receive an HTML payment page without PAYMENT-REQUIRED.", "headers": { "PAYMENT-REQUIRED": { "description": "Base64-encoded x402 v2 payment requirements; omitted by the SDK browser payment-page branch.", "schema": { "type": "string" } }, "Link": { "$ref": "#/components/headers/DiscoveryLinks" } }, "content": { "application/json": { "schema": { "type": "object" } }, "text/html": { "schema": { "type": "string" } } } },
+          "409": { "description": "Payment operation or authorization conflicts with an existing operation. Do not submit another payment to bypass the conflict.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "429": { "description": "Rate limit exceeded before payment verification; respect Retry-After before retrying.", "headers": { "Retry-After": { "$ref": "#/components/headers/RetryAfter" }, "Link": { "$ref": "#/components/headers/DiscoveryLinks" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "413": { "description": "Request body exceeds the 32 KiB limit.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "415": { "description": "Content-Type must be application/json.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "headers": {
+      "DiscoveryLinks": { "description": "Links to the API catalog, OpenAPI description, and human documentation.", "schema": { "type": "string" } },
+      "ApiCatalogLink": { "description": "Identifies the publisher API catalog.", "schema": { "type": "string", "const": "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"" } },
+      "RetryAfter": { "description": "Seconds until retry is appropriate.", "schema": { "type": "integer", "minimum": 1 } }
+    },
+    "schemas": {
+      "ErrorResponse": { "type": "object", "required": ["error"], "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } } } },
+      "LiveResponse": { "type": "object", "required": ["ok", "name"], "properties": { "ok": { "const": true }, "name": { "const": "UNMET" } } },
+      "HealthResponse": { "type": "object", "required": ["ok", "name", "chainId", "contract", "latestBlock"], "properties": { "ok": { "const": true }, "name": { "const": "UNMET" }, "chainId": { "type": "integer" }, "contract": { "type": "string" }, "latestBlock": { "type": "string" } } },
+      "OpportunityQuery": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "minBounty": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,6})?$", "default": "0", "description": "Minimum committed amount, decimal units with at most 6 fractional digits." },
+          "minSupporters": { "type": "integer", "minimum": 0, "maximum": 4294967295, "default": 1 },
+          "status": { "type": "string", "pattern": "^(?:[oO][pP][eE][nN]|[sS][uU][bB][mM][iI][tT][tT][eE][dD]|[rR][eE][aA][dD][yY]|[rR][eE][jJ][eE][cC][tT][eE][dD]|[eE][xX][pP][iI][rR][eE][dD]|[fF][uU][lL][fF][iI][lL][lL][eE][dD]|[cC][lL][oO][sS][eE][dD])$", "default": "open", "description": "Status comparison is case-insensitive. Omit the property to use the default status filter." },
+          "sort": { "type": "string", "enum": ["bounty", "supporters", "calls", "deadline", "score"], "default": "bounty" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+        }
+      },
+      "Demand": {
+        "type": "object",
+        "required": ["demandId", "capability", "currentEscrow", "fundedBounty", "reviewCommitted", "supporters", "expectedCalls", "maxUnitPrice", "deadline", "status", "creator", "builder", "approvalWeight", "approvalRequired", "rejectionWeight", "rejectionThreshold", "candidateRejected", "score"],
+        "properties": {
+          "demandId": { "type": "string" }, "capability": { "type": "string" }, "currentEscrow": { "type": "string" }, "fundedBounty": { "type": "string" }, "reviewCommitted": { "type": "string" }, "supporters": { "type": "integer" }, "expectedCalls": { "type": "string" }, "maxUnitPrice": { "type": "string" }, "deadline": { "type": ["string", "null"], "description": "Serialized ISO 8601 deadline or null when outside the JavaScript date range; extended years are possible." }, "status": { "type": "string" }, "creator": { "type": "string" }, "builder": { "type": "string" }, "approvalWeight": { "type": "string" }, "approvalRequired": { "type": "string" }, "rejectionWeight": { "type": "string" }, "rejectionThreshold": { "type": "string" }, "candidateRejected": { "type": "boolean" }, "score": { "type": "number" }
+        }
+      },
+      "DemandsResponse": {
+        "type": "object", "required": ["chainId", "contract", "blockNumber", "generatedAt", "demands"],
+        "properties": { "chainId": { "type": "integer" }, "contract": { "type": "string" }, "blockNumber": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" }, "demands": { "type": "array", "maxItems": 50, "items": { "$ref": "#/components/schemas/Demand" } } }
+      },
+      "OpportunitiesResponse": {
+        "type": "object", "required": ["chainId", "contract", "blockNumber", "generatedAt", "analysis", "opportunities"],
+        "properties": {
+          "chainId": { "type": "integer" }, "contract": { "type": "string" }, "blockNumber": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" },
+          "analysis": { "type": "object", "required": ["poolSize", "rankingScope", "scoreVersion", "marketToken", "tokenDecimals"], "properties": { "poolSize": { "type": "integer" }, "rankingScope": { "type": "string" }, "scoreVersion": { "type": "string" }, "marketToken": { "type": "string" }, "tokenDecimals": { "type": "integer" } } },
+          "opportunities": { "type": "array", "items": { "allOf": [
+            { "$ref": "#/components/schemas/Demand" },
+            { "type": "object", "required": ["rank", "scoreBreakdown", "economicSignals", "reasoning"], "properties": {
+              "rank": { "type": "integer" },
+              "scoreBreakdown": { "type": "object", "required": ["funding", "expectedCalls", "supporters", "deadlineFreshness"], "properties": {
+                "funding": { "$ref": "#/components/schemas/ScoreFactor" }, "expectedCalls": { "$ref": "#/components/schemas/ScoreFactor" }, "supporters": { "$ref": "#/components/schemas/ScoreFactor" }, "deadlineFreshness": { "type": "object", "required": ["factor", "contribution"], "properties": { "factor": { "type": "number" }, "contribution": { "type": "number" } } }
+              } },
+              "economicSignals": { "type": "object", "required": ["escrowPerExpectedCall", "timeRemainingSeconds", "review"], "properties": {
+                "escrowPerExpectedCall": { "type": ["string", "null"] }, "timeRemainingSeconds": { "type": "string" }, "review": { "type": ["object", "null"], "properties": { "approvalGap": { "type": "string" }, "rejectionHeadroom": { "type": "string" }, "reviewTimeRemainingSeconds": { "type": "string" } } }
+              } },
+              "reasoning": { "type": "object", "required": ["positive", "cautions"], "properties": { "positive": { "type": "array", "items": { "type": "string" } }, "cautions": { "type": "array", "items": { "type": "string" } } } }
+            } }
+          ] } }
+        }
+      },
+      "ScoreFactor": { "type": "object", "required": ["percentile", "contribution"], "properties": { "percentile": { "type": "number" }, "contribution": { "type": "number" } } }
+    },
+    "responses": { "ServiceUnavailable": { "description": "Market or payment service unavailable.", "headers": { "Retry-After": { "$ref": "#/components/headers/RetryAfter" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } } }
+  }
+}

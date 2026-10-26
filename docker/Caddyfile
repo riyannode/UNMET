@@ -5,6 +5,33 @@
 }
 
 {$SITE_ADDRESS:http://localhost} {
+	@homepage path /
+	header @homepage Link "<{$CANONICAL_ORIGIN:http://localhost}/>; rel=\"canonical\", </.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"; profile=\"https://www.rfc-editor.org/info/rfc9727\", </openapi.json>; rel=\"service-desc\"; type=\"application/vnd.oai.openapi+json;version=3.1\", </docs>; rel=\"service-doc\", </payment.md>; rel=\"service-doc\"; title=\"Payment guide\""
+	@canonical_app path /market /market/* /create-demand /analytics
+	header @canonical_app Link "<{$CANONICAL_ORIGIN:http://localhost}{http.request.uri.path}>; rel=\"canonical\""
+	@openapi path /openapi.json
+	header @openapi Content-Type "application/vnd.oai.openapi+json;version=3.1"
+	@markdown path /api.md /payment.md
+	header @markdown Content-Type "text/markdown; charset=utf-8"
+	handle /.well-known/api-catalog {
+		header Content-Type "application/linkset+json; profile=\"https://www.rfc-editor.org/info/rfc9727\""
+		header Link "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\""
+		root * /srv
+		file_server
+	}
+	@unsupported_well_known {
+		path /.well-known/*
+		not path /.well-known/acme-challenge/*
+	}
+	handle @unsupported_well_known {
+		respond 404
+	}
+	@docs path /docs /docs/
+	handle @docs {
+		root * /srv
+		rewrite * /docs/index.html
+		file_server
+	}
 	@api path /v1 /v1/* /health /ready /live
 	handle @api {
 		reverse_proxy api:8787 {

@@ -1,6 +1,6 @@
 # Documentation
 
-Coding agents start with [AGENTS](../AGENTS.md). Repository setup and validation start in [CONTRIBUTING](../CONTRIBUTING.md). The website's `/docs` route is currently a Coming Soon page; the technical documentation lives here.
+Coding agents start with [AGENTS](../AGENTS.md). Repository setup and validation start in [CONTRIBUTING](../CONTRIBUTING.md). The website's [`/docs` route](../frontend/public/docs/index.html) provides the public API documentation; the technical documentation lives here. The [agent readiness audit](AGENT_READINESS_AUDIT.md) records the discovery review.
 
 ## Current reference
 
