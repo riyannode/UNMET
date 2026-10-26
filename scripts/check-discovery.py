@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 
 
 repo = pathlib.Path(__file__).resolve().parent.parent
@@ -65,12 +66,23 @@ checks = []
 process = None
 
 
+class HeadRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        request = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if request is not None and req.get_method() == "HEAD":
+            request.method = "HEAD"
+        return request
+
+
+opener = urllib.request.build_opener(HeadRedirectHandler())
+
+
 def check(path, expected=200, method="GET", headers=None, body=None, mime=None):
     request = urllib.request.Request(
         f"http://127.0.0.1:{webport}{path}", headers=headers or {}, data=body, method=method,
     )
     try:
-        response = urllib.request.urlopen(request, timeout=5)
+        response = opener.open(request, timeout=5)
     except urllib.error.HTTPError as error:
         response = error
     with response:
@@ -126,22 +138,49 @@ try:
                 assert body == canonical_docs, (path, "did not serve the canonical built document")
                 check(path, method="HEAD", mime="text/html")
             public_resources = {
+                "/logos/unmet.png": ("image/png", b"\x89PNG"),
                 "/openapi.json": ("application/vnd.oai.openapi+json", b'"openapi": "3.1.0"'),
                 "/api.md": ("text/markdown", b"# UNMET Demand API"),
                 "/payment.md": ("text/markdown", b"# UNMET API payment guide"),
                 "/.well-known/api-catalog": ("application/linkset+json", b'"linkset"'),
             }
-            for href in re.findall(rb'href="(/[^\"]+)"', canonical_docs):
-                path = href.decode()
-                if path.startswith("/assets/"):
-                    _, asset = check(path)
-                    assert asset == (dist / path.lstrip("/")).read_bytes()
-                    continue
-                assert path == "/" or path in public_resources, (path, "unregistered same-origin documentation link")
-                mime, marker = public_resources.get(path, ("text/html", b""))
-                _, body = check(path, mime=mime)
-                if marker:
-                    assert marker in body, (path, "did not serve the expected public document")
+
+            docs_pages = {
+                ("/docs" if page.parent == dist / "docs" else "/" + page.parent.relative_to(dist).as_posix() + "/"): page
+                for page in (dist / "docs").rglob("index.html")
+            }
+            assert len(docs_pages) == 13, ("unexpected Docs page count", len(docs_pages))
+            for route, page in docs_pages.items():
+                html = page.read_bytes()
+                aliases = [route, route.rstrip("/"), "/" + page.relative_to(dist).as_posix(), route + "?from=sidebar"]
+                for path in aliases:
+                    _, body = check(path, mime="text/html")
+                    assert body == html, (path, "wrong built article")
+                    check(path, method="HEAD", mime="text/html")
+                assert b"github.com" not in html
+                for raw_href in re.findall(rb'href="([^"]+)"', html):
+                    href = raw_href.decode()
+                    parsed = urllib.parse.urlsplit(urllib.parse.urljoin("https://unmetxyz.my.id" + route, href))
+                    assert parsed.hostname == "unmetxyz.my.id", (route, href, "unexpected external documentation link")
+                    path = parsed.path
+                    if path.startswith("/assets/"):
+                        _, asset = check(path)
+                        assert asset == (dist / path.lstrip("/")).read_bytes()
+                        continue
+                    target = docs_pages.get(path)
+                    assert target or path in public_resources or path in ["/", "/market", "/create-demand"], (route, href, "unregistered documentation link")
+                    if target:
+                        mime, marker = "text/html", b""
+                    else:
+                        mime, marker = public_resources.get(path, ("text/html", b""))
+                    _, body = check(path, mime=mime)
+                    if marker:
+                        assert marker in body, (path, "wrong public resource")
+                    if parsed.fragment:
+                        assert target and ('id="' + parsed.fragment + '"').encode() in target.read_bytes(), (route, href, "missing heading")
+            for path in ["/docs/missing", "/docs/api/missing/", "/docs/sources/AGENTS.md", "/docs/navigation.tsx"]:
+                for method in ["GET", "HEAD"]:
+                    check(path, expected=404, method=method)
             for path in ["/market", "/market/1", "/create-demand", "/analytics", "/docs-other"]:
                 check(path, mime="text/html")
 

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Read public demand facts for free. Use paid intelligence when you need a ranked comparison." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/api/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>API overview · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-grid">
+        <div class="docs-toolbar">
+          <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+        </div>
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>API overview</h1>
+            <p class="docs-description">Read public demand facts for free. Use paid intelligence when you need a ranked comparison.</p>
+<h2 id="access">Access and discovery</h2>
+<p>Use the origin serving your UNMET API. The public-site origin is <code>https://unmetxyz.my.id</code>; a different instance may use another origin. These examples describe the interface and do not establish current endpoint availability.</p>
+<p>Public reads require no account or API key. Paid intelligence uses x402 authorization. There is no OAuth login or UNMET client SDK requirement.</p>
+<p>Machine clients should send <code>Accept: application/json</code>. OpenAPI is available at <a href="/openapi.json">/openapi.json</a>; compact guides are <a href="/api.md">/api.md</a> and <a href="/payment.md">/payment.md</a>. The <a href="/.well-known/api-catalog">API catalog</a> links the existing business endpoints.</p>
+<h2 id="free-demand-api">Free demand API</h2>
+<p><code>GET /v1/demands</code> returns up to 50 demands across all statuses, sorted by current escrow descending, then numeric demand ID descending. It has no query-filter or pagination contract. Query-string values do not filter the result.</p>
+<figure class="docs-code-block">
+  <figcaption class="docs-code-header"><span class="docs-code-language"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 7 5 5-5 5m8 0h6"/></svg>Bash</span><button class="docs-code-copy" type="button" aria-label="Copy Bash example" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg><span aria-live="polite">Copy</span></button></figcaption>
+  <pre tabindex="0" aria-label="Bash example"><code><span class="docs-code-command">curl</span> <span class="docs-code-option">-sS</span> <span class="docs-code-string">&quot;https://unmetxyz.my.id/v1/demands&quot;</span> \
+  <span class="docs-code-option">-H</span> <span class="docs-code-string">&quot;Accept: application/json&quot;</span></code></pre>
+</figure>
+<h2 id="response">Response fields</h2>
+<p>The envelope contains <code>chainId</code>, <code>contract</code>, <code>blockNumber</code> (decimal string), <code>generatedAt</code> (ISO timestamp), and <code>demands</code>. An empty list is valid.</p>
+<div class="docs-table"><table><thead><tr><th scope="col">Demand fields</th><th scope="col">Meaning and units</th></tr></thead><tbody><tr><td><code>demandId</code>, <code>capability</code></td><td>Decimal-string ID and capability slug. IDs belong to the identified chain and contract.</td></tr><tr><td><code>creator</code>, <code>builder</code></td><td>Wallet addresses. Builder may be the zero address before a proposal.</td></tr><tr><td><code>currentEscrow</code>, <code>fundedBounty</code>, <code>reviewCommitted</code></td><td>Six-decimal market-token strings. Current escrow is still held; reviewCommitted is a fixed review snapshot; fundedBounty uses the review snapshot when present, otherwise current escrow.</td></tr><tr><td><code>maxUnitPrice</code>, <code>expectedCalls</code>, <code>supporters</code></td><td>Six-decimal price string, decimal-string expected calls, and integer supporting-wallet count. Calls/wallet totals are historical demand signals.</td></tr><tr><td><code>deadline</code>, <code>status</code></td><td>ISO deadline, or null outside the supported date range; lifecycle/derived status.</td></tr><tr><td><code>approvalWeight</code>, <code>approvalRequired</code>, <code>rejectionWeight</code>, <code>rejectionThreshold</code></td><td>Atomic integer strings, not decimal token amounts.</td></tr><tr><td><code>candidateRejected</code>, <code>score</code></td><td>Boolean rejection indicator and legacy numeric demand score. No paid analysis fields are included.</td></tr></tbody></table></div>
+<h2 id="status-and-freshness">Status and freshness</h2>
+<p>Stored states are <code>OPEN</code>, <code>SUBMITTED</code>, <code>FULFILLED</code>, and <code>CLOSED</code>. Derived states include <code>READY</code> (quorum reached), <code>REJECTED</code> (quorum blocked), and <code>EXPIRED</code>. Check <a href="/docs/demand-market/review/">review conditions</a> before acting.</p>
+<p>Results are derived from an indexed block, not a live balance guarantee. Verify current onchain state for an escrow action. Responses use <code>Cache-Control: no-store</code>. Browser clients must use an origin allowed by the instance's CORS policy.</p>
+<h2 id="service-checks">Service checks</h2>
+<p><code>GET /live</code> checks process liveness, <code>GET /health</code> checks market dependencies, and <code>GET /ready</code> also checks payment readiness. None guarantees that a later payment will settle. See <a href="/docs/api/errors/">errors and recovery</a> for failures.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

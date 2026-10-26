@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Find funded demand and submit a service for supporter review." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/getting-started/builders/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>For builders · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-grid">
+        <div class="docs-toolbar">
+          <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+        </div>
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>For builders</h1>
+            <p class="docs-description">Find funded demand and submit a service for supporter review.</p>
+<h2 id="choose-a-demand">Choose a demand</h2>
+<p>Browse <a href="/market">Market</a> for requirements you can meet. Compare current escrow, specifications, maximum unit price, expected calls, and deadline. Paid <a href="/docs/api/intelligence/">Demand Intelligence</a> can help compare opportunities.</p>
+<p>Escrow is not guaranteed earnings. Expected calls are a demand signal, not an order for future usage.</p>
+<h2 id="build-and-propose">Build and propose</h2>
+<ol><li>Choose an open demand before its deadline.</li><li>Build and host a service that meets the request.</li><li>Connect the wallet that should be recorded as the builder.</li><li>Open <strong>Builder Proposal</strong>, provide the HTTPS service URL and evidence, and select <strong>Submit Service Proposal</strong>.</li></ol>
+<p>The current flow does not require prior builder registration. Automatic x402 validation and signed attestations are <a href="/docs/roadmap/#automatic-validation">proposed</a>, not part of current proposal acceptance.</p>
+<h2 id="review-and-payment">Review and payment</h2>
+<p>Supporters approve or reject your proposal. Reaching quorum allows finalization; it does not automatically transfer funds. The builder receives only explicitly approved funds less the configured protocol fee.</p>
+<p>A demand contribution does not prepay service calls. Any later provider usage is a separate arrangement. UNMET does not currently provide a fulfilled-service registry or capability resolver.</p>
+<p>Read <a href="/docs/demand-market/proposals/">proposal requirements</a> and <a href="/docs/demand-market/review/">review and fulfillment</a>.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

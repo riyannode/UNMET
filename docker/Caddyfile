@@ -32,6 +32,10 @@
 		rewrite * /docs/index.html
 		file_server
 	}
+	handle /docs/* {
+		root * /srv
+		file_server
+	}
 	@api path /v1 /v1/* /health /ready /live
 	handle @api {
 		reverse_proxy api:8787 {

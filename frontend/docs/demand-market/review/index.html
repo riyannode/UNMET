@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Supporters decide with commitment-weighted votes. Only approved commitments can settle." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/demand-market/review/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Review &amp; fulfillment · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-grid">
+        <div class="docs-toolbar">
+          <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+        </div>
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Review &amp; fulfillment</h1>
+            <p class="docs-description">Supporters decide with commitment-weighted votes. Only approved commitments can settle.</p>
+<h2 id="voting">Approve or reject</h2>
+<p>Open <strong>Builder Proposal</strong> and inspect the service and evidence. Each supporter's weight is their commitment before submission. A supporter may approve or reject once per proposal, never both. Voting closes at the review end time.</p>
+<p>The approval threshold is rounded up from the fixed escrow snapshot. Refunds cannot shrink that threshold. Supporting wallets are not verified independent people.</p>
+<h2 id="finalization">Finalize at quorum</h2>
+<p>Once approval reaches the fixed threshold, anyone may choose <strong>Finalize Payout</strong>. The full review period need not elapse. Reaching quorum is not itself settlement; a successful finalization transaction is required.</p>
+<p>The configured fee, quorum, and review period are contract values. Initial release defaults are 2%, 60%, and 24 hours respectively; these defaults are not a fresh deployment readback.</p>
+<h2 id="selective-settlement">Selective settlement</h2>
+<p>Only explicit approver commitments settle. The builder receives that amount minus the protocol fee. Non-approver funds remain eligible for individual refunds.</p>
+<div class="docs-note"><p>Illustrative example with a 2% fee: a 100-token review snapshot has 60 tokens approved. Finalization sends 58.8 to the builder and 1.2 to treasury. The other 40 remain refundable to eligible non-approvers.</p></div>
+<h2 id="rejection-and-reopening">Rejection and reopening</h2>
+<p>If rejection makes quorum mathematically impossible, anyone can reopen before the demand deadline. Otherwise, reopening requires the review to end below quorum while the deadline is still active. A reopened demand keeps its original deadline and clears proposal-specific votes.</p>
+<h2 id="outcomes">Read the outcome correctly</h2>
+<p><code>READY</code> means quorum has been reached; <code>FULFILLED</code> means escrow settlement completed. Neither proves independent service correctness or future endpoint availability.</p>
+<p>If the demand cannot proceed, check <a href="/docs/demand-market/refunds/">refund eligibility</a>.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

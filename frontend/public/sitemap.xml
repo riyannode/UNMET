@@ -2,4 +2,16 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://unmetxyz.my.id/</loc></url>
   <url><loc>https://unmetxyz.my.id/docs</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/getting-started/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/getting-started/builders/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/getting-started/agents/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/demand-market/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/demand-market/proposals/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/demand-market/review/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/demand-market/refunds/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/api/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/api/intelligence/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/api/payments/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/api/errors/</loc></url>
+  <url><loc>https://unmetxyz.my.id/docs/roadmap/</loc></url>
 </urlset>

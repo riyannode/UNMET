@@ -3,13 +3,22 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Connect, Plugin } from "vite";
 import { defineConfig } from "vite";
+import { docsFile, docsLayoutPlugin, docsRoutes } from "./docs/layout.ts";
 
-const rewriteDocumentPath: Connect.NextHandleFunction = (request, _response, next) => {
+const rewriteDocumentPath = (development: boolean): Connect.NextHandleFunction => (request, response, next) => {
   const url = request.url ?? "";
   const queryIndex = url.indexOf("?");
   const pathname = queryIndex === -1 ? url : url.slice(0, queryIndex);
-  if (pathname === "/docs" || pathname === "/docs/") {
-    request.url = "/docs/index.html" + (queryIndex === -1 ? "" : url.slice(queryIndex));
+  const docs = docsRoutes.find((route) => [route, route.replace(/\/$/, ""), "/" + docsFile(route),
+    route === "/docs" ? "/docs/" : route].includes(pathname));
+  if (docs) {
+    request.url = "/" + docsFile(docs) + (queryIndex === -1 ? "" : url.slice(queryIndex));
+  } else if (pathname.startsWith("/docs/") && !(development
+    && ["/docs/navigation.tsx", "/docs/interactions.ts", "/docs/docs.css"].includes(pathname))) {
+    response.statusCode = 404;
+    response.setHeader("Content-Type", "text/plain; charset=utf-8");
+    response.end(request.method === "HEAD" ? "" : "Documentation page not found");
+    return;
   } else if (request.headers.accept?.includes("text/html")
     && /^\/(?:market(?:\/[^/]+)?|create-demand|analytics)\/?$/.test(pathname)) {
     // /analytics would otherwise resolve analytics.ts before Vite's SPA fallback.
@@ -21,19 +30,19 @@ const rewriteDocumentPath: Connect.NextHandleFunction = (request, _response, nex
 const documentPathPlugin: Plugin = {
   name: "document-path",
   configureServer(server) {
-    server.middlewares.use(rewriteDocumentPath);
+    server.middlewares.use(rewriteDocumentPath(true));
   },
   configurePreviewServer(server) {
-    server.middlewares.use(rewriteDocumentPath);
+    server.middlewares.use(rewriteDocumentPath(false));
   },
 };
 
 export default defineConfig({
-  input: {
-    main: fileURLToPath(new URL("./index.html", import.meta.url)),
-    docs: fileURLToPath(new URL("./docs/index.html", import.meta.url)),
-  },
-  plugins: [documentPathPlugin, tailwindcss(), react()],
+  input: Object.fromEntries([
+    ["main", fileURLToPath(new URL("./index.html", import.meta.url))],
+    ...docsRoutes.map((route) => [route.slice(1).replaceAll("/", "-"), fileURLToPath(new URL("./" + docsFile(route), import.meta.url))]),
+  ]),
+  plugins: [documentPathPlugin, docsLayoutPlugin, tailwindcss(), react()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),

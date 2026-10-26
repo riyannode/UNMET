@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Planned capabilities that connect funded demand to discoverable, purchasable services." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/roadmap/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Future implementation · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-grid">
+        <div class="docs-toolbar">
+          <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+        </div>
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Future implementation</h1>
+            <p class="docs-description">Planned capabilities that connect funded demand to discoverable, purchasable services.</p>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>The stages below describe planned functionality, not working APIs or deployed contracts. Current capabilities remain listed in <a href="/docs#capabilities">Overview</a>.</p>
+<h2 id="automatic-validation">Automatic x402 validation</h2>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>Gate 0 would check a builder endpoint's unpaid x402 challenge before escrow submission and issue a short-lived signed attestation. A new immutable escrow version would enforce acceptance while preserving existing-demand settlement/refund access. Approved payment profiles would define supported networks, assets, and compatible prices.</p>
+<p>Compatibility would not prove paid execution, service quality, or supporter approval. New submissions could depend on validation availability; eligible settlement and refunds would remain independent.</p>
+<h2 id="rfq">Machine-readable RFQ</h2>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>Phase 1 would let agents read structured requirements and prepare unsigned demand-creation transactions. Larger technical schemas would use integrity-checked content references, while onchain economic terms remain authoritative. Historical demands would stay readable.</p>
+<h2 id="service-registry">Service Registry</h2>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>Phase 2 would publish services originating from fulfilled demands with onchain provenance. Builders could update authenticated service metadata without rewriting settlement history. Publication, compatibility, availability, and technical verification would remain separate states.</p>
+<h2 id="service-discovery">x402 Service Discovery</h2>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>Phase 3 would help agents find services by capability, payment constraints, and recent observations. Purchases would go directly to the provider's authorized receiver. Optional external distribution, including OKX.AI, would require separate publication and acceptance; discovery would never authorize spending.</p>
+<h2 id="intelligence-expansion">Intelligence Expansion</h2>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>Phase 4 would add demand history, fulfillment metrics, and attributed service-usage evidence. Provider declarations, observed payments, provider-attested execution, and independent tests would have distinct evidence levels. Payment alone would not count as proof of correct execution.</p>
+<h2 id="capability-resolver">Capability Resolver</h2>
+<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p>Phase 5 would search compatible published services first, then matching funded RFQs, before offering unsigned demand creation. It would not spend funds, approve a service, or submit a transaction automatically.</p>
+<h2 id="availability">Availability and order</h2>
+<p>The planned order is validation, RFQ, registry, discovery, intelligence expansion, then resolver. Earlier capabilities provide data and safeguards for later stages. No release date is promised. Support for additional payment networks or methods requires separate review; it is not implied by an external library's capabilities.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>
