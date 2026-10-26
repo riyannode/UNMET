@@ -81,6 +81,18 @@ Caddy forwards x402 headers/statuses unchanged. Its upstream response-header dea
 
 Both runtimes use non-root users and read-only root filesystems. Caddy binds unprivileged container ports 8080/8443, mapped to host 80/443. Its process probe uses unpublished port 8090. Only certificate/config volumes and small temporary filesystems are writable.
 
+### Cloudflare proxy activation gate
+
+Cloudflare proxying is a production change and requires separate operational authorization before changing production DNS from DNS-only to proxied. The current deployment is DNS-only. Do not enable the proxy until staging/runtime evidence demonstrates all of the following for the actual ingress and origin path:
+
+- Cloudflare ingress is authenticated/restricted as designed, and the complete trusted-proxy chain through Cloudflare and Caddy/Express assigns the original client IP. Test spoofed `CF-Connecting-IP` and `X-Forwarded-For` values from direct or untrusted requests to confirm they cannot alter identity or bypass limits.
+- Per-client quotas remain correct behind shared Cloudflare edges; clients do not collapse into an edge-wide quota.
+- WAF permits real programmatic JSON requests without JavaScript challenges or CAPTCHA, while application validation and quotas remain active.
+- API responses bypass caching and use `no-store`, including 402 challenges, paid 200 responses, and errors, regardless of payment headers.
+- Payment request headers and response status, body, and payment headers are preserved. The proxy does not retry requests or risk double settlement; ambiguous/unknown payment outcomes remain fail-closed.
+
+Record the tested configuration and runtime evidence before requesting the production DNS change. Local fixtures and DNS-only public checks do not pass this gate or establish proxied behavior. Synthetic fixtures may validate forwarding without a real payment; live paid acceptance requires separate explicit authorization.
+
 ## Limits and bounded work
 
 | Setting | Default | Allowed range / effect |

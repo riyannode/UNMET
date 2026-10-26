@@ -29,7 +29,7 @@
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json' \
   --data '{}'</code></pre>
-    <p>An unpaid request returns HTTP 402 and an x402 challenge in <code>PAYMENT-REQUIRED</code>. Use an x402-compatible OKX client to follow the challenge, then replay the same request with <code>PAYMENT-SIGNATURE</code>. A successful response includes <code>PAYMENT-RESPONSE</code>. Payment buys analysis only; it does not fund a demand or purchase service execution.</p>
+    <p>An unpaid request returns HTTP 402 and an x402 challenge in <code>PAYMENT-REQUIRED</code>. Use any x402 v2-compatible client that supports the offered EIP-3009 payment method on the configured chain and token to follow the challenge, then replay the same request with <code>PAYMENT-SIGNATURE</code>. The current server uses the OKX facilitator. A successful response includes <code>PAYMENT-RESPONSE</code>. Payment buys analysis only; it does not fund a demand or purchase service execution.</p>
     <ul>
       <li><a href="/openapi.json">OpenAPI 3.1 machine-readable specification</a></li>
       <li><a href="/api.md">Complete API reference (Markdown)</a></li>
