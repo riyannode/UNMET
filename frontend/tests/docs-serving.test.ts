@@ -119,6 +119,7 @@ describe("Vite documentation MPA", () => {
       expect(html).not.toContain("docs-sidebar-label");
       expect(html).not.toContain(">Documents<");
       expect(html).toContain('aria-label="Browse documentation"');
+      expect(html).toMatch(/<div class="docs-grid">\s*<div class="docs-toolbar">/);
       expect(html.match(/<details[ >]/g)?.length).toBe(5);
       expect(html.match(/<details open data-active-group/g)?.length).toBe(1);
       expect(html.match(/<details open/g)?.length).toBe(1);
