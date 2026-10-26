@@ -43,6 +43,7 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      - run: bun run check:payment-discovery
       - run: bun run test:backend
       - run: bun run --cwd backend typecheck
 
@@ -97,6 +98,14 @@ jobs:
           persist-credentials: false
       - run: docker compose config --quiet
       - run: docker compose build api
+      - name: Smoke test packaged API payment discovery
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --user bun --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/backend/payment-discovery-smoke.ts,target=/app/backend/payment-discovery-smoke.ts,readonly" \
+            -e NODE_ENV=production -e X402_CHAIN_ID=196 \
+            "unmet-api:${IMAGE_TAG}" bun /app/backend/payment-discovery-smoke.ts
       - run: docker compose build web
       - name: Smoke test packaged discovery routes
         run: |
