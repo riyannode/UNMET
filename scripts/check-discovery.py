@@ -123,7 +123,7 @@ try:
             canonical_docs = (dist / "docs/index.html").read_bytes()
             for path in ["/docs", "/docs/", "/docs/index.html", "/docs?from=nav", "/docs/?from=nav"]:
                 headers, body = check(path, mime="text/html")
-                assert body == canonical_docs, (path, "did not serve the canonical static document")
+                assert body == canonical_docs, (path, "did not serve the canonical built document")
                 check(path, method="HEAD", mime="text/html")
             public_resources = {
                 "/openapi.json": ("application/vnd.oai.openapi+json", b'"openapi": "3.1.0"'),
@@ -133,6 +133,10 @@ try:
             }
             for href in re.findall(rb'href="(/[^\"]+)"', canonical_docs):
                 path = href.decode()
+                if path.startswith("/assets/"):
+                    _, asset = check(path)
+                    assert asset == (dist / path.lstrip("/")).read_bytes()
+                    continue
                 assert path == "/" or path in public_resources, (path, "unregistered same-origin documentation link")
                 mime, marker = public_resources.get(path, ("text/html", b""))
                 _, body = check(path, mime=mime)

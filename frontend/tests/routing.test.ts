@@ -38,6 +38,16 @@ describe("app routes", () => {
     expect(analyticsAnchor).toContain("data-discover");
   });
 
+  test("docs uses the original navigation component with document navigation", () => {
+    const markup = renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: ["/docs"] },
+      createElement(UnmetNavigation, { documentNavigation: true })));
+    for (const href of ["/", "/market", "/analytics", "/#how-it-works", "/docs", "/create-demand"]) {
+      expect(markup).toContain(`href="${href}"`);
+    }
+    expect(markup).toContain('class="unmet-nav"');
+    expect(markup).toContain('aria-label="Open navigation"');
+  });
+
   test("builds demand URLs that can be opened directly", () => {
     expect(demandHref(42n)).toBe("/market/42");
   });

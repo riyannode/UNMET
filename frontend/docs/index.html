@@ -7,17 +7,25 @@
     <link rel="canonical" href="https://unmetxyz.my.id/docs" />
     <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
     <title>UNMET API Documentation</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
     <style>
-      body { max-width: 840px; margin: 48px auto; padding: 0 24px; color: #192800; font: 18px/1.6 system-ui, sans-serif; }
-      h1, h2 { line-height: 1.15; }
-      h1 { font-size: clamp(2.5rem, 7vw, 4rem); }
-      code, pre { font-family: ui-monospace, monospace; }
-      pre { overflow-x: auto; padding: 16px; background: #f3f6ef; }
-      a { color: #31551f; }
-      li { margin-block: 8px; }
+      body { margin: 0; background: #fff; }
+      .unmet-docs-navigation { position: relative; color: #192800; font: 16px "Inter Tight", sans-serif; user-select: none; }
+      .unmet-docs-skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 10px 14px; transform: translateY(-150%); background: #192800; color: #fff; }
+      .unmet-docs-skip:focus { transform: translateY(0); }
+      .unmet-docs-content { max-width: 840px; margin: 48px auto; padding: 0 24px; color: #192800; font: 18px/1.6 system-ui, sans-serif; }
+      .unmet-docs-content h1, .unmet-docs-content h2 { line-height: 1.15; }
+      .unmet-docs-content h1 { font-size: clamp(2.5rem, 7vw, 4rem); }
+      .unmet-docs-content code, .unmet-docs-content pre { font-family: ui-monospace, monospace; }
+      .unmet-docs-content pre { overflow-x: auto; padding: 16px; background: #f3f6ef; }
+      .unmet-docs-content a { color: #31551f; }
+      .unmet-docs-content li { margin-block: 8px; }
     </style>
   </head>
   <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <main id="docs-content" tabindex="-1" class="unmet-docs-content">
     <p><a href="/">UNMET home</a></p>
     <h1>UNMET API documentation</h1>
     <p>UNMET exposes public chain-derived demands and a separate paid endpoint for ranked demand intelligence.</p>
@@ -36,5 +44,6 @@
       <li><a href="/payment.md">Payment and recovery guide (Markdown)</a></li>
       <li><a href="/.well-known/api-catalog">RFC 9727 API catalog</a></li>
     </ul>
+    </main>
   </body>
 </html>

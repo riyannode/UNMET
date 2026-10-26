@@ -336,7 +336,7 @@ describe("free and paid discovery responses", () => {
     expect(sitemap).toContain("https://unmetxyz.my.id/docs");
     expect(html).toContain('rel="service-desc"');
     expect(html).not.toContain('rel="canonical"');
-    const staticDocs = readFileSync(new URL("../frontend/public/docs/index.html", import.meta.url), "utf8");
+    const staticDocs = readFileSync(new URL("../frontend/docs/index.html", import.meta.url), "utf8");
     const paymentGuide = readFileSync(new URL("../frontend/public/payment.md", import.meta.url), "utf8");
     expect(staticDocs).toContain('<link rel="canonical" href="https://unmetxyz.my.id/docs"');
     expect(staticDocs).toContain("GET /v1/demands");

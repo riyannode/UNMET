@@ -4,28 +4,36 @@ import react from "@vitejs/plugin-react";
 import type { Connect, Plugin } from "vite";
 import { defineConfig } from "vite";
 
-const rewriteDocsPath: Connect.NextHandleFunction = (request, _response, next) => {
+const rewriteDocumentPath: Connect.NextHandleFunction = (request, _response, next) => {
   const url = request.url ?? "";
   const queryIndex = url.indexOf("?");
   const pathname = queryIndex === -1 ? url : url.slice(0, queryIndex);
   if (pathname === "/docs" || pathname === "/docs/") {
     request.url = "/docs/index.html" + (queryIndex === -1 ? "" : url.slice(queryIndex));
+  } else if (request.headers.accept?.includes("text/html")
+    && /^\/(?:market(?:\/[^/]+)?|create-demand|analytics)\/?$/.test(pathname)) {
+    // /analytics would otherwise resolve analytics.ts before Vite's SPA fallback.
+    request.url = "/index.html" + (queryIndex === -1 ? "" : url.slice(queryIndex));
   }
   next();
 };
 
-const docsPathPlugin: Plugin = {
-  name: "docs-path",
+const documentPathPlugin: Plugin = {
+  name: "document-path",
   configureServer(server) {
-    server.middlewares.use(rewriteDocsPath);
+    server.middlewares.use(rewriteDocumentPath);
   },
   configurePreviewServer(server) {
-    server.middlewares.use(rewriteDocsPath);
+    server.middlewares.use(rewriteDocumentPath);
   },
 };
 
 export default defineConfig({
-  plugins: [docsPathPlugin, tailwindcss(), react()],
+  input: {
+    main: fileURLToPath(new URL("./index.html", import.meta.url)),
+    docs: fileURLToPath(new URL("./docs/index.html", import.meta.url)),
+  },
+  plugins: [documentPathPlugin, tailwindcss(), react()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),

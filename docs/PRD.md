@@ -203,7 +203,7 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- Routes: / is the standalone landing page; /market, /market/:demandId, /create-demand, and /analytics share the application shell. /docs serves the standalone public API document at frontend/public/docs/index.html.
+- Routes: / is the standalone landing page; /market, /market/:demandId, /create-demand, and /analytics share the application shell. /docs serves the Vite MPA public API document at frontend/docs/index.html.
 - Global navigation: **Explore Market**, **Create Demand**, and **Analytics**; Demand Details keeps **Explore Market** active.
 - Selecting a market request from **Market Requests** or **Analytics** opens its dedicated Demand view; the back action returns to the originating view.
 - Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).
