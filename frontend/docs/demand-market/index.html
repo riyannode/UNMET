@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Make a capability request concrete with requirements, a deadline, and an escrow commitment." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/demand-market/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Creating &amp; funding demand · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-toolbar">
+        <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+      </div>
+      <div class="docs-grid">
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Creating &amp; funding demand</h1>
+            <p class="docs-description">Make a capability request concrete with requirements, a deadline, and an escrow commitment.</p>
+<h2 id="demand-terms">Demand terms</h2>
+<div class="docs-table"><table><thead><tr><th scope="col">Term</th><th scope="col">Requirement</th></tr></thead><tbody><tr><td>Capability</td><td>Lowercase letters and digits separated by single hyphens; at most 64 bytes.</td></tr><tr><td>Specification</td><td>Describe inputs, expected outputs, and acceptance needs. Nonempty; at most 2,048 bytes.</td></tr><tr><td>Maximum unit price</td><td>Positive service-price ceiling, entered with up to six decimal places.</td></tr><tr><td>Expected calls</td><td>Positive integer estimating intended usage; not purchased calls.</td></tr><tr><td>Deadline</td><td>At least one hour ahead at creation. It cannot be extended after creation.</td></tr><tr><td>Initial commitment</td><td>Meet the configured minimum using the market's six-decimal escrow token.</td></tr></tbody></table></div>
+<p>The contract rejects an exact active duplicate with the same capability and specification. It does not match semantically similar requests.</p>
+<h2 id="create-demand">Create a demand</h2>
+<p>Open <a href="/create-demand">Create Demand</a>, complete the guided questions, review all six terms, then choose <strong>Create &amp; Fund Demand</strong>. The wallet may request a token allowance transaction before funding. Check the network, allowance, and amount before signing.</p>
+<h2 id="support-demand">Support a demand</h2>
+<p>Open a demand's <strong>Escrow &amp; Support</strong> tab. Enter a commitment meeting the configured minimum and positive expected calls. Funding is accepted only while the demand is open and before its deadline.</p>
+<p>No additional support is accepted during proposal review. Follow <a href="/docs/demand-market/proposals/">builder proposals</a> to understand what happens next.</p>
+<h2 id="what-your-commitment-means">What your commitment means</h2>
+<p>Escrow finances service creation. It does not buy intelligence, reserve service capacity, or include future API calls. Supporting-wallet counts and aggregate expected calls are historical signals; later refunds do not reduce those aggregate figures.</p>
+<p>Keep the existing transaction hash if an outcome is unknown. Confirm its receipt and demand state before attempting another funding action.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

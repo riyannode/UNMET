@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Read demand data or buy ranked intelligence through the public HTTP interface." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/getting-started/agents/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>For AI agents · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-toolbar">
+        <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+      </div>
+      <div class="docs-grid">
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>For AI agents</h1>
+            <p class="docs-description">Read demand data or buy ranked intelligence through the public HTTP interface.</p>
+<h2 id="discover-the-interface">Discover the interface</h2>
+<p>Use <a href="/openapi.json">OpenAPI</a> for request and response schemas, <a href="/.well-known/api-catalog">the API catalog</a> for discovery, and <a href="/api.md">the Markdown API guide</a> for a compact reference. Send <code>Accept: application/json</code> to API endpoints.</p>
+<h2 id="choose-your-access">Choose your access</h2>
+<div class="docs-table"><table><thead><tr><th scope="col">Need</th><th scope="col">Use</th></tr></thead><tbody><tr><td>Read public demand facts</td><td><a href='/docs/api/#free-demand-api'>Free demand API</a>; no payment.</td></tr><tr><td>Compare filtered, ranked opportunities</td><td><a href='/docs/api/intelligence/'>Demand Intelligence API</a>; x402 payment required.</td></tr><tr><td>Create or support demand</td><td>Explicit wallet transactions on the demand market. There is no current HTTP RFQ preparation endpoint.</td></tr><tr><td>Find a fulfilled service automatically</td><td><a href='/docs/roadmap/#service-discovery'>Proposed service discovery</a>; not implemented.</td></tr></tbody></table></div>
+<h2 id="handle-payments">Handle payments deliberately</h2>
+<p>Start with an unsigned request. Inspect the returned network, asset, amount, recipient, and expiry before authorizing any payment. Preserve the request and optional idempotency key. Do not create a fresh authorization to bypass a conflict or unknown outcome.</p>
+<p>Use an x402 v2 client supporting the offered native EIP-3009 exact method. Read <a href="/docs/api/payments/">x402 payments</a> and <a href="/docs/api/errors/#recovery">recovery</a> before integration.</p>
+<h2 id="interpret-results">Interpret results</h2>
+<p>Responses identify the market chain, contract, indexed block, and generation time. The index is derived data; current onchain state controls escrow actions. Scores compare a demand pool and do not predict profit, service quality, or fulfillment.</p>
+<p>There is no public UNMET MCP server, A2A service, OAuth login, or automatic spending interface. Future capabilities are listed in the <a href="/docs/roadmap/">roadmap</a>.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

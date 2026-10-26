@@ -2,6 +2,7 @@ import { access, readFile, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { docsFile, docsRoutes } from "../docs/layout.ts";
 import { build, createServer, preview, type PreviewServer, type ViteDevServer } from "vite";
 
 const frontendRoot = path.resolve(import.meta.dir, "..");
@@ -42,7 +43,7 @@ afterAll(async () => {
 });
 
 describe("Vite documentation MPA", () => {
-  test("has exactly one docs source outside public", async () => {
+  test("keeps the canonical docs root outside public", async () => {
     expect(await readFile(path.join(frontendRoot, "docs/index.html"), "utf8")).toContain('id="docs-navigation"');
     expect(await access(path.join(frontendRoot, "public/docs/index.html")).then(() => true, () => false)).toBe(false);
   });
@@ -69,11 +70,11 @@ describe("Vite documentation MPA", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("text/html");
       const html = await response.text();
-      expect(html).toContain("UNMET API documentation");
+      expect(html).toContain("Introduction · UNMET Docs");
       expect(html).toContain('id="docs-navigation"');
       expect(html).toContain('<main id="docs-content" tabindex="-1"');
       expect(html).toContain('href="#docs-content"');
-      expect(html).toContain("PAYMENT-SIGNATURE");
+      expect(html).toContain('href="/docs/api/payments/"');
       expect(html).not.toContain('<div id="root"></div>');
       const head = await fetch(base + route, { method: "HEAD" });
       expect(head.status).toBe(200);
@@ -103,4 +104,117 @@ describe("Vite documentation MPA", () => {
       }
     }
   });
+
+  test("publishes exactly the approved routes with complete static navigation", async () => {
+    const approved = ["/docs", "/docs/getting-started/", "/docs/getting-started/builders/", "/docs/getting-started/agents/",
+      "/docs/demand-market/", "/docs/demand-market/proposals/", "/docs/demand-market/review/", "/docs/demand-market/refunds/",
+      "/docs/api/", "/docs/api/intelligence/", "/docs/api/payments/", "/docs/api/errors/", "/docs/roadmap/"];
+    expect(docsRoutes).toEqual(approved);
+    const htmlPages = new Map(await Promise.all(approved.map(async (route) =>
+      [route, await readFile(path.join(directory, docsFile(route)), "utf8")] as const)));
+    for (const [route, html] of htmlPages) {
+      expect(html.match(/<h1>/g)?.length).toBe(1);
+      expect(html).not.toMatch(/github\.com|AGENTS\.md|FUTURE_IMPLEMENTATION\.md|PAYMENT_RECOVERY\.md/);
+      expect(html).not.toContain("<!--docs-");
+      expect(html).not.toContain("docs-sidebar-label");
+      expect(html).not.toContain(">Documents<");
+      expect(html).toContain('aria-label="Browse documentation"');
+      expect(html.match(/<details[ >]/g)?.length).toBe(5);
+      expect(html.match(/<details open data-active-group/g)?.length).toBe(1);
+      expect(html.match(/<details open/g)?.length).toBe(1);
+      expect(html.match(/data-active-group/g)?.length).toBe(1);
+      expect(html).toContain(`href="${route}" aria-current="page"`);
+      expect(html).toContain('aria-label="On this page"');
+      const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+      expect(new Set(ids).size).toBe(ids.length);
+      const toc = html.match(/<aside class="docs-toc"[\s\S]*?<\/aside>/)?.[0] ?? "";
+      const headings = [...html.matchAll(/<h[23] id="([^"]+)">/g)].map((match) => match[1]);
+      expect([...toc.matchAll(/href="#([^"]+)"/g)].map((match) => match[1])).toEqual(headings);
+      for (const [, href] of html.matchAll(/<a\b[^>]*href="([^"]+)"/g)) {
+        const target = new URL(href!, "https://unmetxyz.my.id" + route);
+        expect(target.hostname).toBe("unmetxyz.my.id");
+        const page = htmlPages.get(target.pathname);
+        if (target.hash) {
+          expect(page).toBeDefined();
+          expect(page).toContain(`id="${target.hash.slice(1)}"`);
+        } else {
+          expect(page !== undefined || ["/", "/market", "/create-demand", "/openapi.json", "/api.md", "/payment.md", "/.well-known/api-catalog"].includes(target.pathname)).toBe(true);
+        }
+      }
+      const cssLinks = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)];
+      expect(cssLinks.length).toBeGreaterThan(0);
+      const css = (await Promise.all(cssLinks.map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
+      expect(css).toContain(".docs-grid");
+      expect(css).toContain("grid-template-columns");
+    }
+    const sitemap = await readFile(path.join(directory, "sitemap.xml"), "utf8");
+    const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1]!).pathname);
+    expect(new Set(locations)).toEqual(new Set(["/", ...approved]));
+    expect(locations.length).toBe(approved.length + 1);
+    expect(await readFile(path.join(directory, "payment.md"), "utf8")).not.toContain("github.com");
+  });
+
+  test.each(docsRoutes.filter((route) => route !== "/docs"))("%s supports direct URLs, aliases, query and HEAD", async (route) => {
+    for (const base of [devOrigin, previewOrigin]) {
+      for (const alias of [route, route.slice(0, -1), route + "index.html", route + "?from=sidebar"]) {
+        const response = await fetch(base + alias, { headers: { Accept: "text/html" } });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/html");
+        const html = await response.text();
+        expect(html).toContain(`rel="canonical" href="https://unmetxyz.my.id${route}"`);
+        expect(html).toContain('class="docs-article"');
+        expect(html).not.toContain('<div id="root"></div>');
+        const head = await fetch(base + alias, { method: "HEAD" });
+        expect(head.status).toBe(200);
+        expect(await head.text()).toBe("");
+      }
+    }
+  });
+
+  test.each(["/docs/missing", "/docs/api/missing/", "/docs/sources/AGENTS.md", "/docs/missing.html"])("%s returns real 404 without the app fallback", async (route) => {
+    for (const base of [devOrigin, previewOrigin]) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetch(base + route, { method, headers: { Accept: "text/html" } });
+        expect(response.status).toBe(404);
+        expect(await response.text()).not.toContain('<div id="root"></div>');
+      }
+    }
+  });
+
+  test("publishes highlighted code examples with unchanged copyable text", async () => {
+    const examples = [
+      ["docs/api/index.html", "curl -sS \"https://unmetxyz.my.id/v1/demands\" \\\n  -H \"Accept: application/json\""],
+      ["docs/api/errors/index.html", "{\n  \"error\": {\n    \"code\": \"INVALID_LIMIT\",\n    \"message\": \"limit must be between 1 and 50\"\n  }\n}"],
+      ["docs/api/intelligence/index.html", "curl -i \"https://unmetxyz.my.id/v1/opportunities\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json\" \\\n  --data '{\"minBounty\":\"10.000000\",\"status\":\"open\",\"sort\":\"score\",\"limit\":10}'"]
+    ];
+    for (const [file, expected] of examples) {
+      const html = await readFile(path.join(directory, file!), "utf8");
+      expect(html).toContain('<figure class="docs-code-block">');
+      expect(html).toContain('class="docs-code-copy"');
+      expect(html).toContain('tabindex="0" aria-label=');
+      const code = html.match(/<pre[^>]*><code>([\s\S]*?)<\/code><\/pre>/)?.[1] ?? "";
+      expect(code).toContain('class="docs-code-');
+      const text = code.replace(/<[^>]+>/g, "").replaceAll("&quot;", '"').replaceAll("&#x27;", "'")
+        .replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+      expect(text).toBe(expected);
+    }
+  });
+
+  test("keeps consumer API constraints and future status visible", async () => {
+    const api = await readFile(path.join(directory, "docs/api/intelligence/index.html"), "utf8");
+    const schema = JSON.parse(await readFile(path.join(directory, "openapi.json"), "utf8"));
+    for (const field of Object.keys(schema.components.schemas.OpportunityQuery.properties)) expect(api).toContain(field);
+    for (const sort of schema.components.schemas.OpportunityQuery.properties.sort.enum) expect(api).toContain(sort);
+    for (const value of ["32 KiB", "4,294,967,295", "1 to 50", "scoreBreakdown", "economicSignals", "reasoning"]) expect(api).toContain(value);
+    const roadmap = await readFile(path.join(directory, "docs/roadmap/index.html"), "utf8");
+    for (const id of ["automatic-validation", "rfq", "service-registry", "service-discovery", "intelligence-expansion", "capability-resolver"]) {
+      expect(roadmap).toMatch(new RegExp('id="' + id + '">[^<]+</h2>\\s*<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>'));
+    }
+    const payments = await readFile(path.join(directory, "docs/api/payments/index.html"), "utf8");
+    for (const value of ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE", "10000", "1952", "196", "L1 finality"]) expect(payments).toContain(value);
+    const recovery = await readFile(path.join(directory, "docs/api/errors/index.html"), "utf8");
+    expect(recovery).toContain("There is no public UNMET recovery endpoint");
+    expect(recovery).toContain("Do not create a fresh authorization");
+  });
+
 });

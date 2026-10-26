@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Filter funded demand and receive an inspectable comparison of matching opportunities." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/api/intelligence/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Demand Intelligence API · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-toolbar">
+        <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+      </div>
+      <div class="docs-grid">
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Demand Intelligence API</h1>
+            <p class="docs-description">Filter funded demand and receive an inspectable comparison of matching opportunities.</p>
+<p class="docs-status">LIMITED · X402 PAYMENT REQUIRED</p>
+<h2 id="request">Request</h2>
+<p><code>POST /v1/opportunities</code> accepts an <code>application/json</code> object, up to 32 KiB, with the optional fields below. Unknown fields, arrays, null bodies, and invalid values are rejected before payment. <code>{}</code> uses defaults.</p>
+<div class="docs-table"><table><thead><tr><th scope="col">Field</th><th scope="col">Default</th><th scope="col">Accepted value</th></tr></thead><tbody><tr><td><code>minBounty</code></td><td><code>"0"</code></td><td>Non-negative decimal string with at most six fractional digits; current escrow in market-token units.</td></tr><tr><td><code>minSupporters</code></td><td><code>1</code></td><td>Integer from 0 to 4,294,967,295.</td></tr><tr><td><code>status</code></td><td><code>"open"</code></td><td>open, submitted, ready, rejected, expired, fulfilled, closed; case-insensitive. Supplied null is invalid.</td></tr><tr><td><code>sort</code></td><td><code>"bounty"</code></td><td>bounty, supporters, calls, deadline, score; case-sensitive.</td></tr><tr><td><code>limit</code></td><td><code>10</code></td><td>Integer from 1 to 50. No cursor or offset pagination.</td></tr></tbody></table></div>
+<figure class="docs-code-block">
+  <figcaption class="docs-code-header"><span class="docs-code-language"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 7 5 5-5 5m8 0h6"/></svg>Bash</span><button class="docs-code-copy" type="button" aria-label="Copy Bash example" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg><span aria-live="polite">Copy</span></button></figcaption>
+  <pre tabindex="0" aria-label="Bash example"><code><span class="docs-code-command">curl</span> <span class="docs-code-option">-i</span> <span class="docs-code-string">&quot;https://unmetxyz.my.id/v1/opportunities&quot;</span> \
+  <span class="docs-code-option">-H</span> <span class="docs-code-string">&quot;Content-Type: application/json&quot;</span> \
+  <span class="docs-code-option">-H</span> <span class="docs-code-string">&quot;Accept: application/json&quot;</span> \
+  <span class="docs-code-option">--data</span> <span class="docs-code-string">&#x27;{&quot;minBounty&quot;:&quot;10.000000&quot;,&quot;status&quot;:&quot;open&quot;,&quot;sort&quot;:&quot;score&quot;,&quot;limit&quot;:10}&#x27;</span></code></pre>
+</figure>
+<p>This unsigned request receives a payment challenge, not paid results. Follow <a href="/docs/api/payments/">the x402 payment flow</a> to authorize the returned terms.</p>
+<h2 id="response">Paid response</h2>
+<p>A successful response contains <code>chainId</code>, <code>contract</code>, <code>blockNumber</code>, <code>generatedAt</code>, <code>analysis</code>, and <code>opportunities</code>.</p>
+<p>Top-level <code>analysis</code> contains <code>poolSize</code>, <code>rankingScope</code>, <code>scoreVersion</code>, <code>marketToken</code>, and <code>tokenDecimals</code>. Scope is <code>matching_filters_before_limit</code>; score version is <code>escrow-percentiles-v1</code>; decimals are 6.</p>
+<p>Each opportunity retains the <a href="/docs/api/#response">public demand fields</a> and adds:</p>
+<div class="docs-table"><table><thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td><code>rank</code></td><td>Unique 1-based rank by rounded score, then numeric demand ID descending. Response order is independently controlled by sort.</td></tr><tr><td><code>scoreBreakdown</code></td><td>Funding, expectedCalls, and supporters each expose percentile/contribution. deadlineFreshness exposes factor/contribution.</td></tr><tr><td><code>economicSignals</code></td><td>escrowPerExpectedCall, timeRemainingSeconds, and review. Review is null unless the stored state is submitted.</td></tr><tr><td><code>reasoning</code></td><td>Deterministic positive and cautions arrays. These are interpretations of indexed facts, not AI predictions.</td></tr></tbody></table></div>
+<p>Review signals contain <code>approvalGap</code> and <code>rejectionHeadroom</code> as six-decimal market-token strings, plus <code>reviewTimeRemainingSeconds</code> as a decimal integer string. <code>timeRemainingSeconds</code> is also a non-negative decimal integer string.</p>
+<h2 id="ranking">Ranking and units</h2>
+<p>The score combines current-escrow percentile (50%), expected-call percentile (25%), supporting-wallet percentile (15%), and remaining-deadline freshness (10%, capped at 30 days). A longer remaining deadline increases freshness; urgency does not increase it.</p>
+<p>For a pool larger than one, a percentile is the number of strictly smaller peer values divided by pool size minus one. A singleton has percentile 1; equal values in a larger pool have percentile 0. Contributions are summed and rounded to six decimals.</p>
+<p>Ranks and scores use the full matching pool before the limit. Changing filters can change ranks. Changing only sort or limit does not. Free scores use a different pool and may differ.</p>
+<p><code>escrowPerExpectedCall</code> is current atomic escrow divided by historical expected calls, rounded down and formatted with six decimals; null when calls are zero. It is not service price or guaranteed revenue. Zero remaining time or approval gap does not prove settlement.</p>
+<h2 id="limitations">Limitations</h2>
+<p>Payment buys analysis, not escrow funding or service execution. A paid result may have an empty opportunity list. Supporting wallets are not independent people; expected calls are not observed usage. Scores do not establish profit, quality, or fulfillment probability.</p>
+<p>Full schemas are available in <a href="/openapi.json">OpenAPI</a>. Keep EVM integer strings as strings or exact integers, not floating-point numbers.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

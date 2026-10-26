@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Correct invalid requests and resolve uncertain outcomes before authorizing another payment." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/api/errors/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Errors &amp; recovery · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-toolbar">
+        <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+      </div>
+      <div class="docs-grid">
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Errors &amp; recovery</h1>
+            <p class="docs-description">Correct invalid requests and resolve uncertain outcomes before authorizing another payment.</p>
+<h2 id="http-errors">HTTP errors</h2>
+<div class="docs-table"><table><thead><tr><th scope="col">HTTP</th><th scope="col">Meaning</th><th scope="col">Client action</th></tr></thead><tbody><tr><td>400</td><td>Invalid JSON, filters, key, or authorization.</td><td>Correct the request; do not retry unchanged invalid input.</td></tr><tr><td>402</td><td>Payment required or authorization not accepted.</td><td>Inspect PAYMENT-REQUIRED. A challenge is not a receipt.</td></tr><tr><td>409</td><td>Retained authorization/key conflict or uncertain settlement.</td><td>Observe or investigate the existing operation. Do not re-sign to bypass it.</td></tr><tr><td>413 / 415</td><td>Body too large or unsupported media type.</td><td>Use an application/json object no larger than 32 KiB.</td></tr><tr><td>429</td><td>Rate limit reached before payment verification.</td><td>Respect Retry-After. Default per-IP limits are 60 demand reads and 20 intelligence requests per 60 seconds; instance settings can differ.</td></tr><tr><td>503</td><td>Dependency, capacity, readiness, or payment storage unavailable.</td><td>Retry an unsigned request after recovery. Investigate any ambiguous signed attempt first.</td></tr></tbody></table></div>
+<h2 id="error-format">Error format</h2>
+<p>Normal API failures use the format below. Readiness failures also include <code>ok: false</code>. Official x402 challenge/payment bodies retain their protocol format; do not assume every 402 body uses this error object.</p>
+<figure class="docs-code-block">
+  <figcaption class="docs-code-header"><span class="docs-code-language"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 7 5 5-5 5m8 0h6"/></svg>JSON</span><button class="docs-code-copy" type="button" aria-label="Copy JSON example" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg><span aria-live="polite">Copy</span></button></figcaption>
+  <pre tabindex="0" aria-label="JSON example"><code>{
+  <span class="docs-code-key">&quot;error&quot;</span>: {
+    <span class="docs-code-key">&quot;code&quot;</span>: <span class="docs-code-string">&quot;INVALID_LIMIT&quot;</span>,
+    <span class="docs-code-key">&quot;message&quot;</span>: <span class="docs-code-string">&quot;limit must be between 1 and 50&quot;</span>
+  }
+}</code></pre>
+</figure>
+<div class="docs-table"><table><thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td><code>INVALID_JSON</code>, <code>INVALID_SORT</code>, <code>INVALID_STATUS</code>, <code>INVALID_LIMIT</code></td><td>Correct the documented body/filter constraints.</td></tr><tr><td><code>IDEMPOTENCY_KEY_INVALID</code></td><td>Key must be 1–128 printable non-space ASCII characters.</td></tr><tr><td><code>IDEMPOTENCY_CONFLICT</code>, <code>PAYMENT_ALREADY_RESERVED</code></td><td>The operation or authorization is already bound; no paid-response replay.</td></tr><tr><td><code>PAYMENT_RECONCILIATION_REQUIRED</code></td><td>Settlement is ambiguous and requires investigation.</td></tr><tr><td><code>PAYMENT_STORAGE_UNAVAILABLE</code>, <code>PAYMENT_UNAVAILABLE</code></td><td>The service cannot safely accept payment.</td></tr><tr><td><code>RATE_LIMITED</code>, <code>OVER_CAPACITY</code>, <code>CHAIN_RPC_UNAVAILABLE</code></td><td>Back off or wait for dependency/capacity recovery.</td></tr></tbody></table></div>
+<h2 id="recovery">Recover an uncertain payment</h2>
+<ol><li>Preserve the method, path, validated request body, idempotency key, request ID, and any transaction hash.</li><li>Do not create a fresh authorization after a timeout, ambiguous 503, or reconciliation conflict.</li><li>Ask the service operator to investigate the existing operation. There is no public UNMET recovery endpoint.</li><li>Recovery checks payment status and canonical transaction evidence. It does not submit settlement again or retrieve the original paid response.</li></ol>
+<p>A missing hash or contradictory evidence can leave an operation unresolved. A fresh payment is a separate spending decision, not a safe automatic retry. Share diagnostic identifiers with the operator, not private keys or raw payment authorizations.</p>
+<h2 id="wallet-actions">Wallet action failures</h2>
+<p>For a rejected wallet prompt, retry only intentionally. If the account or network changes before signing, review the action under the correct session. After broadcasting, track the existing transaction even if the wallet disconnects.</p>
+<p>A successful receipt followed by a failed state readback is not permission to fund again. Refresh the onchain view first. Native wallet-modal disconnect-pending behavior has known limitations; verify the intended wallet and network before each action.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>
