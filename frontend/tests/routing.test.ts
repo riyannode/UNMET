@@ -1,22 +1,41 @@
-import { matchRoutes } from "react-router";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
+import UnmetNavigation from "../UnmetNavigation";
 import { demandHref, parseDemandId, ROUTES } from "../routing";
 
-const routeObjects = Object.entries(ROUTES).map(([id, route]) => ({
-  id,
-  path: route.href,
-}));
+const routeObjects = Object.entries(ROUTES).flatMap(([id, route]) =>
+  "path" in route ? [{ id, path: route.path }] : [],
+);
 
 describe("app routes", () => {
   test.each([
     ["/", "landing"],
-    ["/docs", "docs"],
     ["/market", "market"],
     ["/market/42", "demandDetail"],
     ["/create-demand", "createDemand"],
     ["/analytics", "analytics"],
   ])("matches %s to %s", (path, routeId) => {
     expect(matchRoutes(routeObjects, path)?.at(-1)?.route.id).toBe(routeId);
+  });
+
+  test("keeps public documentation outside the React app routes", () => {
+    expect(ROUTES.docs.href).toBe("/docs");
+    expect("path" in ROUTES.docs).toBe(false);
+    expect(matchRoutes(routeObjects, "/docs")).toBeNull();
+  });
+
+  test("renders Docs as a native link while app links stay client-side", () => {
+    const markup = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(UnmetNavigation)));
+    const docsAnchor = markup.match(/<a\b[^>]*href="\/docs"[^>]*>/)?.[0];
+    const marketAnchor = markup.match(/<a\b[^>]*href="\/market"[^>]*>/)?.[0];
+    const analyticsAnchor = markup.match(/<a\b[^>]*href="\/analytics"[^>]*>/)?.[0];
+
+    expect(docsAnchor).toBeDefined();
+    expect(docsAnchor).not.toContain("data-discover");
+    expect(marketAnchor).toContain("data-discover");
+    expect(analyticsAnchor).toContain("data-discover");
   });
 
   test("builds demand URLs that can be opened directly", () => {

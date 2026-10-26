@@ -4,7 +4,7 @@ The current sources are `frontend/main.tsx`, `frontend/App.tsx`, `frontend/Creat
 
 ## Routes and structure
 
-The landing page at `/` uses `UnmetLanding`, `MagicRings`, `UnmetHowItWorks`, `UnmetNavigation` and `UnmetFooter`. `/docs` is a Coming Soon page. App routes share the ReUI sidebar: `/market`, `/market/:demandId`, `/create-demand`, `/analytics`. See [product behavior](PRODUCT.md).
+The landing page at `/` uses `UnmetLanding`, `MagicRings`, `UnmetHowItWorks`, `UnmetNavigation` and `UnmetFooter`. `/docs` serves the public API documentation from `frontend/public/docs/index.html`. App routes share the ReUI sidebar: `/market`, `/market/:demandId`, `/create-demand`, `/analytics`. See [product behavior](PRODUCT.md).
 
 Demand details keep Request Details, Escrow & Support, and Builder Proposal together. The create route uses a deterministic guided chat and six-term review. Preserve wallet session, receipt/readback, pending recovery, error, empty and loading behavior.
 

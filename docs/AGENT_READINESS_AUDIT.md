@@ -189,6 +189,10 @@ This patch adds `frontend/public/robots.txt`, `sitemap.xml`, `.well-known/api-ca
 
 The Express change only adds discovery Link hints and exposes Link through the existing CORS policy. Payment functions and business handlers remain unchanged. The existing Docker CI job now tests real HTTP behavior using Caddy and assets copied from the built web image against a synthetic local API. It does not start the production stack or make payments. No new dependency, universal payment interface, provider selector, protocol card or conversion pipeline was added.
 
+### Documentation route consolidation
+
+The duplicate React documentation hub has been removed; `frontend/public/docs/index.html` is the canonical document. Desktop and mobile Docs navigation use full-document links to `/docs`. Vite maps exact `/docs` and `/docs/` requests to that file in development and preview, while Caddy's existing mapping remains and the legacy Vercel rewrite targets the static file. OpenAPI, the concise public Markdown API reference, the payment guide and the engineering reference in `docs/API.md` retain their distinct roles. Regression coverage lives in the existing frontend tests and the packaged Caddy discovery check; this change adds no directories, dependencies or engine changes. Final branch head, CI and deployment status remain tracked on PR #20.
+
 The implementation deliberately excludes managed Markdown conversion, OAuth/OIDC, A2A, Skills Index, MCP, Web Bot Auth signing, WebMCP, DNS-AID, MPP, ACP/AP2/UCP, new facilitators/networks/assets, and all proposed roadmap phases. Future multi-provider/MPP design above is an audit proposal only.
 
 ## Review and validation record

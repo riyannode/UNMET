@@ -69,7 +69,7 @@ function LandingNavigationLink({
       </a>
     );
   }
-  if (item.href.startsWith("#")) {
+  if (item.href.startsWith("#") || item.href === ROUTES.docs.href) {
     return <a className={className} href={item.href} onClick={onNavigate}>{content}</a>;
   }
   return <Link className={className} to={item.href} onClick={onNavigate}>{content}</Link>;

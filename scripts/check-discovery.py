@@ -3,6 +3,7 @@ import http.server
 import json
 import os
 import pathlib
+import re
 import socket
 import subprocess
 import tempfile
@@ -119,7 +120,25 @@ try:
                     check(path, expected=404, method=method, headers={"Accept": "text/markdown"})
             headers, _ = check("/", mime="text/html")
             assert 'rel="api-catalog"' in headers.get("Link", "")
-            for path in ["/docs", "/market", "/market/1", "/create-demand", "/analytics"]:
+            canonical_docs = (dist / "docs/index.html").read_bytes()
+            for path in ["/docs", "/docs/", "/docs/index.html", "/docs?from=nav", "/docs/?from=nav"]:
+                headers, body = check(path, mime="text/html")
+                assert body == canonical_docs, (path, "did not serve the canonical static document")
+                check(path, method="HEAD", mime="text/html")
+            public_resources = {
+                "/openapi.json": ("application/vnd.oai.openapi+json", b'"openapi": "3.1.0"'),
+                "/api.md": ("text/markdown", b"# UNMET Demand API"),
+                "/payment.md": ("text/markdown", b"# UNMET API payment guide"),
+                "/.well-known/api-catalog": ("application/linkset+json", b'"linkset"'),
+            }
+            for href in re.findall(rb'href="(/[^\"]+)"', canonical_docs):
+                path = href.decode()
+                assert path == "/" or path in public_resources, (path, "unregistered same-origin documentation link")
+                mime, marker = public_resources.get(path, ("text/html", b""))
+                _, body = check(path, mime=mime)
+                if marker:
+                    assert marker in body, (path, "did not serve the expected public document")
+            for path in ["/market", "/market/1", "/create-demand", "/analytics", "/docs-other"]:
                 check(path, mime="text/html")
 
             headers = {"Content-Type": "application/json", "Accept": "text/markdown", "X-Forwarded-For": "198.51.100.44", "CF-Connecting-IP": "198.51.100.45", "X-Request-ID": "untrusted-fixture-id"}

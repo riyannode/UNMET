@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes, useLocation } from "react-router";
 import { Toaster } from "sonner";
 import UnmetLanding from "./UnmetLanding.tsx";
-import UnmetNavigation from "./UnmetNavigation.tsx";
 import { ROUTES } from "./routing.ts";
 import "./app.css";
 
@@ -42,25 +41,6 @@ function CanonicalRoute() {
   return null;
 }
 
-function DocsRoute() {
-  return (
-    <main className="unmet-docs-page" aria-label="Documentation">
-      <UnmetNavigation />
-      <section className="unmet-docs-content">
-        <h1>UNMET API docs</h1>
-        <p>Public demand data is free. Ranked demand intelligence is a separate OKX x402 paid endpoint.</p>
-        <nav aria-label="API documentation">
-          <a href="/docs/index.html">Read API documentation</a>
-          <a href="/api.md">API reference (Markdown)</a>
-          <a href="/openapi.json">OpenAPI 3.1</a>
-          <a href="/payment.md">Payment and recovery guide</a>
-          <a href="/.well-known/api-catalog">RFC 9727 API catalog</a>
-        </nav>
-      </section>
-    </main>
-  );
-}
-
 const el = document.getElementById("root");
 if (!el) throw new Error("root missing");
 
@@ -70,7 +50,6 @@ createRoot(el).render(
       <CanonicalRoute />
       <Routes>
         <Route path={ROUTES.landing.path} element={<UnmetLanding />} />
-        <Route path={ROUTES.docs.path} element={<DocsRoute />} />
         <Route element={<Suspense fallback={<WorkspaceLoading />}><App /></Suspense>}>
           <Route id="market" path={ROUTES.market.path} element={<MarketRoute />} />
           <Route id="demand-detail" path={ROUTES.demandDetail.path} element={<DemandDetailRoute />} />
