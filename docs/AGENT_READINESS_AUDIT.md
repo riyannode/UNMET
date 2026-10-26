@@ -31,9 +31,9 @@ Initial HTTPS probes ran at approximately 10:20–10:27 WIB (03:20–03:27 UTC),
 
 All sampled HTML soft 404s had SHA-256 `ef31fee3e29896604aeff624be672bf40b4c28e911d767e6ea02b3bf897479a7`, matching `/`. A 200 with the wrong representation was counted as missing.
 
-### Owner-authorized main deployment before continuing discovery
+### Historical owner-authorized main deployment before continuing discovery
 
-The owner requested that discovery work be checkpointed and latest main deployed first. Deployment completed at **10:35 WIB** on 26 October 2026. Both existing production containers now use `923ff6804ccc877853581508598d32a850e59c72`, built on the VPS from the pristine main source. API payment/server source hashes and the Caddy source match that commit; the frontend document served publicly matches its container file. This discovery branch was **not deployed**.
+The owner requested that discovery work be checkpointed and latest main deployed first. Deployment completed at **10:35 WIB** on 26 October 2026. Both existing production containers then used `923ff6804ccc877853581508598d32a850e59c72`, built on the VPS from the pristine main source. API payment/server source hashes and the Caddy source matched that commit; the frontend document served publicly matched its container file. At this historical checkpoint the discovery branch had not yet been deployed; the dated live acceptance below supersedes that state.
 
 Repeat public HTTPS checks returned 200 for liveness, health, readiness and free demands, and unpaid 402 for opportunities with **all three ordered Mainnet offers** at `10000` atomic units. The same unpaid request with markdown Accept retained JSON402 and the payment header. Thus the initial one-offer deployment drift was resolved by the authorized main deployment. The discovery soft404s remain present on deployed main.
 
@@ -49,7 +49,7 @@ Additional unpaid checks at 10:48 WIB: POST `https://unmetxyz.my.id/v1/opportuni
 
 The dashboard measured Quick Wins 0/5, Technical Groundwork 0/3, Advanced Integration 0/8, optional Commerce 0/5. It reports x402 as not detected on the scanned page despite the real paid POST returning 402. Its homepage-oriented score is not an API conformance result.
 
-In the table, **origin** means repository code/assets and routing; **CF** means separately authorized Cloudflare configuration. Predictions assume deployment of this patch to the intended canonical origin and a later rescan. They are not measured post-deployment results.
+In the table, **origin** means repository code/assets and routing; **CF** means separately authorized Cloudflare configuration. The table's predictions were written before the candidate deployment; use the dated live acceptance below for measured post-deployment results.
 
 | Finding / applicability | Baseline repository evidence | Live / scanner evidence | Official requirement | Location and action | Benefit / security consideration | Expected after deployment |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -163,13 +163,25 @@ All required reference URLs were opened or retrieved on the audit date: [Cloudfl
 
 ## Production actions and verification boundary
 
-The owner-authorized main deployment is recorded above. Deployment of this discovery branch still requires a separate owner action. Repeat GET/HEAD/MIME/Link/404 and unpaid402 checks after an approved discovery rollout; specifically recheck all three offers against source without signing a payment.
+At the time of the original audit, the owner-authorized main deployment was recorded above and deployment of this discovery branch still required a separate owner action. That deployment status was superseded by the dated live acceptance below. The original record's GET/HEAD/MIME/Link/404 and unpaid 402 checks remain historical; the live acceptance records the post-deployment checks.
 
 Cloudflare DNS, WAF, Workers, certificates and cache rules were not modified. Runtime secret values and SQLite record contents were preserved during the authorized VPS deployment. Apex/www remain DNS-only. Bot Fight Mode was false, AI training was blocked in configuration, managed robots was false, search/user protection was disabled, no Page Rules were listed, and SSL mode was Full. The listed managed rulesets are not proof of application to DNS-only requests; one additional listed ruleset returned 404 on detail lookup, so its behavior was not established.
 
 DNS records remain DNS-only; activating Cloudflare proxying requires separate operational authorization and the staging/runtime evidence gate documented in [Self-hosting: Cloudflare proxy activation gate](SELF_HOSTING.md#cloudflare-proxy-activation-gate).
 
-Runtime `PAYMENT-RESPONSE` forwarding can only be tested with a synthetic fixture in this task. No live signed response, post-proxy Cloudflare behavior, payment execution, production result replay, distributed exactly-once settlement, L1 finality or public three-token acceptance is claimed.
+Runtime `PAYMENT-RESPONSE` forwarding can only be tested with a synthetic fixture in this task. No live signed response, payment execution, production result replay, distributed exactly-once settlement, L1 finality, or paid acceptance of any of the three offered tokens is claimed. Post-proxy Cloudflare behavior remains unverified.
+
+### Live acceptance — 2026-10-26 UTC
+
+Candidate `ac804188d7f4732803fa1b6958db9a62d90e5411` was deployed at `2026-10-26T06:40:45Z`, built from `main` at `923ff6804ccc877853581508598d32a850e59c72`. CI run `40279306584` passed all four jobs. Public acceptance at `2026-10-26T06:46:08Z` recorded **83/83 checks passing** for that candidate. These observations identify the tested candidate; the final reviewed commit, deployment, and CI are tracked on [PR #20](https://github.com/riyannode/UNMET/pull/20).
+
+Public checks confirmed valid TLS for apex and `www`, canonical 308 redirects, SPA routes, documentation, and seven static resources with expected GET/HEAD behavior, MIME types, and packaged bytes. OpenAPI 3.1 validation, RFC 9727 catalog shape, combined repeated `Link` fields, and GET/HEAD 404s for 12 unsupported well-known paths passed. `/live`, `/health`, `/ready`, and free `/v1/demands` returned successfully; the latter returned chain-derived Testnet 1952 data with the legacy public schema and no paid fields. Unpaid `application/json` and `text/markdown` requests returned the expected 402 behavior and three existing Mainnet 196 offers—USD₮0, USDC, and USDG—at 0.01 (10,000 atomic units); CORS, invalid JSON/media type/limit, oversized-body responses, quota 429 with `Retry-After`, and resistance to forged client-IP headers also passed. Browser confirmation rendered all six current chain-derived market requests, showed Reown disconnected with the Connect wallet action, and showed `/docs` with neutral x402 client/OKX facilitator wording and working discovery links. The offer receiver matched the existing runtime value in a private comparison; its address is omitted here. No payment signature was created and no payment was sent.
+
+Post-deployment storage checks recorded SQLite integrity `ok`, schema version 1, zero rows, and the same row digest before and after. The named payment and Caddy volumes were preserved, and only ports 80/443 were published. A pre-deployment backup was retained; the executable rollback procedure preserves the current database and does not restore an older database snapshot. The first deployment attempt was safely rolled back after an external deployment guard compared environment-list ordering; the guard was corrected to compare key/value pairs, and the retry passed. This was a deployment-harness issue, not a repository defect.
+
+Cloudflare's post-deployment scan at `2026-10-26T06:47:33Z` saved all 21 item results. The four scanner tallies changed from `0/5 → 4/5`, `0/3 → 2/3`, `0/8 → 0/8`, and `0/5 → 0/5`. Robots, sitemap, AI crawler rules, Content Signals, API catalog, and agent-useful Link relations were recognized. Markdown negotiation was **FAIL (nonblocking)**: the site intentionally serves explicit `/api.md` and `/payment.md` resources without HTML content negotiation, while Cloudflare-managed Markdown is unavailable on this Free zone. OAuth/OIDC metadata, protected-resource metadata, `auth.md`, A2A, Skills, MCP, Web Bot Auth, WebMCP, DNS-AID, ACP, AP2, MPP, and UCP are **NOT APPLICABLE** to the implemented scope or are future protocols. The homepage scanner did not detect x402, but the actual protected POST challenge and offers passed the direct public checks; this is a scanner coverage discrepancy, not an implementation failure. The scanner reported four APIs in the catalog; the catalog exposes two business endpoints and three discovery anchors, so the scanner count is not a claim of four implemented business APIs.
+
+Cloudflare proxy activation, WAF behavior on proxied traffic, shared-edge client-IP attribution, proxy cache behavior, and post-proxy payment-header/response handling remain **UNVERIFIED**. DNS remains DNS-only; the separate authorization and evidence gate in [Self-hosting](SELF_HOSTING.md#cloudflare-proxy-activation-gate) still applies. Live paid 200 responses, settlement, recovery, and post-payment database behavior were not exercised by design. Synthetic packaged fixtures and the passing branch CI remain the evidence for those paths.
 
 ## Implemented now versus future
 
@@ -201,4 +213,4 @@ Review corrected an initial relative Linkset, homepage canonical reuse, a robots
 
 Ponytail complexity audit/review: **Lean already. Ship.** No speculative provider layer or new dependency is justified. Existing payment wrappers implement durability, transport bounds, diagnostics and independent proof; their single provider does not make those safeguards disposable. No unrelated complexity cleanup was applied.
 
-Local Caddy/API fixture listeners were terminated and their exact loopback ports checked closed. Test listeners and subprocesses exited; no preview, watcher, tunnel or test container remains running. The two owner-authorized production containers intentionally remain running. Existing named volumes and private rollback artifacts were retained. Predictions in the checklist remain distinct from measured production behavior; this discovery branch has not been deployed.
+Local Caddy/API fixture listeners were terminated and their exact loopback ports checked closed. Test listeners and subprocesses exited; no preview, watcher, tunnel or test container remains running. The two owner-authorized production containers intentionally remain running. Existing named volumes and private rollback artifacts were retained. The discovery candidate's measured deployment and the remaining acceptance boundaries are recorded above; final reviewed commit, deployment, and CI tracking remain on [PR #20](https://github.com/riyannode/UNMET/pull/20).
