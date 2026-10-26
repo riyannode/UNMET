@@ -80,6 +80,8 @@ The requester describes the required capability and commits funds through an onc
 
 Other supporters may contribute additional funding.
 
+Demand commitments finance service creation. They do not prepay future API calls or grant usage credits. After fulfillment, supporters and other consumers pay the provider separately through direct x402 requests.
+
 Builders discover funded requirements and independently develop services that satisfy them.
 
 A builder develops and hosts an x402-compatible API before submitting it to UNMET.
@@ -172,6 +174,12 @@ Examples:
 
 The existing paid POST /v1/opportunities endpoint remains the initial Demand Intelligence payment surface.
 
+#### Current implementation baseline
+
+The current free `GET /v1/demands` returns public chain-derived market facts and the legacy `score`. Paid `POST /v1/opportunities` adds `analysis`, `rank`, `scoreBreakdown`, `economicSignals`, and `reasoning` to the matching filtered pool. Production Demand Intelligence billing uses X Layer Mainnet (`eip155:196`) and three ordered native EIP-3009 exact offers (USD₮0, USDC, USDG), each priced at 10000 atomic units (6 decimals, `$0.01`). This current endpoint policy is independent from Gate 0's future reviewed payment profiles and is not a universal transfer-method restriction. See [API](API.md) for the current contract and [STATUS](STATUS.md) for evidence scope.
+
+Demand commitments finance service creation only. They do not buy the Demand Intelligence query or prepay future API usage. After fulfillment, API usage is paid directly to the provider through its x402 endpoint; contributors receive no usage entitlement. UNMET does not custody those service-use payments.
+
 Future API changes must preserve compatibility unless explicit API versioning is approved.
 
 
@@ -241,6 +249,8 @@ Both values must be validated independently.
 
 A successful Testnet escrow transaction does not prove a Mainnet service payment occurred.
 
+Historical acceptance at PR #17 baseline `cb346e2a73de917a01e2555363d6b54f4e4a58a7` exercised the current Demand Intelligence billing path only: three Mainnet assets produced paid HTTP 200 responses and durable `SETTLED` records after canonical L2 confirmation, but each response contained an empty opportunities list. See [STATUS](STATUS.md) and the [PR #17 record](https://github.com/riyannode/UNMET/pull/17). This does not prove arbitrary builder API correctness, Gate 0 PASS issuance, builder-paid execution, permanent availability, OKX listing acceptance, provider reliability, Permit2, or generic marketplace compatibility. Gate 0 remains an unpaid challenge inspection; it must not submit a payment or invoke paid endpoint execution.
+
 
 ### 3.3 Configuration-Driven Payment Support
 
@@ -251,13 +261,18 @@ The profile defines:
 - profile identifier
 - network identifier
 - allowed payment schemes
+- allowed asset transfer methods
+- allowed payment flows and the reviewed default flow for each transfer method
+- signing-domain metadata for each enabled asset and transfer method
 - accepted assets
 - token contract addresses
 - token decimals
 - supported x402 protocol versions
+- maximum payment authorization timeout in seconds
 - payment amount rules
 - receiver validation rules
 - price comparison policy
+- demand price asset and decimals for each supported escrow deployment
 - optional facilitator compatibility metadata
 - enabled or disabled status
 
@@ -281,6 +296,16 @@ Network: eip155:196
 Integration: OKX Payments
 
 Initial scheme: exact
+
+Initial x402 protocol version: 2.
+
+Every payment profile MUST explicitly declare its allowed asset transfer methods. Gate 0 MUST validate the observed method against that profile; an unsupported or ambiguous method cannot produce PASS. Enabling EIP-3009, Permit2, or another method for production requires verified asset/facilitator support and explicitly reviewed configuration.
+
+Every payment profile MUST explicitly declare its allowed payment flows per asset transfer method. For this initial X Layer exact profile, the only allowed paymentFlow is authorization. Explicit authorization is eligible; an omitted paymentFlow resolves to authorization only when the reviewed mechanism/profile defines authorization as that method's default. upfront and escrow are not eligible. Unknown, unsupported, ambiguous, or unresolved paymentFlow cannot produce PASS.
+
+Gate 0 MUST resolve and validate both assetTransferMethod and paymentFlow against the reviewed profile before an offer can qualify. Future upfront or escrow support requires separately reviewed profile/schema semantics and must not be enabled implicitly. These reserved extra fields follow the [x402 V2 mechanism and payment-flow model](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md#61-asset-transfer-methods-and-payment-flow-models); the initial UNMET profile permits only authorization.
+
+The /v1/opportunities billing policy, including PR #17, is not a universal Gate 0 policy. Do not inherit its method restrictions, token choices, or prices. Keep method-specific checks within the reviewed profile model without introducing a generic plugin framework.
 
 Accepted assets: Only assets explicitly enabled in the approved deployment configuration.
 
@@ -530,6 +555,7 @@ Check:
 - asset address is correct
 - decimals are correct
 - asset is enabled for the required scheme
+- signing metadata matches the approved asset configuration
 
 
 ### Payment Receiver Validation
@@ -546,6 +572,21 @@ The receiving wallet may differ from the builder's submission wallet.
 If different, that relationship must be explicitly authorized by the builder.
 
 Do not silently assume the two wallets are equal.
+
+The builder must sign the receiver authorization defined in Section 4.8, including when payTo equals builderWallet. The Worker verifies that proof before issuing an attestation. A client-supplied builderWallet alone is not authorization.
+
+This authorization concerns future service payments. Escrow settlement still pays the accepted builder and configured treasury under the existing selective-settlement rules.
+
+
+### Multiple Payment Offers
+
+Require HTTP 402 and a valid x402 V2 PAYMENT-REQUIRED header. A JSON body alone is insufficient. Validate the envelope and each accepts[] entry against the V2 schema before evaluating compatibility.
+
+Evaluate offers in their original accepts[] order. Select the first offer that passes every required profile, receiver, and demand-price check, including resolution and validation of both assetTransferMethod and paymentFlow. One eligible offer is sufficient for PASS; no eligible offer means FAIL.
+
+Structurally valid unsupported or incompatible alternatives do not invalidate an eligible offer. Report them as unvalidated alternatives, never as covered by the attestation. A malformed envelope or malformed offer fails the challenge.
+
+Return the selected offer and its zero-based index. Only the selected offer enters paymentRequirementsHash. Do not require or imply support for every advertised scheme, network, asset, transfer method, or payment flow.
 
 
 ### Price Validation
@@ -565,35 +606,17 @@ Do not silently assume stablecoin parity.
 
 ### 4.6 Price Denomination Policy
 
-The demand's maxUnitPrice and the service's x402 price may refer to different assets or units.
+Gate 0 permits same-asset comparison only. Asset identity is the pair (payment network, token contract address), never a token symbol or a bridge-equivalence claim.
 
-Before Gate 0 implementation, define a reviewed comparison policy for every enabled payment profile.
+For the initial profile, maxUnitPrice retains the frontend's six-decimal USD₮0 price unit. Its payment denomination is eip155:196 / 0x779ded0c9e1022225f8e0630b35a9b54be713736 / 6 decimals. This labels the service-price constraint; it does not equate the Testnet escrow token with the Mainnet token or change escrow accounting.
 
-The policy must specify:
+Trusted configuration must pin this demand price denomination to each approved (escrowChainId, escrowContract). The Worker reads maxUnitPrice onchain and obtains its denomination from that configuration. A request cannot choose or override either value, and a profile update must not reinterpret existing demand prices.
 
-- canonical demand price denomination
-- x402 asset denomination
-- atomic-unit conversion rules
-- supported asset comparisons
-- unsupported comparisons
-- handling of invalid or inconsistent amounts
+An offer is comparable only when its network, asset address, and verified decimals match the demand price denomination. Compare the atomic integer amount directly with maxUnitPrice using exact integer arithmetic: amount <= maxUnitPrice. Reject invalid, negative, fractional, out-of-range, or inconsistent amounts. Do not round or use floating point.
 
-Financial calculations must use exact integers.
+For this initial denomination, USDC, USDG, another network's token, and any other different asset remain unsupported comparisons, even if independently supported by OKX. Such an offer cannot qualify for PASS. Return UNSUPPORTED_PRICE_COMPARISON when no offer is eligible because its denomination differs; do not apply a conversion rate, oracle, or stablecoin-parity assumption.
 
-Floating-point arithmetic must not be used.
-
-Do not infer a price conversion from:
-
-- token symbols
-- marketing descriptions
-- assumed stablecoin equality
-- unverified market prices
-
-If the required comparison policy is not approved, that payment profile cannot issue PASS attestations.
-
-This requirement is a mandatory implementation gate.
-
-A coding agent must not invent conversion rates or redefine existing contract economics.
+Every enabled profile must declare its price denomination and comparison policy. Missing or unverified configuration prevents PASS. Future comparison policies require separate review and must preserve the meaning of existing demand economics.
 
 
 ### 4.7 Validation Results
@@ -649,27 +672,67 @@ The frontend calls it before preparing the onchain submission.
 
 ### Required Request Data
 
-- escrowChainId
-- escrowContract
-- demandId
-- builderWallet
-- serviceUrl
-- evidenceHash
-- validation request description
+Accept a JSON object with these fields only:
+
+| Field | Type and rule |
+| --- | --- |
+| schemaVersion | Literal unmet-x402-validation-v1 |
+| escrowChainId, demandId, submissionNonce | Unsigned decimal strings; nonce must equal the onchain current nonce plus one |
+| escrowContract, builderWallet, authorizedPayTo | Nonzero EVM addresses |
+| serviceUrl | Absolute HTTPS URL, serialized with the WHATWG URL serializer; no credentials, query, or fragment; at most 512 UTF-8 bytes |
+| evidenceHash | Nonzero bytes32 hex string |
+| paymentNetwork | CAIP-2 identifier matching an enabled approved profile |
+| request | Object containing method, query, contentType, and body only |
+| builderAuthorization | Object containing issuedAt, expiresAt, and signature only |
+
+request.method is GET or POST. request.query is an ordered array of [name, value] string pairs, including repeated names when needed; an empty array means no query parameters. Append these pairs to serviceUrl with URLSearchParams in the supplied order. The resulting request URL must not exceed 2048 UTF-8 bytes.
+
+GET requires contentType and body to be null. POST requires contentType application/json and a JSON-object body, including {} for an empty object. Send POST bytes as UTF-8 RFC 8785/JCS without a trailing newline. Accept only I-JSON data; reject duplicate keys, invalid Unicode, non-finite numbers, and integer JSON numbers outside the safe integer range. Large integers must be strings.
+
+The complete validation request is limited to 32 KiB, at most 32 query pairs, and JSON nesting depth 8, counting the outer object as depth 1. Reject unknown fields. Inputs must be public business test data; APIs requiring caller-provided secrets are outside this validation model. Do not accept caller-defined headers, Authorization, cookies, bearer tokens, scripts, or alternative protocols. The Worker sets Accept: application/json and the specified POST Content-Type; it never forwards the caller's headers or credentials to the service.
+
+requestHash is SHA-256 of the UTF-8 JCS bytes of {schemaVersion: "unmet-http-request-v1", url: resultingRequestUrl, method, contentType, body}. Query pair order is preserved in url. Builder, frontend, and Worker must use the same resulting URL and request bytes.
+
+### Builder Receiver Authorization
+
+Use the EIP-712 domain defined in Section 4.10 and this separate primary type, with fields in the order shown:
+
+```solidity
+struct BuilderValidationAuthorization {
+    uint256 demandId;
+    address builderWallet;
+    bytes32 serviceUrlHash;
+    bytes32 evidenceHash;
+    bytes32 requestHash;
+    bytes32 paymentNetworkHash;
+    address authorizedPayTo;
+    uint256 submissionNonce;
+    uint64 issuedAt;
+    uint64 expiresAt;
+}
+```
+
+paymentNetworkHash is keccak256 of the exact UTF-8 paymentNetwork string. Derive the other fields from this request; use the URL/evidence rules in Section 4.10. Times are unsigned decimal strings in the JSON request and obey Section 4.11. signature is hex-encoded bytes, at most 4096 bytes.
+
+The Worker must recover builderWallet for an EOA signature using Section 4.10's ECDSA encoding or verify ERC-1271 on the escrow chain for a contract wallet. Invalid signatures fail; unavailable RPC verification returns UNAVAILABLE. The signature authorizes only this request and receiver, not a transaction, payment, or escrow withdrawal. The selected offer's network and payTo must match the authorization. Attestation expiry must not exceed authorization expiry.
 
 The Worker must not trust client-provided economic fields as canonical.
 
-It must read and verify the relevant onchain demand state.
+It must read and verify the relevant onchain demand state. Trusted configuration must select exactly one profile for the requested escrow deployment and paymentNetwork; missing or ambiguous profile configuration cannot produce PASS.
 
 
 ### Success Response
 
 - status: PASS
 - payment profile identifier
+- selected offer and its original accepts[] index
+- requestHash and validationPolicyId
 - validated payment requirements digest
 - validation timestamp
 - attestation expiration
 - signed attestation
+
+Return the complete typed attestation fields and signature so the frontend can recompute the digest and bind submission to its originating wallet, demand, URL, evidence, and nonce. PASS uses HTTP 200; FAIL uses HTTP 400; UNAVAILABLE uses HTTP 503. Neither failure response contains an attestation.
 
 
 ### Failure Response
@@ -712,6 +775,12 @@ Do not execute paid requests merely to validate an x402 payment challenge.
 
 If the API requires a request body for an unpaid challenge, use a declared, bounded, safe validation request.
 
+Use Section 4.8's request exactly. Follow no redirects. Resolve and enforce public-address restrictions on the actual connection, including IPv4/IPv6 and DNS rebinding; a preliminary DNS check followed by an unchecked connection is insufficient. If the transport cannot enforce this, return UNAVAILABLE without contacting the endpoint.
+
+Limit the endpoint request to 10 seconds and PAYMENT-REQUIRED to 16 KiB of encoded header data. Parse only that header; cancel the response body without consuming business output. Apply a finite configured concurrency limit before outbound work; if the limit is absent or exhausted, return UNAVAILABLE. Never attach payment proof or retry the endpoint with a payment.
+
+Transport failures, timeouts, and endpoint HTTP 5xx return UNAVAILABLE. Other non-402 responses, redirects, oversized headers, and invalid challenges return FAIL.
+
 Do not expose:
 
 - verifier signing credentials
@@ -729,19 +798,272 @@ The Worker must sign successful validation results using a recognized verifier i
 
 The validation attestation must use EIP-712 typed structured data.
 
-The attestation must bind:
+Use domain fields in EIP-712 order: name = "UNMET AgentDemand", version = "2", chainId = escrowChainId, verifyingContract = escrowContract. Do not include salt. Both authorization types use this domain; their distinct primary types prevent cross-use.
 
-- escrowChainId
-- verifyingContract
-- demandId
-- builderWallet
-- serviceUrlHash
-- evidenceHash
-- paymentRequirementsHash
-- submissionNonce
-- validationPolicyId
-- issuedAt
-- expiresAt
+The verifier signs primary type ValidationAttestation with these exact names, types, and field order:
+
+```solidity
+struct ValidationAttestation {
+    uint256 escrowChainId;
+    address verifyingContract;
+    uint256 demandId;
+    address builderWallet;
+    bytes32 serviceUrlHash;
+    bytes32 evidenceHash;
+    bytes32 paymentRequirementsHash;
+    uint256 submissionNonce;
+    bytes32 validationPolicyId;
+    uint64 issuedAt;
+    uint64 expiresAt;
+}
+```
+
+Encode the digest with EIP-712 hashStruct and domain separation, not personal_sign or packed struct encoding. The initial verifier uses a 65-byte low-s ECDSA signature with v equal to 27 or 28. JSON representations of typed-data unsigned fields are canonical decimal strings without leading zeros except "0"; addresses and bytes32 values use lowercase 0x-prefixed hex and must fit their declared widths.
+
+serviceUrlHash is keccak256 of the exact UTF-8 serialized serviceUrl accepted in Section 4.8. The builder must submit that same string without later normalization. evidenceHash is the exact nonzero bytes32 submitted onchain; the frontend preserves the existing rule of hashing UTF-8 evidence references with keccak256 when the input is not already bytes32.
+
+AgentDemandV2 must match the domain and signed escrowChainId/verifyingContract fields to block.chainid and address(this), builderWallet to msg.sender, demandId to the target demand, URL/evidence hashes to the submitted arguments, and submissionNonce to the current nonce plus one. Accepting the submission consumes that nonce atomically. Reopen never makes a consumed nonce reusable.
+
+### Public Validation Policy Encoding
+
+validationPolicyId is SHA-256 of the UTF-8 RFC 8785/JCS bytes of the public envelope defined below, with no BOM or trailing newline. Represent the 32-byte output as lowercase 0x-prefixed hex. Do not hash a runtime configuration object or serialize additional implementation fields.
+
+All listed object keys are required, including nullable keys. No key may be omitted; no unknown key is allowed at any level. Null is a JSON null, never the string "null". A missing optional value is represented by null at its declared key. Other values have the exact types below; there are no implicit defaults.
+
+| Object / field | Exact type or members |
+| --- | --- |
+| envelope | Object with schemaVersion, escrowChainId, escrowContract, profile, demandPriceAsset |
+| schemaVersion | String literal unmet-validation-policy-v2 |
+| escrowChainId | Positive uint256 encoded as a decimal string |
+| escrowContract | Address |
+| profile | Object with id, enabled, network, x402Versions, schemes, assets, paymentRules, receiverRules, facilitator |
+| profile.id | String matching ^[a-z0-9][a-z0-9-]{0,63}$ |
+| profile.enabled | JSON boolean |
+| profile.network | Network string |
+| profile.x402Versions | Nonempty array of JSON integer protocol versions; this schema version supports only 2 |
+| profile.schemes | Nonempty array of strings; this schema version supports only exact |
+| profile.assets | Nonempty array of asset objects |
+| asset object | Object with asset, decimals, enabled, defaultTransferMethod, transferMethods |
+| asset.asset | Address identifying the token on profile.network |
+| asset.decimals | JSON integer from 0 through 255, not a string |
+| asset.enabled | JSON boolean |
+| asset.defaultTransferMethod | Method identifier or null; a non-null value must name a transferMethods entry |
+| asset.transferMethods | Nonempty array of transfer-method objects |
+| transfer-method object | Object with method, enabled, paymentFlows, defaultPaymentFlow, tokenDomain, permit2Contract, settlementSpender |
+| method | Case-sensitive string eip3009 or permit2 in this schema version |
+| enabled in a transfer-method object | JSON boolean |
+| paymentFlows | Nonempty array of case-sensitive flow strings; this schema version permits only authorization |
+| defaultPaymentFlow | String authorization or null; a non-null value must appear in paymentFlows and identify the reviewed mechanism/profile default for this method |
+| tokenDomain | Object with nonempty UTF-8 string name and version, or null |
+| permit2Contract, settlementSpender | Address or null |
+| profile.paymentRules | Object with amountType, priceComparison, maxTimeoutSeconds |
+| amountType, priceComparison | String literals uint256 and same-asset-exact, respectively |
+| maxTimeoutSeconds | Positive JSON integer no larger than 9007199254740991; seconds, not milliseconds or a numeric string |
+| profile.receiverRules | Object with mode and allowZeroAddress |
+| mode, allowZeroAddress | String literal builder-authorized and JSON boolean false, respectively |
+| profile.facilitator | Object with id and url, or null when public facilitator metadata is absent |
+| facilitator.id | String using the profile.id syntax |
+| facilitator.url | Absolute HTTPS URL in WHATWG serialized form, without credentials, query, or fragment |
+| demandPriceAsset | Object with network, asset, decimals; Network string, Address, and JSON integer 0 through 255, respectively |
+
+Address means exactly 0x followed by 40 lowercase hexadecimal digits, excluding the zero address. Construct normalized lowercase addresses from verified configuration; reject a public envelope that is not already normalized. Do not perform checksum-case serialization.
+
+For this EVM policy schema, Network string means eip155: followed by a positive canonical decimal uint256 chain ID of at most 32 digits, respecting the [CAIP-2 reference limit](https://standards.chainagnostic.org/CAIPs/caip-2#syntax). Preserve the exact string; reject aliases, whitespace, case variants, signs, and leading zeros. Decimal uint strings contain only ASCII digits, have no leading zero, and must fit uint256; zero is encoded as "0" only for fields permitting zero. Domain names and versions preserve their exact Unicode content without case folding or Unicode normalization.
+
+Only the policy's x402Versions, schemes, assets, transferMethods, and paymentFlows arrays represent sets. This does not reorder the observed accepts[] array or request query pairs. Serialize x402Versions in ascending numeric order, schemes and paymentFlows in ascending ASCII order, assets by lowercase asset address, and transferMethods by method in ascending ASCII order. Reject duplicates and unsorted envelopes. JCS sorts object keys but never sorts these arrays. Include every listed asset and method, including disabled entries; never filter them before hashing. Every enabled boolean participates in the digest, and an offer is eligible only when the profile, asset, and selected method are all enabled and the resolved flow is allowed for that method.
+
+An eip3009 entry requires tokenDomain to be an object and permit2Contract/settlementSpender to be null. A permit2 entry requires tokenDomain to be null and both contract addresses to be non-null verified configuration. These are public validation inputs, not proof of future settlement. Null defaultTransferMethod means that the observed challenge must explicitly identify its method. A declared default may resolve an omitted method only when the scheme/version permits that default and the matching method is enabled and reviewed. Never infer a method from the token symbol, the number of entries, or intelligence billing code.
+
+Resolve the observed extra.paymentFlow only after resolving the method. An explicit authorization is eligible when listed in that method's paymentFlows. Omission may use defaultPaymentFlow only when it is authorization and the reviewed mechanism/profile defines that default; null means omission is ineligible. An explicit JSON null, non-string value, unknown identifier, or ambiguous/unsupported method-flow combination cannot qualify. Never infer a flow from a single allowed entry or from a different method's default. Both paymentFlows and defaultPaymentFlow participate in validationPolicyId. This schema rejects upfront and escrow even if an external mechanism supports them; enabling either requires separately reviewed profile/schema semantics.
+
+demandPriceAsset is the pinned denomination from Section 4.6; it cannot be chosen by a request. maxTimeoutSeconds caps the selected offer's payment authorization timeout; it does not replace Section 4.9's endpoint timeout or Section 4.11's 900-second lifetime and 60-second skew. Runtime secrets, RPC credentials, concurrency counters, and unrelated application settings are excluded from this public envelope. Section 4.8/4.9's fixed request rules are part of this schema version.
+
+Reject duplicate JSON keys, invalid Unicode, non-finite numbers, and type/range violations before JCS. Changing the schema or interpretation of a field requires a reviewed schema version. Other transfer methods or network families require a reviewed schema extension and corresponding checks, not an arbitrary metadata/plugin object or an automatic escrow redeployment. Policy value changes produce a new digest.
+
+The Worker signs only its configured policy digest. Policy updates affect new validations; issued attestations remain valid until expiry unless their verifier is rotated out. The contract authenticates that observation through the current verifier and records validationPolicyId and paymentRequirementsHash with the accepted submission. It does not parse HTTP, recompute the payment observation, or hardcode the initial payment network/profile as its only allowable policy ID. A reviewed profile for another payment network must not itself require a new escrow deployment.
+
+### Payment Requirements Digest
+
+paymentRequirementsHash is SHA-256 of the UTF-8 RFC 8785/JCS bytes of this envelope, without a trailing newline:
+
+```text
+{schemaVersion: "unmet-payment-requirements-v2", x402Version: 2,
+ resource: normalizedResource, requestHash, selected: normalizedSelectedOffer}
+```
+
+normalizedResource preserves the observed resource fields, with resource.url resolved against the requested URL using the WHATWG URL serializer. Reject credentials, fragments, a different origin/path, or a nonempty resource query different from the requested query. A resource URL without query may identify the protected path; requestHash still binds the exact query and body.
+
+normalizedSelectedOffer contains scheme, network, asset, amount, payTo, maxTimeoutSeconds, and extra only. Preserve the exact scheme/network identifiers; lowercase EVM addresses; parse amount as uint256 and serialize it as a canonical decimal string; require maxTimeoutSeconds to be a positive safe integer in seconds within the profile's explicit limit. Preserve all extra fields, with extra.assetTransferMethod and extra.paymentFlow set to the resolved profile-approved method and flow. Resolve explicit values or reviewed defaults under the policy rules above; an unresolved, unsupported, or ambiguous method or flow makes the offer ineligible. An absent extra becomes an object before normalization. The resolved paymentFlow MUST be present in normalizedSelectedOffer.extra, including when the observed offer omitted it, so paymentRequirementsHash commits to the flow. An omitted flow resolved to authorization and explicit authorization produce the same normalized bytes when all other fields match. This rule applies to each reviewed method and does not impose an EIP-3009-only policy.
+
+Reject duplicate JSON keys and invalid I-JSON before canonicalization. JCS orders object properties; it does not reorder arrays. Do not include other accepts[] entries, their index, the error text, response body, or unrelated headers in this digest. Reordering alternatives may change which offer is selected; an unchanged selected offer and request produce the same digest. This digest attests only the selected payment option, not the complete advertised challenge.
+
+SHA-256 digests above are bytes32 values represented as lowercase 0x-prefixed hex. These canonical UTF-8 fixtures have no trailing newline and test encoding only; example.com and the receiver below do not identify an available service or prove payment support.
+
+```json
+{"body":{"city":"Jakarta"},"contentType":"application/json","method":"POST","schemaVersion":"unmet-http-request-v1","url":"https://example.com/weather"}
+```
+
+requestHash: 0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8
+
+```json
+{"requestHash":"0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8","resource":{"url":"https://example.com/weather"},"schemaVersion":"unmet-payment-requirements-v2","selected":{"amount":"10000","asset":"0x779ded0c9e1022225f8e0630b35a9b54be713736","extra":{"assetTransferMethod":"eip3009","name":"USD₮0","paymentFlow":"authorization","version":"1"},"maxTimeoutSeconds":60,"network":"eip155:196","payTo":"0x0000000000000000000000000000000000000001","scheme":"exact"},"x402Version":2}
+```
+
+paymentRequirementsHash: 0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49
+
+### Literal Policy and EIP-712 Vectors
+
+These are public, synthetic encoding fixtures. Their addresses, enabled flags, and method settings do not approve a production profile or imply an available service. No signing key, signature, RPC call, or transaction is needed to reproduce the digests. Use the exact struct definitions above; the domain type is EIP712Domain(string name,string version,uint256 chainId,address verifyingContract).
+
+#### A. validationPolicyId
+
+Canonicalize this complete envelope with JCS and hash the resulting UTF-8 bytes with SHA-256:
+
+The fixture gives its synthetic eip3009 entry an authorization default; its permit2 entry requires explicit paymentFlow. These values exercise both cases without approving either production mechanism's default.
+
+```json
+{
+  "schemaVersion": "unmet-validation-policy-v2",
+  "escrowChainId": "1952",
+  "escrowContract": "0x1111111111111111111111111111111111111111",
+  "profile": {
+    "id": "codec-fixture",
+    "enabled": true,
+    "network": "eip155:196",
+    "x402Versions": [
+      2
+    ],
+    "schemes": [
+      "exact"
+    ],
+    "assets": [
+      {
+        "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        "decimals": 6,
+        "enabled": true,
+        "defaultTransferMethod": null,
+        "transferMethods": [
+          {
+            "method": "eip3009",
+            "enabled": true,
+            "paymentFlows": [
+              "authorization"
+            ],
+            "defaultPaymentFlow": "authorization",
+            "tokenDomain": {
+              "name": "USD₮0",
+              "version": "1"
+            },
+            "permit2Contract": null,
+            "settlementSpender": null
+          },
+          {
+            "method": "permit2",
+            "enabled": true,
+            "tokenDomain": null,
+            "paymentFlows": [
+              "authorization"
+            ],
+            "defaultPaymentFlow": null,
+            "permit2Contract": "0x3333333333333333333333333333333333333333",
+            "settlementSpender": "0x4444444444444444444444444444444444444444"
+          }
+        ]
+      }
+    ],
+    "paymentRules": {
+      "amountType": "uint256",
+      "priceComparison": "same-asset-exact",
+      "maxTimeoutSeconds": 300
+    },
+    "receiverRules": {
+      "mode": "builder-authorized",
+      "allowZeroAddress": false
+    },
+    "facilitator": null
+  },
+  "demandPriceAsset": {
+    "network": "eip155:196",
+    "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+    "decimals": 6
+  }
+}
+```
+
+Expected validationPolicyId: `0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691`.
+
+#### B. BuilderValidationAuthorization
+
+```json
+{
+  "domain": {
+    "name": "UNMET AgentDemand",
+    "version": "2",
+    "chainId": "1952",
+    "verifyingContract": "0x1111111111111111111111111111111111111111"
+  },
+  "primaryType": "BuilderValidationAuthorization",
+  "message": {
+    "demandId": "9007199254740993",
+    "builderWallet": "0x2222222222222222222222222222222222222222",
+    "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
+    "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
+    "requestHash": "0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8",
+    "paymentNetworkHash": "0xefa922b302ee91bbef8a50fbd535e6277fb2e0c069dbc7cf376483bd56ca7095",
+    "authorizedPayTo": "0x0000000000000000000000000000000000000001",
+    "submissionNonce": "1",
+    "issuedAt": "1792886400",
+    "expiresAt": "1792887300"
+  }
+}
+```
+
+| Result | Literal expected value |
+| --- | --- |
+| typeHash | `0x3106130d2f2debb598f33e31a4a5c4de61d71023209b265d6bd7d65004a304fe` |
+| domainSeparator | `0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a` |
+| structHash | `0x7f295adbc67658dfd5561880112a18fc8302ca4bbe4d21ce3f07f8c8c03d0beb` |
+| digest | `0xad07348d634d39a1aecc174a1eaa6b3316a349f257fc30c1d3f9347745da7cc7` |
+
+#### C. ValidationAttestation
+
+```json
+{
+  "domain": {
+    "name": "UNMET AgentDemand",
+    "version": "2",
+    "chainId": "1952",
+    "verifyingContract": "0x1111111111111111111111111111111111111111"
+  },
+  "primaryType": "ValidationAttestation",
+  "message": {
+    "escrowChainId": "1952",
+    "verifyingContract": "0x1111111111111111111111111111111111111111",
+    "demandId": "9007199254740993",
+    "builderWallet": "0x2222222222222222222222222222222222222222",
+    "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
+    "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
+    "paymentRequirementsHash": "0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49",
+    "submissionNonce": "1",
+    "validationPolicyId": "0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691",
+    "issuedAt": "1792886400",
+    "expiresAt": "1792887300"
+  }
+}
+```
+
+| Result | Literal expected value |
+| --- | --- |
+| typeHash | `0x67beb001f81b85e71e91091bf36753e1a578fbec204642b1bee40134161f22dd` |
+| domainSeparator | `0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a` |
+| structHash | `0x57d9261a3e04d73fc8c39e6d110b718b839c7816a76830d61ac2ff951e53927d` |
+| digest | `0x2917ee6a3d428ef2088a6f96d9873f46dbba4cf3da8c9cd75a3b0dd2ec284301` |
+
+For both EIP-712 vectors, digest = keccak256(0x1901 || domainSeparator || structHash), concatenating raw bytes rather than hex text. The URL preimage is https://example.com/weather; the evidence preimage is unmet-codec-fixture; paymentNetworkHash hashes the UTF-8 string eip155:196. requestHash and paymentRequirementsHash are the earlier literal fixtures. demandId deliberately exceeds the JavaScript safe-integer range and must remain a string until parsed as uint256.
+
+These literal outputs were independently reproduced with Python eth-account 0.14.0 plus rfc8785 0.1.4, and Node.js ethers 6.17.0 plus canonicalize 5.1.0. The implementations agreed on canonical policy bytes, SHA-256, EIP-712 type hashes, domain separator, struct hashes, and final digests. Acceptance tests must compare against the published literals, not regenerate expected values with the encoder under test.
+
+Contract, Worker, and frontend acceptance tests must share literal domain, type-hash, authorization, attestation, URL/evidence, and request/payment-digest vectors. Include reordered object keys, changed request/receiver/policy fields, reordered alternatives, and a large atomic amount encoded as a string. A shared implementation producing its own expected values is not a golden-vector test.
 
 The escrow chain ID used in the EIP-712 domain is separate from the service payment network.
 
@@ -776,11 +1098,11 @@ The contract must reject:
 
 ### 4.11 Attestation Validity
 
-The initial proposed maximum lifetime is 15 minutes.
+The maximum lifetime is 15 minutes (900 seconds), with at most 60 seconds of future clock skew. All timestamps are Unix seconds.
 
-The actual lifetime must be reviewed against real wallet interaction timing.
+For the builder authorization, the Worker enforces issuedAt <= now + 60, issuedAt < expiresAt, expiresAt - issuedAt <= 900, and now < expiresAt. It issues attestations with issuedAt equal to its current time and expiresAt no later than min(issuedAt + 900, builderAuthorization.expiresAt).
 
-The contract must enforce the approved lifetime.
+For attestations, AgentDemandV2 enforces the same inequalities using block.timestamp as now. Exactly 60 seconds of future skew is allowed; 61 is rejected. An attestation expires at expiresAt, including equality. Perform checked comparisons before subtraction. Lifetime runs from issuedAt; future skew does not authorize a longer signed interval.
 
 Expired attestations require a fresh Worker validation.
 
@@ -811,9 +1133,11 @@ Do not commit signing credentials.
 
 Do not expose credentials in frontend bundles.
 
-A narrowly scoped verifier rotation mechanism may be required.
+AgentDemandV2 has one current verifier and an immutable verifierAdmin, both nonzero constructor parameters. Deployment approval must identify those addresses and the custody of their credentials; do not infer either role from the treasury or a builder.
 
-Its design and administrative authority must be approved before deployment.
+Only verifierAdmin may call setVerifier(address newVerifier). Reject the zero address and emit VerifierRotated(previousVerifier, newVerifier). Only the current verifier's attestations are accepted; rotation takes effect immediately, without an old-key grace period. Already accepted submissions, votes, settlement, and refunds remain valid and unchanged.
+
+verifierAdmin has no other administrative setter or privileged escrow action. It cannot change itself, funds, fees, quorum, deadlines, recipients, votes, or refund eligibility. Verifier rotation does not make the contract upgradeable and is not required for finalize(), reopen(), or refund().
 
 A compromised verifier can authorize invalid submissions.
 
@@ -1099,11 +1423,16 @@ Required:
 30. Verifier cannot withdraw escrow funds.
 31. Verifier rotation follows its access rules.
 32. Reentrancy protections remain effective.
+33. Domain, field encodings, policy digest, and nonce match the shared literal vectors; consumed nonces remain unusable after reopen.
+34. Lifetime and future-skew boundaries follow Section 4.11, including exact expiry, inverted intervals, 900/901-second lifetime, and 60/61-second future skew.
+35. Rotation rejects unauthorized callers and zero addresses; the previous verifier is rejected while a different verifier is current; accepted proposals and fund-recovery paths are unaffected.
 
 
 ### 5.2 Worker Tests
 
 Required:
+
+Offer-rejection cases use a challenge with no eligible alternative. Mixed-offer challenges follow Section 4.5's selection rule.
 
 1. Valid configured profile accepted.
 2. Unknown profile rejected.
@@ -1111,9 +1440,9 @@ Required:
 4. Valid x402 challenge accepted.
 5. Malformed challenge rejected.
 6. Unsupported protocol version rejected.
-7. Unsupported scheme rejected.
-8. Unsupported network rejected.
-9. Unsupported asset rejected.
+7. Unsupported scheme cannot qualify an offer for PASS.
+8. Unsupported network cannot qualify an offer for PASS.
+9. Unsupported asset cannot qualify an offer for PASS.
 10. Incorrect token decimals rejected.
 11. Invalid payTo rejected.
 12. Unauthorized receiver declaration rejected.
@@ -1132,6 +1461,15 @@ Required:
 25. UNAVAILABLE never produces a valid attestation.
 26. Signature binds all required fields.
 27. Validation cannot leak secrets.
+28. GET/POST schemas, query ordering, canonical body bytes, header restrictions, and every request bound are enforced.
+29. Builder authorization binds the request, network, receiver, demand, evidence, and next nonce; invalid EOA/ERC-1271 proofs fail and unavailable verification never passes.
+30. Mixed offers select the first eligible option, leave unsupported alternatives unvalidated, and fail malformed challenges or lists with no eligible offer.
+31. Request and selected-offer digests match shared literal vectors; changed request, receiver, or policy cannot reuse a signed result.
+32. Same-asset atomic comparison accepts equality and rejects excess; cross-asset/network comparison, assumed parity, and inconsistent decimals cannot produce PASS.
+33. Authorization and attestation timing obey Section 4.11; current-verifier changes cannot produce a falsely usable attestation.
+34. The public policy envelope enforces exact keys/types, explicit nulls, canonical arrays, addresses/network strings, disabled flags, and method-specific rules; literal policy and both EIP-712 vectors match independent implementations.
+35. Both assetTransferMethod and paymentFlow must resolve against the reviewed profile. Explicit authorization and omission with a reviewed authorization default are eligible; omission without that default, explicit null, upfront, escrow, unknown flows, and unsupported/ambiguous combinations cannot produce PASS. An ineligible flow alternative does not poison an eligible authorization offer.
+36. The normalized selected offer always includes its resolved paymentFlow in extra. Equivalent omitted/defaulted and explicit authorization hash identically; changing the committed flow changes the digest and does not make that flow eligible. Profile flow/default changes alter validationPolicyId; upfront/escrow cannot be enabled under this schema.
 
 
 ### 5.3 Frontend Tests
@@ -1154,6 +1492,8 @@ Required:
 14. Contract state readback verification.
 15. No duplicate submission after
     an unknown transaction outcome.
+16. Builder receiver authorization and attestation details remain bound to the originating wallet and demand across Worker calls.
+17. Changed endpoint, request, evidence, receiver, network, or nonce requires fresh authorization and validation; rotation invalidation is handled without resubmitting an unknown transaction.
 
 Existing valid tests must not be deleted or weakened.
 
@@ -1621,6 +1961,19 @@ Payment outcomes must distinguish:
 Do not blindly retry unknown payments.
 
 
+### 9.5 External Distribution
+
+OKX.AI HTTP A2MCP is the initial external distribution integration for suitable fulfilled APIs. Publication is optional and non-canonical. The provider supplies service name, description including returned results, GET/POST method, input parameter names/types/meaning/required status, and the public endpoint. Price and payment requirements come from the endpoint's actual x402 behavior, not a replacement listing price declared by UNMET.
+
+Initial OKX.AI distribution does not assume a public programmatic listing API. Publication must use the currently supported OKX registration flow unless a programmatic interface is separately verified and approved.
+
+Gate 0 compatibility does not imply OKX registration approval or successful paid execution. Registration, publication, and paid acceptance require their own approval and evidence; Gate 0 does not perform them.
+
+The Service Registry preserves canonical demand-to-service references and authenticated provider metadata. Direct x402 consumption remains supported, and other compatible marketplaces or discovery protocols may be added through separately reviewed integrations. A distribution channel does not require AgentDemandV2 to fetch its APIs or change its payment policy.
+
+External listing is not fulfillment evidence. Listing failure, delisting, and marketplace outages cannot modify historical provenance or block demand creation, funding, supporter voting, finalize(), reopen(), or refund(). UNMET does not add marketplace checkout, service-payment custody, or a generalized payment router for this integration. Future API consumption remains a separate direct x402 payment to the provider's authorized receiver.
+
+
 ## 10. PHASE 4 — DEMAND INTELLIGENCE EXPANSION
 
 ### Objective
@@ -1856,6 +2209,7 @@ Authoritative configuration for:
 
 - supported validation networks
 - schemes
+- allowed asset transfer methods, payment flows, and reviewed defaults
 - assets
 - token identity
 - validation rules
@@ -2012,6 +2366,7 @@ Deliver:
 - current x402 compatibility checks
 - direct provider payment metadata
 - agent purchase safety
+- optional OKX.AI HTTP A2MCP distribution with canonical escrow independence
 
 
 ### Phase 4
@@ -2061,7 +2416,7 @@ Deliver:
   validation behavior.
 - Protect against SSRF.
 - Use bounded requests.
-- Never make unapproved payments.
+- Gate 0 challenge inspection is unpaid: do not attach payment proof, replay a paid request, or invoke settlement.
 - Protect verifier credentials.
 - Fail closed on uncertain validation.
 - Remain independent of refund execution.
@@ -2133,6 +2488,8 @@ Its signing authority must be protected.
 
 A compromised verifier may approve invalid submission metadata.
 
+The verifierAdmin is trusted to select the current signing authority; its compromise can also admit invalid submissions, but grants no privileged settlement or withdrawal path.
+
 
 ### 2. Endpoint Mutability
 
@@ -2160,7 +2517,7 @@ They must not interrupt eligible finalization or refunds.
 
 ### 6. Price Comparison
 
-Cross-asset comparisons require an explicitly approved policy.
+Cross-asset comparisons are unsupported in Gate 0. Future policies require separate approval and must preserve existing demand price meanings.
 
 Unknown conversions must not be silently accepted.
 
@@ -2401,6 +2758,9 @@ https://ethereum.org/developers/docs/smart-contracts/
 
 EIP-712:
 https://eips.ethereum.org/EIPS/eip-712
+
+ERC-1271:
+https://eips.ethereum.org/EIPS/eip-1271
 
 
 ### Data Formats

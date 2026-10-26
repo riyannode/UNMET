@@ -67,7 +67,7 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 - Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.
 - Official OKX verification precedes buffered execution and settlement. Durable mode reserves the authorization, persists the in-flight marker before external settlement, and withholds content until confirmed success is persisted. Ambiguous results remain blocked for status-only recovery.
 - Root Compose builds from `context: .` using `docker/Dockerfile.api` and `docker/Dockerfile.web`. Caddy serves the frontend and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready` to the private API. Caddy replaces forwarded client identity; Express trusts only its configured hop.
-- Vercel is a separate path: it imports the Express default export, initializes payments lazily and uses platform ingress identity. `PAYMENT_DB_PATH` must remain unset there; no durable SQLite guarantee applies to that runtime.
+- Vercel is a separate path: it imports the Express default export, initializes payments lazily and uses platform ingress identity. `PAYMENT_DB_PATH` must remain unset there; without durable SQLite, unpaid challenges may be served but submitted payment requests fail closed with `PAYMENT_STORAGE_UNAVAILABLE`.
 
 Read [Architecture](docs/ARCHITECTURE.md) for diagrams and detailed accounting/index behavior. Deployment configuration and historical receipts do not prove that a current public deployment is live or production-ready.
 

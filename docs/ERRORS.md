@@ -74,6 +74,17 @@ These codes apply to durable self-hosted payment handling. Error responses never
 
 A retry header is guidance to retry observation/request later, never permission to sign a new payment. See [payment recovery](PAYMENT_RECOVERY.md).
 
+### Sanitized settlement diagnostics
+
+These codes classify internal payment processing and do not create new public HTTP statuses. Unresolved settlement or proof results keep the operation blocked and content withheld, reporting `PAYMENT_RECONCILIATION_REQUIRED` (`409`). Status observation may retry transient failures within its configured budget, but settlement is never resubmitted.
+
+| Code | Meaning | Recovery |
+| --- | --- | --- |
+| `PAYMENT_STATUS_TEMPORARY` | Transient facilitator status-read failure | Status polling may retry within its bounded budget; otherwise reconcile the existing transaction status. |
+| `PAYMENT_STATUS_UNAVAILABLE` | Non-transient facilitator status-call failure | Investigate the existing operation; do not resubmit settlement. |
+| `CONFIRMATION_RPC_UNAVAILABLE` | Required confirmation RPC read failed | The bounded confirmation loop may retry; the payment remains unresolved until proof succeeds. |
+| `CONFIRMATION_RETRY_EXHAUSTED` | Confirmation retry budget ended without proof | Reconcile the existing transaction; do not resubmit settlement. |
+
 Wallet transaction recovery also distinguishes `broadcast`, `confirmed`, `reverted`, `cancelled`, and `unknown` in `TransactionLifecycleError` and wallet-scoped pending records. `broadcast`/`unknown` block another submission. Observe the existing hash and original intent before any intentional retry; a successful receipt with failed readback is not permission to fund again. See [wallet session/recovery limits](WALLET_DISCONNECT.md).
 
 ## Contract custom errors

@@ -47,7 +47,7 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | DEMAND_CONTRACT, PAYMENT_TOKEN | Required, public addresses | Nonzero valid EVM addresses on the intended market chain |
 | DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Existing metadata; index rebuild reads current contract state |
 | X402_CHAIN_ID | Required API runtime | **Must be 196 in production containers**, independently of Testnet market 1952 |
-| X402_RPC_URL | Public API runtime, default `https://rpc.xlayer.tech` | Bounded Mainnet receipt confirmation RPC; must return chain ID 196; never use the market RPC |
+| X402_RPC_URL | API runtime, public default `https://rpc.xlayer.tech` | Bounded Mainnet receipt confirmation RPC; must return chain ID 196; a credential-bearing provider URL is private configuration; never use the market RPC |
 | OPPORTUNITY_PRICE | Public, default 0.01 | Mainnet must remain exactly `0.01`; other values fail configuration |
 | OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE | Required private API runtime | Your official OKX facilitator credentials |
 | OKX_PAY_TO | Required public nonzero address | API fee recipient; does not change contract treasury/escrow beneficiary |
@@ -202,7 +202,7 @@ Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before incre
 
 ## Durable payment storage
 
-The Docker API requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Vercel keeps its existing payment behavior and has no durable SQLite guarantee.
+The Docker API requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Vercel has no durable SQLite: unpaid challenges may be served, but requests carrying payment headers fail closed with `PAYMENT_STORAGE_UNAVAILABLE`.
 
 SQLite uses WAL and synchronous=FULL; run exactly one Bun API replica with local storage. No automatic settlement retry or original paid-response replay is provided. Hashless ambiguous outcomes need operator investigation.
 
