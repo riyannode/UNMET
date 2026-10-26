@@ -1,5 +1,7 @@
 # API
 
+`frontend/public/openapi.json` publishes machine-readable payment discovery metadata for `POST /v1/opportunities`. Runtime payment initialization checks that it matches the resolved x402 profile. If `X402_CHAIN_ID` or `OPPORTUNITY_PRICE` changes, regenerate and validate the artifact with `bun run sync:payment-discovery` and `bun run check:payment-discovery`; a mismatch fails closed. The static artifact can describe only payment options supported by the configured x402 scheme and identity validation; adding another network requires corresponding verification and settlement support.
+
 Default local base URL: `http://127.0.0.1:8787`.
 
 The public frontend serves the [OpenAPI 3.1 description](../frontend/public/openapi.json), an [RFC 9727 API catalog](../frontend/public/.well-known/api-catalog), a concise [Markdown API reference](../frontend/public/api.md), and [payment guide](../frontend/public/payment.md). These discovery documents describe the deployed API schema. API clients should send `Accept: application/json`; the pinned x402 SDK can return an HTML payment page for a request with both `Accept: text/html` and a Mozilla browser user agent, and that browser-specific 402 may omit `PAYMENT-REQUIRED`.

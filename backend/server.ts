@@ -1,5 +1,7 @@
 import { durablePayment } from "./durable-payment.ts";
-import { MAINNET_ASSETS } from "./payment-identity.ts";
+import { assertPublishedPaymentDiscovery } from "./payment-discovery.ts";
+import { opportunityPaymentOptions, resolveX402PaymentConfig as resolvePaymentConfig } from "./payment-config.ts";
+export { opportunityPaymentOptions } from "./payment-config.ts";
 import type { PaymentStore } from "./payment-store.ts";
 import { PaymentError } from "./payment-error.ts";
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
@@ -27,6 +29,11 @@ import {
 
 const cfg = loadConfig();
 const operations = loadOperationalConfig();
+
+export function resolveX402PaymentConfig(env: Parameters<typeof resolvePaymentConfig>[0] = process.env,
+  coreChainId = cfg.chainId) {
+  return resolvePaymentConfig(env, coreChainId);
+}
 
 export type IndexEntry = {
   demandId: bigint;
@@ -499,38 +506,6 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
   return { poolSize: filtered.length, rankingScope: "matching_filters_before_limit", scoreVersion: "escrow-percentiles-v1", marketToken, tokenDecimals: 6, opportunities };
 }
 
-type X402PaymentEnv = {
-  NODE_ENV?: string;
-  VERCEL_ENV?: string;
-  X402_CHAIN_ID?: string;
-  OPPORTUNITY_PRICE?: string;
-};
-
-export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, coreChainId = cfg.chainId) {
-  const isProduction = env.VERCEL_ENV === "production" || (env.VERCEL_ENV !== "preview" && env.NODE_ENV === "production");
-  if (isProduction && env.X402_CHAIN_ID !== "196") {
-    throw new Error("X402_CHAIN_ID must be explicitly set to 196 in production");
-  }
-  const x402ChainId = env.X402_CHAIN_ID ?? String(coreChainId);
-  if (x402ChainId !== "1952" && x402ChainId !== "196") throw new Error("X402_CHAIN_ID must be 1952 or 196");
-  const priceRaw = env.OPPORTUNITY_PRICE || "0.01";
-  if (!/^\d+(\.\d{1,6})?$/.test(priceRaw)) throw new Error("OPPORTUNITY_PRICE must be a decimal amount with <=6 decimals");
-  const priceAmount = parseUnits6(priceRaw);
-  if (x402ChainId === "196" && priceAmount !== parseUnits6("0.01")) throw new Error("CONFIG_INVALID: OPPORTUNITY_PRICE");
-  return {
-    network: `eip155:${x402ChainId}` as `eip155:${number}`,
-    assets: x402ChainId === "196" ? MAINNET_ASSETS.map(({ asset, name, version }) => ({ asset, extra: { name, version } })) : null,
-    price: `$${priceRaw}`,
-  };
-}
-
-export function opportunityPaymentOptions(pay: ReturnType<typeof resolveX402PaymentConfig>, payTo: Address) {
-  return pay.assets ? pay.assets.map(({ asset, extra }) => ({
-    scheme: "exact" as const, network: pay.network, payTo,
-    price: { asset, amount: parseUnits6("0.01").toString(), extra },
-  })) : [{ scheme: "exact" as const, network: pay.network, payTo, price: pay.price }];
-}
-
 export function paymentStorageGuard(available: boolean): RequestHandler {
   return (req, res, next) => {
     if (!available && (req.get("payment-signature") || req.get("x-payment"))) {
@@ -613,6 +588,8 @@ export function createOfficialFacilitator() {
 }
 
 export async function createPaymentMiddleware(): Promise<RequestHandler & { ready: () => Promise<void> }> {
+  const payment = resolveX402PaymentConfig();
+  await assertPublishedPaymentDiscovery(payment);
   const store = await initializePaymentStorage();
   const pay = requirePaymentEnv();
   const boundedFacilitator = createOfficialFacilitator();

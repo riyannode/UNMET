@@ -6,8 +6,9 @@ import { x402ResourceServer } from "@okxweb3/x402-core/server";
 import { paymentMiddleware } from "@okxweb3/x402-express";
 import express from "express";
 import { getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI, formatUnits6, type DemandTuple } from "./contract.ts";
-import { app, changedDemandIds, createApp, createDemandIndexState, filterAndSort, opportunityPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput, type IndexEntry } from "./server.ts";
+import { app, changedDemandIds, createApp, createDemandIndexState, createPaymentMiddleware, filterAndSort, opportunityPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput, type IndexEntry } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
+import { assertPublishedPaymentDiscovery, paymentDiscovery, validatePaymentDiscovery } from "./payment-discovery.ts";
 
 const testContract = "0x0000000000000000000000000000000000000001" as Address;
 const demandContract = "0x7c51457235cFFBae862493D788137BFf1EF07e2E" as Address;
@@ -676,6 +677,27 @@ describe("independent market and x402 networks", () => {
         amount: (option.price as { amount: string }).amount, payTo: option.payTo,
         maxTimeoutSeconds: 300, extra: (option.price as { extra: unknown }).extra,
       })));
+      const configured = resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952);
+      await assertPublishedPaymentDiscovery(configured);
+      const discovery = await paymentDiscovery(configured);
+      expect(discovery.protocols[0].x402.accepts).toEqual(challenge.accepts.map(({ scheme, network, asset, amount, extra }: {
+        scheme: string; network: string; asset: string; amount: string; extra: unknown;
+      }) => ({ scheme, network, asset, amount, extra })));
+      const changes: Array<(info: Awaited<ReturnType<typeof paymentDiscovery>>) => void> = [
+        (info) => { info.protocols[0].x402.accepts[0].network = "eip155:1"; },
+        (info) => { info.protocols[0].x402.accepts[0].scheme = "transfer"; },
+        (info) => { info.protocols[0].x402.accepts[0].asset = "0x0000000000000000000000000000000000000001"; },
+        (info) => { info.price.amount = "0.02"; },
+        (info) => { Reflect.set(info.price, "currency", "EUR"); },
+        (info) => { info.protocols[0].x402.accepts.pop(); },
+        (info) => { Reflect.deleteProperty(info.protocols[0].x402.accepts[0], "asset"); },
+      ];
+      for (const change of changes) {
+        const changed = structuredClone(discovery);
+        change(changed);
+        await expect(validatePaymentDiscovery(changed, resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952)))
+          .rejects.toThrow("CONFIG_INVALID: PAYMENT_DISCOVERY");
+      }
       const browser = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
         method: "POST", headers: { accept: "text/html", "user-agent": "Mozilla/5.0" },
       });
@@ -690,6 +712,23 @@ describe("independent market and x402 networks", () => {
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("runtime rejects discovery mismatch before payment storage or facilitator setup", async () => {
+    const keys = ["NODE_ENV", "VERCEL_ENV", "X402_CHAIN_ID"] as const;
+    const previous = new Map(keys.map((key) => [key, process.env[key]]));
+    process.env.NODE_ENV = "test";
+    process.env.VERCEL_ENV = "preview";
+    process.env.X402_CHAIN_ID = "1952";
+    try {
+      await expect(createPaymentMiddleware()).rejects.toThrow("CONFIG_INVALID: PAYMENT_DISCOVERY");
+    } finally {
+      for (const key of keys) {
+        const value = previous.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

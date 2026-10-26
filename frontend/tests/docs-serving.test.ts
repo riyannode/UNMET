@@ -227,7 +227,10 @@ describe("Vite documentation MPA", () => {
       expect(roadmap).toMatch(new RegExp('id="' + id + '">[^<]+</h2>\\s*<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>'));
     }
     const payments = await readFile(path.join(directory, "docs/api/payments/index.html"), "utf8");
-    for (const value of ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE", "10000", "1952", "196", "L1 finality"]) expect(payments).toContain(value);
+    for (const value of ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE", "1952", "196", "L1 finality"]) expect(payments).toContain(value);
+    expect(payments).toContain("x-payment-info");
+    expect(payments).toContain('href="/openapi.json"');
+    expect(schema.paths["/v1/opportunities"].post["x-payment-info"].price).toEqual({ mode: "fixed", currency: "USD", amount: "0.01" });
     const recovery = await readFile(path.join(directory, "docs/api/errors/index.html"), "utf8");
     expect(recovery).toContain("There is no public UNMET recovery endpoint");
     expect(recovery).toContain("Do not create a fresh authorization");
