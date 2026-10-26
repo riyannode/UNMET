@@ -174,6 +174,12 @@ Examples:
 
 The existing paid POST /v1/opportunities endpoint remains the initial Demand Intelligence payment surface.
 
+#### Current implementation baseline
+
+The current free `GET /v1/demands` returns public chain-derived market facts and the legacy `score`. Paid `POST /v1/opportunities` adds `analysis`, `rank`, `scoreBreakdown`, `economicSignals`, and `reasoning` to the matching filtered pool. Production Demand Intelligence billing uses X Layer Mainnet (`eip155:196`) and three ordered native EIP-3009 exact offers (USD₮0, USDC, USDG), each priced at 10000 atomic units (6 decimals, `$0.01`). This current endpoint policy is independent from Gate 0's future reviewed payment profiles and is not a universal transfer-method restriction. See [API](API.md) for the current contract and [STATUS](STATUS.md) for evidence scope.
+
+Demand commitments finance service creation only. They do not buy the Demand Intelligence query or prepay future API usage. After fulfillment, API usage is paid directly to the provider through its x402 endpoint; contributors receive no usage entitlement. UNMET does not custody those service-use payments.
+
 Future API changes must preserve compatibility unless explicit API versioning is approved.
 
 
@@ -242,6 +248,8 @@ In such cases:
 Both values must be validated independently.
 
 A successful Testnet escrow transaction does not prove a Mainnet service payment occurred.
+
+Historical acceptance at PR #17 baseline `cb346e2a73de917a01e2555363d6b54f4e4a58a7` exercised the current Demand Intelligence billing path only: three Mainnet assets produced paid HTTP 200 responses and durable `SETTLED` records after canonical L2 confirmation, but each response contained an empty opportunities list. See [STATUS](STATUS.md) and the [PR #17 record](https://github.com/riyannode/UNMET/pull/17). This does not prove arbitrary builder API correctness, Gate 0 PASS issuance, builder-paid execution, permanent availability, OKX listing acceptance, provider reliability, Permit2, or generic marketplace compatibility. Gate 0 remains an unpaid challenge inspection; it must not submit a payment or invoke paid endpoint execution.
 
 
 ### 3.3 Configuration-Driven Payment Support
@@ -2408,7 +2416,7 @@ Deliver:
   validation behavior.
 - Protect against SSRF.
 - Use bounded requests.
-- Never make unapproved payments.
+- Gate 0 challenge inspection is unpaid: do not attach payment proof, replay a paid request, or invoke settlement.
 - Protect verifier credentials.
 - Fail closed on uncertain validation.
 - Remain independent of refund execution.

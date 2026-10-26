@@ -91,7 +91,7 @@ These are illustrative Testnet values, not deployment readback.
 
 No protocol fee is charged merely for posting a failed demand. Unfulfilled supporters retain their pull-refund entitlement.
 
-Secondary revenue: paid `POST /v1/opportunities`, with a configurable main-branch default `OPPORTUNITY_PRICE` of `$0.01` per query, protected with official OKX x402 middleware. Production intelligence billing is configured separately for X Layer Mainnet; it does not move the demand market from Testnet.
+Secondary revenue: paid `POST /v1/opportunities`, protected with official OKX x402 middleware. Production Mainnet billing is fixed at `$0.01` per query across three native EIP-3009 exact offers (USD₮0, USDC, and USDG); other configured price values fail startup. The query payment goes to the configured API recipient for a ranked comparison, separately from the Testnet demand escrow and contract treasury. Demand commitments finance service creation; they do not prepay API calls or grant usage credits. After fulfillment, supporters and other consumers pay for service usage directly to the provider through its x402 endpoint. Contributors have no included or reserved usage entitlement.
 
 ## Canonical storage
 

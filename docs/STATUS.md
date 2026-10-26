@@ -1,12 +1,18 @@
 # Verification Status
 
-## Current implementation (cleanup baseline: merged PR #14)
+## Current implementation (after PR #17 merge)
 
-The repository implements Testnet demand/escrow state and an independent production Mainnet x402 rail. Docker runs Caddy plus one Bun API with WAL/FULL SQLite payment records; Vercel retains its non-durable payment path. See [Architecture](ARCHITECTURE.md), [Self-hosting](SELF_HOSTING.md), and [Payment recovery](PAYMENT_RECOVERY.md).
+The repository implements Testnet demand/escrow state and an independent production Mainnet x402 rail. Docker runs Caddy plus one Bun API with WAL/FULL SQLite payment records. Vercel has no durable SQLite: unpaid challenges may be served, but submitted payment requests fail closed. See [Architecture](ARCHITECTURE.md), [Self-hosting](SELF_HOSTING.md), and [Payment recovery](PAYMENT_RECOVERY.md).
 
 Local PR #13 evidence is in [SELF_HOSTING_VALIDATION](SELF_HOSTING_VALIDATION.md); local PR #14 evidence is in [PAYMENT_VERIFICATION](PAYMENT_VERIFICATION.md). The [cleanup audit](CLEANUP_AUDIT.md) records its own baseline/post-change checks separately. These are local build/test/container results, not latest-release paid or public-deployment acceptance.
 
-Outstanding production gates include an independent contract audit, interactive wallet/provider acceptance (including the documented [native disconnect gap](WALLET_DISCONNECT.md)), separately authorized live paid settlement/finality/resource delivery, and current hosting/TLS/backup/restore acceptance. No current endpoint availability or OKX listing approval is asserted here.
+Later paid-intelligence and reasoning changes are covered by synthetic/mock acceptance and CI, not by a new Mainnet payment. GitHub Actions run `40222593572` passed the four frontend, backend, contracts, and Docker jobs on PR #17 head `93d3151a31bf588a584d317de1685ebe3ab654e5`; that source tree matches merged main `aec576461356cd6cfd76090c0d974b4a36155e72`. This CI result does not repeat the historical live acceptance below.
+
+Outstanding production gates include an independent contract audit, interactive wallet/provider acceptance (including the documented [native disconnect gap](WALLET_DISCONNECT.md)), current hosting/TLS/backup/restore acceptance, and fresh acceptance for any current production deployment. Historical isolated Docker staging paid acceptance is recorded below; it does not establish current deployment availability, nonempty paid results, L1 finality, or an OKX listing approval. No current endpoint availability is asserted here.
+
+## Historical paid Mainnet acceptance — PR #17 baseline
+
+The [PR #17 acceptance record](https://github.com/riyannode/UNMET/pull/17) documents an isolated Docker staging run against the official OKX facilitator and X Layer Mainnet at commit `cb346e2a73de917a01e2555363d6b54f4e4a58a7`. Fresh native EIP-3009 authorizations for USD₮0, USDC, and USDG each produced HTTP 200 and a durable `SETTLED` record after the documented bounded status and canonical L2 confirmation checks. Each response contained `opportunities: []`; the read-only Testnet market check found no `OPEN` demand eligible for the default filters. This is historical evidence for the named baseline, not a fresh payment, a current public deployment check, nonempty opportunity-content acceptance, or Ethereum L1 finality. No new payment was made for this documentation update.
 
 Cleanup link check on **2026-10-23**: HTTP HEAD requests to `frontend-omega-beige-33.vercel.app`, `unmet-ai.vercel.app`, and `unmet-api.vercel.app` returned **404**. The September URLs below are retained for provenance and must not be used as current working deployment instructions.
 

@@ -141,8 +141,11 @@ OKX_SECRET_KEY=...
 OKX_PASSPHRASE=...
 OKX_PAY_TO=0x...
 OPPORTUNITY_PRICE=0.01
-X402_CHAIN_ID=1952 # optional locally; otherwise inherits CHAIN_ID
+X402_CHAIN_ID=196
+X402_RPC_URL=https://rpc.xlayer.tech
 ```
+
+Set `PAYMENT_DB_PATH` to an absolute file path inside a private directory that already exists.
 
 `OKX_PAY_TO` is canonical. `PAY_TO_ADDRESS` remains a legacy fallback for existing local configuration; use `OKX_PAY_TO` for new setup.
 
@@ -163,7 +166,7 @@ curl -i -X POST http://127.0.0.1:8787/v1/opportunities \
   -d '{"minBounty":"0","minSupporters":1,"sort":"bounty","limit":5}'
 ```
 
-Second request must produce the official x402 HTTP 402 challenge. Complete a real OKX-supported payment with an x402 client, replay the same request, and retain:
+Second request must produce the official x402 HTTP 402 challenge. A paid acceptance run requires explicit authorization, `X402_CHAIN_ID=196`, an independent Mainnet `X402_RPC_URL`, and durable SQLite at `PAYMENT_DB_PATH`. Complete an authorized OKX-supported payment with an x402 client, replay the same request, and retain:
 - 402 response headers/body
 - paid request
 - settlement/payment evidence
@@ -171,7 +174,7 @@ Second request must produce the official x402 HTTP 402 challenge. Complete a rea
 
 There is no demo-payment bypass. If facilitator credentials are unavailable, payment verification is **incomplete**, not passed.
 
-Network separation: `CHAIN_ID=1952` and `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c` keep the UNMET demand market on X Layer Testnet. Only `POST /v1/opportunities` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The official exact-scheme SDK selects mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736` from that network and converts `$0.01` to `10000` atomic units. Never change `CHAIN_ID` to move the billing rail.
+Network separation: `CHAIN_ID=1952` and `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c` keep the UNMET demand market on X Layer Testnet. Only `POST /v1/opportunities` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The application advertises three ordered native EIP-3009 exact Mainnet offers: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`). Each costs `10000` atomic units (6 decimals) and uses `OKX_PAY_TO`. Nonproduction `X402_CHAIN_ID=1952` may be used to inspect its existing Testnet challenge, but durable paid acceptance is Mainnet-only. Never change `CHAIN_ID` to move the billing rail.
 
 Do not sign or replay the current production mainnet challenge as part of smoke verification. Unpaid `402` verification does not spend funds. A paid mainnet replay needs separate authorization and a receipt-based check.
 
@@ -247,7 +250,7 @@ Frontend:
 Mainnet is chain `196`; its USD₮0 address is:
 `0x779ded0c9e1022225f8e0630b35a9b54be713736`.
 
-The A2MCP x402 rail already uses this network, but that does **not** move the demand market or authorize a mainnet contract deployment. Keep core `CHAIN_ID=1952`, `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, the existing contract, and frontend chain on Testnet. A future demand-market migration requires its own explicit scope, authorization, and full verification. Only for that separate release, after every Testnet + x402 + browser check above passes:
+Production x402 billing is configured for this network, but that does **not** move the demand market or authorize a mainnet contract deployment, and does not imply a current public deployment or OKX.AI listing approval. Keep core `CHAIN_ID=1952`, `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, the existing contract, and frontend chain on Testnet. A future demand-market migration requires its own explicit scope, authorization, and full verification. Only for that separate release, after every Testnet + x402 + browser check above passes:
 
 ```bash
 export ALLOW_MAINNET_DEPLOY=1

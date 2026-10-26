@@ -81,7 +81,7 @@ Production advertises exactly three `eip155:196` native EIP-3009 exact options i
 
 With durable SQLite enabled, content is released only after the facilitator reports strict success and the persisted transaction is confirmed in a successful canonical X Layer Mainnet L2 block with matching EIP-3009 authorization and token logs. This is current L2 inclusion, not safe/finalized or L1 finality. Without durable storage, unpaid requests can still receive the SDK's standard challenge, while requests carrying a payment signature receive `503 PAYMENT_STORAGE_UNAVAILABLE`.
 
-Nonproduction `eip155:1952` configuration remains separate and uses its existing Testnet token, never a Mainnet address. This Mainnet-only confirmation policy does not accept paid Testnet settlement; use unpaid smoke tests for Testnet environments. Hosted direct-call paid execution has not been verified by this local implementation work.
+Nonproduction `eip155:1952` configuration remains separate and uses its existing Testnet token, never a Mainnet address. This Mainnet-only confirmation policy does not accept paid Testnet settlement; use unpaid smoke tests for Testnet environments. Historical isolated Docker staging acceptance at PR #17 commit `cb346e2a73de917a01e2555363d6b54f4e4a58a7` recorded HTTP 200 and `SETTLED` for USD₮0, USDC, and USDG on Mainnet. Each response had `opportunities: []` because no demand matched the default filters. This commit-scoped evidence does not establish a current public deployment or nonempty paid results; see the [PR #17 record](https://github.com/riyannode/UNMET/pull/17).
 
 UNMET does not accept a locally invented payment ID as proof.
 

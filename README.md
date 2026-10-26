@@ -5,8 +5,8 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 ## Demand funding and intelligence
 
 - **Demand funding:** wallet transactions create/support demands, vote, finalize or refund through `AgentDemand.sol` on **X Layer Testnet (1952)**.
-- **Free discovery:** `GET /v1/demands` returns public market facts and its existing compatibility score, ordered by current escrow.
-- **Paid demand intelligence:** `POST /v1/opportunities` adds scoped ranks, score contributions, escrow-per-expected-call and review signals, and deterministic reasons to investigate or exercise caution. Official OKX x402 bills each query **$0.01** separately on **X Layer Mainnet (196)** in production. Buying intelligence does not fund escrow or move the demand market to Mainnet. See the [API contract](docs/API.md).
+- **Free discovery:** `GET /v1/demands` returns public market facts and its existing legacy demand score, ordered by current escrow.
+- **Paid demand intelligence:** `POST /v1/opportunities` adds scoped ranks, score contributions, escrow-per-expected-call and review signals, and deterministic reasons to investigate or exercise caution. Official OKX x402 bills each query **$0.01** separately on **X Layer Mainnet (196)** in production. Buying intelligence does not fund escrow or move the demand market to Mainnet. Demand commitments finance service creation, but do not prepay API calls or grant usage credits. After fulfillment, API usage is paid directly to the provider through its x402 endpoint; demand contributors receive no usage entitlement. See the [API contract](docs/API.md).
 
 ## Architecture
 
@@ -18,7 +18,7 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 | Native `bun:sqlite` | Self-hosted x402 operation/idempotency and settlement records; **not the escrow database** |
 | Caddy + Docker Compose | Static frontend, reverse proxy and persistent payment volume |
 
-The chain index can be rebuilt. Payment records must survive restarts. Vercel uses the exported Express app without durable SQLite; Docker uses one Bun API replica. See [Architecture](docs/ARCHITECTURE.md).
+The chain index can be rebuilt. Payment records must survive restarts. Vercel uses the exported Express app without durable SQLite: unpaid challenges may be served, but submitted payment requests fail closed. Docker uses one Bun API replica with persistent SQLite. See [Architecture](docs/ARCHITECTURE.md).
 
 ## Local development
 
@@ -57,6 +57,6 @@ bun run build:frontend
 
 [PRD](docs/PRD.md) describes the current Post-Hackathon product; [Future Implementation](docs/FUTURE_IMPLEMENTATION.md) contains proposals only; [STATUS](docs/STATUS.md) and dated reports retain evidence and its limits. Coding agents should read [AGENTS](AGENTS.md) first. Start with the [documentation index](docs/README.md), [contributor guide](CONTRIBUTING.md), [API](docs/API.md), [self-hosting guide](docs/SELF_HOSTING.md), and [payment recovery](docs/PAYMENT_RECOVERY.md).
 
-The contract is unaudited and the demand market remains on Testnet. Self-hosted payment protection assumes one API replica and a local WAL/FULL SQLite volume. It provides neither distributed exactly-once settlement nor original paid-response replay. Hashless ambiguous settlements require operator investigation; never retry payment automatically. Interactive wallet acceptance and live paid Mainnet settlement remain separate production gates.
+The contract is unaudited and the demand market remains on Testnet. Self-hosted payment protection assumes one API replica and a local WAL/FULL SQLite volume. It provides neither distributed exactly-once settlement nor original paid-response replay. Hashless ambiguous settlements require operator investigation; never retry payment automatically. Interactive wallet acceptance and fresh paid acceptance for any current production deployment remain separate production gates; historical staging acceptance is recorded in [STATUS](docs/STATUS.md).
 
 [STATUS](docs/STATUS.md) preserves dated deployment/transaction evidence; [the submission video](https://youtu.be/6eCRf7iAbFo) and September endpoints are historical artifacts, not proof of a current deployment. Local tests do not establish public hosting or audited production readiness.
