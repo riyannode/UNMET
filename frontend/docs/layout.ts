@@ -58,7 +58,9 @@ export function docsLayout(html: string, filename: string): string {
   const pageLink = (route: string | undefined, direction: string) => {
     if (!route) return "<span></span>";
     const title = docsGroups.flatMap((group) => group.items).find(([, href]) => href === route)![0];
-    return `<a href="${route}"><span>${direction}</span>${escape(title)}</a>`;
+    const previous = direction === "Previous";
+    const arrow = `<span aria-hidden="true">${previous ? "&lt;" : "&gt;"}</span>`;
+    return `<a href="${route}"><span>${direction}</span>${previous ? arrow + " " + escape(title) : escape(title) + " " + arrow}</a>`;
   };
   return html.replace("<!--docs-sidebar-->", sidebar)
     .replace("<!--docs-toc-->", toc)

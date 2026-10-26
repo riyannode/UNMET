@@ -181,6 +181,21 @@ describe("Vite documentation MPA", () => {
     }
   });
 
+  test("places article navigation arrows beside the title in the correct direction", async () => {
+    for (const [index, route] of docsRoutes.entries()) {
+      const html = await readFile(path.join(directory, docsFile(route)), "utf8");
+      const navigation = html.match(/<nav class="docs-related"[^>]*>([\s\S]*?)<\/nav>/)?.[1] ?? "";
+      const links = [...navigation.matchAll(/<a href="([^"]+)">([\s\S]*?)<\/a>/g)];
+      expect(links.map(([, href]) => href)).toEqual([docsRoutes[index - 1], docsRoutes[index + 1]].filter(Boolean));
+      for (const [, href, label] of links) {
+        const previous = href === docsRoutes[index - 1];
+        const text = label!.replace(/<[^>]*>/g, "").replaceAll("&lt;", "<").replaceAll("&gt;", ">");
+        expect(text).toMatch(previous ? /^Previous< .+/ : /^Next.+ >$/);
+        expect(label).toContain(`<span aria-hidden="true">${previous ? "&lt;" : "&gt;"}</span>`);
+      }
+    }
+  });
+
   test("publishes highlighted code examples with unchanged copyable text", async () => {
     const examples = [
       ["docs/api/index.html", "curl -sS \"https://unmetxyz.my.id/v1/demands\" \\\n  -H \"Accept: application/json\""],
