@@ -28,7 +28,7 @@ Edit `.env` privately. It starts with **Compose production defaults**, including
 - Backend startup needs `DEMAND_CONTRACT`, `XLAYER_RPC_URL`, `PAYMENT_TOKEN`, and your own `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `OKX_PAY_TO`. See the full [configuration matrix](docs/SELF_HOSTING.md#configuration-matrix).
 - Frontend: set matching public `VITE_CHAIN_ID`, `VITE_DEMAND_CONTRACT`, `VITE_PAYMENT_TOKEN`, `VITE_XLAYER_RPC_URL`, and your public `VITE_REOWN_PROJECT_ID`; allow the local origin in Reown.
 - `VITE_*` is public build-time data. Keep private provider credentials, OKX secrets and wallet keys out of it. No deployment key is needed to develop or run checks.
-- For standalone durable payments, create a private local directory first and set an absolute `PAYMENT_DB_PATH`. Compose fixes this path to `/data/payments.sqlite`; Vercel must leave it unset. See [payment recovery](docs/PAYMENT_RECOVERY.md).
+- For standalone durable payments, create a private local directory first and set an absolute `PAYMENT_DB_PATH`. Compose fixes this path to `/data/payments.sqlite`. See [payment recovery](docs/PAYMENT_RECOVERY.md).
 
 Run in two terminals from the root (explicit root env loading avoids workspace working-directory differences):
 

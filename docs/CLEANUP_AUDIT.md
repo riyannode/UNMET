@@ -1,3 +1,59 @@
+# Repository cleanup audit
+
+## 2026-10-27 implementation update
+
+- Baseline: clean WSL2 worktree at 691ff4493d9fa5cd9de46865b61070c097685288, branch chore/remove-legacy-vercel-20261027.
+- Scope: remove the retired Vercel deployment path, retain payment and proxy guarantees, and align operating documentation with Docker Compose, Bun and Caddy. The earlier 2026-10-23 cleanup below is historical context; its validation does not apply to this change.
+- No payment price, asset order, chain mapping, payment state machine, storage guarantees, contract, ABI, wallet workflow or production setting was changed; only the stale SSR metadata fallback origin changed.
+
+| Classification | Finding | Evidence | Change |
+| --- | --- | --- | --- |
+| SAFE TO REMOVE | backend/vercel.json and frontend/vercel.json | No supported deployment or delivery path depends on either file; frontend docs are built by Vite and served by Caddy. | Removed both files and the obsolete Vite docs test that read the hosting-specific rewrite. Existing Vite/Caddy packaging coverage remains. |
+| SAFE TO REMOVE | Platform-specific API identity selector | Caddy is the supported ingress and Express already applies TRUSTED_PROXIES. Platform-header selection bypassed this common trust policy. | Removed selector; use Express req.ip/socket identity. Regressions cover trusted proxy IPv4/IPv6 quotas, malformed forwarded identity and forged headers from untrusted peers. |
+| SAFE TO REMOVE | PAYMENT_DB_PATH platform guard | Absolute-path validation is a general storage invariant; platform flags are not part of the runtime. | Retained absolute-path validation and removed the platform exception. |
+| SAFE TO REMOVE | VERCEL_ENV production override | NODE_ENV is the runtime production signal; preview-specific override could let a production process bypass the explicit Mainnet billing requirement. | Production now requires explicit X402_CHAIN_ID=196 based on NODE_ENV alone. Legacy strings remain only in negative regression tests. |
+| SAFE TO REMOVE | Vercel-only source/config references | Lazy payment middleware, Express app exports, no-storage guard, discovery-before-storage ordering and admission lifecycle are shared runtime behavior. | Removed only hosting-specific configuration and renamed the cached payment middleware promise generically. Shared behavior remains. |
+| NEEDS UPDATE / SAFE TO REMOVE | SSR origin and orphan CSS | SSR fallback pointed at retired unmet.vercel.app; exact .jr-hide-scrollbar selectors had no class producer. | Updated the fallback to unmetxyz.my.id and removed the two selectors. Other dynamic landing classes remain. |
+| NEEDS UPDATE | Deployment and operations documentation | The supported path is Docker Compose/Caddy; current docs use frontend/docs/index.html and layout-managed routes. | Updated setup, routing, historical framing and operational ownership. Preserved dated payment receipts and useful security/indexing evidence. |
+| MUST PRESERVE | Payment, wallet, contract and shared API behavior | Payment prices/assets and state machine, durable SQLite recovery, Express exports, lazy initialization, no-storage guard and discovery-before-storage ordering have active consumers or safety responsibilities. | Kept unchanged. No payment/network/contract/ABI or wallet workflow changed. |
+
+### Retained items
+
+- The negative VERCEL_ENV and x-vercel-forwarded-for regressions deliberately retain legacy strings to prove those values cannot change production requirements or untrusted request identity. The old audit section below predates this change; its retained Vercel configuration entries are superseded.
+- .gitignore/.dockerignore .vercel exclusions remain artifact hygiene. Bun lock optional peer metadata can contain Vercel-named packages through live Reown/unstorage dependencies; the lockfile was not edited.
+- Historical payment receipts, contract deployment evidence and dated security/indexing findings remain when they document lasting behavior. They are not current deployment or availability proof.
+- No further removable module or dependency was proven. Keep the required ethers peer for Reown, dynamic landing class producers, payment operator commands, CI/browser fixtures and tests. Keep frontend/public/unmet-logo.png because external consumers are possible and its lack of internal imports does not establish it is unused.
+- The Express default/named exports and lazy payment initialization remain because they are shared/test-consumed interfaces. The no-storage payment guard and discovery-before-storage/facilitator ordering remain intact.
+
+### Reviewed validation — 2026-10-27
+
+Source checks used Bun 1.4.3, Forge 1.8.3 and pinned Solidity dependencies; production images retain Bun 1.4.2 and Caddy 2.11.2.
+
+| Check | Result |
+| --- | --- |
+| Frozen install; bun run typecheck | Pass; frontend and both backend configurations |
+| bun run test:frontend | 130 pass, 0 fail; only the obsolete hosting-config assertion removed |
+| bun run test:backend | 59 API/hardening + 66 SQLite/payment tests pass, 0 fail |
+| TypeScript --noUnusedLocals --noUnusedParameters | Frontend and both backend configurations pass |
+| forge fmt --check; forge build; forge test -vv | Pass; 19 contract tests, 0 fail, 0 skipped |
+| bun run build:frontend | Pass; existing large-chunk advisory remains |
+| bun run sync:payment-discovery; bun run check:payment-discovery | Pass; published OpenAPI remains byte-identical, Mainnet 196 at $0.01 |
+| Isolated docker compose config --quiet and API/web builds | Pass with synthetic inputs; runtime users remain bun and web |
+| Packaged API discovery smoke, network disabled, non-root/read-only | Pass; mismatches rejected before storage writes or facilitator calls |
+| Packaged API startup/HTTP smoke, network disabled | Synthetic RPC and supported-kinds fixtures: live/health/ready 200, free demands 200 on 1952, unknown API 404, unsigned 402 with three ordered 196 offers at 10000 atomic units; SQLite integrity/WAL pass; no verify/settle calls |
+| Packaged Caddy discovery/Docs acceptance | 644 checks pass: article aliases/HEAD/assets, JSON/payment headers, forwarded identity replacement and no proxy retries |
+| Web image Caddy validation as UID 10001 | Pass |
+| Markdown file/anchor links; shell syntax | 27 Markdown files, 152 relative links and 23 shell blocks pass |
+| External Markdown links | 68 URLs returned HTTP 200; no retired deployment host remains linked |
+| Historical receipt preservation | No previously recorded 32-byte hexadecimal value removed from Markdown |
+| Diff integrity and protected-source comparison | Pass; contracts/ABIs, payment state/store/identity/confirmation/recovery, Compose/Caddy/Dockerfiles, manifests/lockfile and public discovery documents unchanged |
+
+No lint command is defined; no lint pass is claimed. Trailmark 0.7.1 parsed 80 TypeScript/Solidity/Python source files with no parse diagnostics and ran pre-analysis. No SARIF/weAudit input was supplied or tracked, so no augmentation result is claimed. Static graph edges, unresolved calls and unused checks were supporting evidence, never sufficient deletion proof.
+
+Local fixtures establish packaging and regressions, not current public RPC/facilitator acceptance or paid settlement. No paid transaction, deployment, merge, VPS access, production environment/SSH/database/volume change occurred. Test listeners and task-owned containers exited; no persistent validation volume was created. CI results belong to the Draft PR checks, separately from these local results.
+
+---
+
 # Pre-deployment cleanup audit — 2026-10-23
 
 ## Baseline and scope

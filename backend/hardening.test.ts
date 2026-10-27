@@ -314,45 +314,45 @@ test("official SDK diagnostic scope never prints raw payment/provider data", asy
   expect(output).toContain("outside-scope-marker");
 });
 
-test("Vercel platform IPs have distinct quotas even when they share one internal socket peer", async () => {
-  await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, {
-    config: loadOperationalConfig({ VERCEL: "1", RATE_OPPORTUNITIES: "1", RATE_DEMANDS: "1" }),
-    client: { getBlock: async () => { throw new Error("offline fixture"); } } as unknown as PublicClient,
-  }), async (url) => {
-    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-forwarded-for": "198.51.100.1" })).status).toBe(402);
-    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.2", "x-forwarded-for": "198.51.100.1" })).status).toBe(402);
-    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-forwarded-for": "198.51.100.99" })).status).toBe(429);
-    expect((await post(url, { "x-vercel-forwarded-for": "2001:db8::1" })).status).toBe(402);
-    expect((await post(url, { "x-vercel-forwarded-for": "2001:db8::1", "x-real-ip": "198.51.100.8" })).status).toBe(429);
-    const demands = (ip: string) => fetch(url + "/v1/demands", { headers: { "x-vercel-forwarded-for": ip } });
-    expect((await demands("192.0.2.1")).status).toBe(503); // Offline RPC fixture, admitted quota.
-    expect((await demands("192.0.2.2")).status).toBe(503);
-    expect((await demands("192.0.2.1")).status).toBe(429);
-  });
-});
-
-test("Vercel missing or ambiguous platform IP fails closed instead of sharing a proxy quota", async () => {
+test("trusted proxy IPs receive distinct IPv4 and IPv6 quotas", async () => {
   let calls = 0;
   await withServer(createApp({ middleware: (_req, res) => { calls++; res.status(402).end(); } }, {
-    config: loadOperationalConfig({ VERCEL: "1", RATE_OPPORTUNITIES: "1" }),
+    config: loadOperationalConfig({ TRUSTED_PROXIES: "127.0.0.1/32", RATE_OPPORTUNITIES: "1", RATE_DEMANDS: "1" }),
+    client: { getBlock: async () => { throw new Error("offline fixture"); } } as unknown as PublicClient,
   }), async (url) => {
-    const cases: Record<string, string>[] = [{}, { "x-vercel-forwarded-for": "invalid" }, { "x-vercel-forwarded-for": "192.0.2.1, 192.0.2.2" }];
-    for (const headers of cases) {
-      const response = await post(url, headers);
-      expect(response.status).toBe(503);
-      expect((await response.json()).error.code).toBe("CLIENT_IP_UNAVAILABLE");
-    }
-    expect(calls).toBe(0);
-    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1" })).status).toBe(402);
+    const request = (ip: string) => post(url, { "x-forwarded-for": ip });
+    expect((await request("192.0.2.1")).status).toBe(402);
+    expect((await request("192.0.2.2")).status).toBe(402);
+    expect((await request("192.0.2.1")).status).toBe(429);
+    expect((await request("2001:db8::1")).status).toBe(402);
+    expect((await request("2001:db8::1")).status).toBe(429);
+
+    const demands = (ip: string) => fetch(url + "/v1/demands", { headers: { "x-forwarded-for": ip } });
+    expect((await demands("192.0.2.1")).status).toBe(503);
+    expect((await demands("192.0.2.2")).status).toBe(503);
+    expect((await demands("192.0.2.1")).status).toBe(429);
+    expect(calls).toBe(3);
   });
 });
 
-test("self-hosted ingress ignores forged Vercel headers", async () => {
+test("malformed trusted-proxy identity fails closed", async () => {
+  let calls = 0;
+  await withServer(createApp({ middleware: (_req, res) => { calls++; res.status(402).end(); } }, {
+    config: loadOperationalConfig({ TRUSTED_PROXIES: "127.0.0.1/32", RATE_OPPORTUNITIES: "1" }),
+  }), async (url) => {
+    const response = await post(url, { "x-forwarded-for": "invalid" });
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("CLIENT_IP_UNAVAILABLE");
+    expect(calls).toBe(0);
+  });
+});
+
+test("untrusted forwarded headers cannot change client quota identity", async () => {
   await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, {
     config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1" }),
   }), async (url) => {
-    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-vercel-id": "test" })).status).toBe(402);
-    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.2", "x-vercel-id": "test" })).status).toBe(429);
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-forwarded-for": "198.51.100.1" })).status).toBe(402);
+    expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.2", "x-forwarded-for": "198.51.100.2" })).status).toBe(429);
   });
 });
 

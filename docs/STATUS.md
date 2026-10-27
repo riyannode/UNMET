@@ -1,8 +1,8 @@
 # Verification Status
 
-## Current implementation (after PR #17 merge)
+## Implementation snapshot (after PR #17 merge)
 
-The repository implements Testnet demand/escrow state and an independent production Mainnet x402 rail. Docker runs Caddy plus one Bun API with WAL/FULL SQLite payment records. Vercel has no durable SQLite: unpaid challenges may be served, but submitted payment requests fail closed. See [Architecture](ARCHITECTURE.md), [Self-hosting](SELF_HOSTING.md), and [Payment recovery](PAYMENT_RECOVERY.md).
+This dated implementation snapshot predates the 2026-10-27 cleanup and is not a current production acceptance record. The supported hosted path uses Docker Compose, Caddy and one Bun API with WAL/FULL SQLite payment records. The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id); this link does not assert current availability. See [Architecture](ARCHITECTURE.md), [Self-hosting](SELF_HOSTING.md), and [Payment recovery](PAYMENT_RECOVERY.md).
 
 Local PR #13 evidence is in [SELF_HOSTING_VALIDATION](SELF_HOSTING_VALIDATION.md); local PR #14 evidence is in [PAYMENT_VERIFICATION](PAYMENT_VERIFICATION.md). The [cleanup audit](CLEANUP_AUDIT.md) records its own baseline/post-change checks separately. These are local build/test/container results, not latest-release paid or public-deployment acceptance.
 
@@ -13,8 +13,6 @@ Outstanding production gates include an independent contract audit, interactive 
 ## Historical paid Mainnet acceptance — PR #17 baseline
 
 The [PR #17 acceptance record](https://github.com/riyannode/UNMET/pull/17) documents an isolated Docker staging run against the official OKX facilitator and X Layer Mainnet at commit `cb346e2a73de917a01e2555363d6b54f4e4a58a7`. Fresh native EIP-3009 authorizations for USD₮0, USDC, and USDG each produced HTTP 200 and a durable `SETTLED` record after the documented bounded status and canonical L2 confirmation checks. Each response contained `opportunities: []`; the read-only Testnet market check found no `OPEN` demand eligible for the default filters. This is historical evidence for the named baseline, not a fresh payment, a current public deployment check, nonempty opportunity-content acceptance, or Ethereum L1 finality. No new payment was made for this documentation update.
-
-Cleanup link check on **2026-10-23**: HTTP HEAD requests to `frontend-omega-beige-33.vercel.app`, `unmet-ai.vercel.app`, and `unmet-api.vercel.app` returned **404**. The September URLs below are retained for provenance and must not be used as current working deployment instructions.
 
 ## Historical verification — 2026-09-24
 
@@ -28,96 +26,31 @@ Status: **PARTIAL — THE DEMAND MARKET REMAINS ON X LAYER TESTNET; THE A2MCP x4
 
 - OKX Dev Day 2026 project submission form: response recorded.
 - Final demo video: [https://youtu.be/6eCRf7iAbFo](https://youtu.be/6eCRf7iAbFo)
-- Live frontend: [https://frontend-omega-beige-33.vercel.app/](https://frontend-omega-beige-33.vercel.app/)
 - Repository: [https://github.com/riyannode/UNMET](https://github.com/riyannode/UNMET)
-
-## Read-only public recheck (2026-09-24)
-
-These checks were made while updating the documentation. No wallet transaction or paid x402 replay was sent.
-
-| Check | Result |
-| --- | --- |
-| Frontend | [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app) returned HTTP 200 |
-| Deployed frontend asset | Current bundle includes Market Requests, Post a Request, Request Details, Escrow & Support, Builder Proposal, Support This Request, Submit Service Proposal, and Post Request & Commit Escrow. |
-| `GET /health` | HTTP 200; chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
-| `GET /v1/demands` | HTTP 200; chain `1952`, same contract; sampled at `2026-09-24T03:41:05Z`, block `41762426`; 4 demand records |
-| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:196`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
-| Paid Mainnet replay | Not performed in this check. No paid-Mainnet replay evidence is recorded in this repository; the challenge check alone does not establish settlement. |
-| Frontend-origin CORS | Requests with origin `https://frontend-omega-beige-33.vercel.app` returned no `Access-Control-Allow-Origin` header for `/health`, `/v1/demands`, or the `/v1/demands` preflight. Browser cross-origin access from the deployed frontend is therefore not verified. |
-| OKX.AI listing/review | Latest repository evidence is the 2026-09-23 check below: ASP `13853` / Service `40842` was unlisted and review had not been submitted. No newer approval evidence was found for this update. |
 
 ## Production network split deployment (2026-09-23)
 
 The core market remains on X Layer Testnet (`CHAIN_ID=1952`): AgentDemand reads/indexing, frontend writes, escrow token, and demand health/readback. Only `POST /v1/opportunities` uses `X402_CHAIN_ID=196` for A2MCP billing. Production explicitly sets `X402_CHAIN_ID=196`; `CHAIN_ID`, `XLAYER_RPC_URL`, `DEMAND_CONTRACT`, `DEMAND_DEPLOY_BLOCK`, and `PAYMENT_TOKEN` were not changed. The official OKX exact-scheme SDK selects the mainnet token by network; application code does not hardcode a billing-token override.
 
-The local deployer signer was checked offline: its derived address matches payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No private key was displayed, written to Vercel, or used to sign a transaction.
-
-Backend-only Vercel deployment:
-
-| Item | Result |
-| --- | --- |
-| Project / runtime | `backend`, Express on Vercel Node.js 24 |
-| Deployment | `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n`, READY, Production |
-| Production endpoint | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) |
-| Source | branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2) |
-| `GET /health` | HTTP 200; chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E` |
-| `GET /v1/demands` | HTTP 200; chain `1952`, same contract, 3 live demands; latest sampled block `41717352` |
-| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:196`, mainnet USD₮0 `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
-| Mainnet readback | RPC chain ID `196`; fee-token bytecode present, symbol `USD₮0`, decimals `6`; payTo is an EOA and its address matches the locally derived deployer signer |
-| Repeated checks | Three rounds returned the same health, demand, and challenge results |
-| Vercel runtime errors | No error records in the last 30 minutes for the new deployment; no `block range greater than 100 max` match |
-| Payment / chain transaction | None in this migration; paid mainnet x402 was not tested |
-| ASP / service | ASP `13853`, Service `40842`; not listed, review not submitted |
-
-The first CLI upload from `backend/` failed because the Vercel project root is the repository's `backend/` directory; deploying from the repository root fixed the source layout. The pre-existing `unmet-api.vercel.app` alias was still pointed at the old Testnet-payment deployment, so it was retargeted to the new backend production deployment and then verified at the public alias. The failed upload did not change the production alias.
+The local deployer signer was checked offline: its derived address matches payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No private key was displayed, shared with deployment configuration, or used to sign a transaction.
 
 ## Production incident: demand indexing RPC range (2026-09-20)
 
-The live `GET https://unmet-api.vercel.app/v1/demands` regression was independently reported as HTTP 503. Vercel logs identified `eth_getLogs` failing with `block range greater than 100 max`. The backend issued one log request spanning `lastIndexedBlock + 1` through the current head; X Layer Testnet RPC permits at most 100 inclusive blocks per request.
-
-The backend fix chunks that inclusive range into windows of at most 100 blocks, merges decoded demand IDs across windows, and leaves the checkpoint and reorg-triggered rebuild rules intact. Regression coverage exercises a 100-block request, multi-window requests and merged IDs, empty ranges, a simulated 151-block index lag, and a changed indexed-block hash that must rebuild rather than query logs. The first Vercel build from the fix commit was READY, and its unique deployment URL returned HTTP 200 for `/v1/demands`; however, the public alias still returned 503. Vercel runtime logs confirmed those alias requests were served by the old deployment (`dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx`), while the first fixed deployment was `dpl_5cbb1R2XGHYX83MiMpXv2ebkvp5a`. The backend project had no repository declaration for `unmet-api.vercel.app`, so `backend/vercel.json` now declares the alias. The subsequent deployment `dpl_3Qvp7UE8jr1TqwcifFzj1yTeuSv7` is READY from commit `4c65b1bbebe16aef9d6a46a8cf2994cc57cb1dad`, lists `unmet-api.vercel.app` as an alias, and has `aliasError=null`.
-
-Production recovery evidence on `https://unmet-api.vercel.app`:
-
-| Check | Result |
-| --- | --- |
-| `GET /health` | HTTP 200; chain `1952`, existing contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`; initial latest block `41464810` |
-| Baseline `GET /v1/demands` | HTTP 200; checkpoint `41464811`; 3 demands; Vercel log recorded `index_rebuilt` at this block |
-| >100-block idle gap | `/health` reached block `41464928`, 117 blocks after the baseline checkpoint |
-| `GET /v1/demands` after gap | Three consecutive HTTP 200 responses at blocks `41464938`, `41464942`, `41464945`, each with 3 demands; all ran on `dpl_3Qvp7UE8jr1TqwcifFzj1yTeuSv7`. Vercel logs show no `index_rebuilt` on those requests, consistent with the incremental refresh path. The exact chunk boundaries are covered by the backend regression tests. |
-| Limit error in new deployment | No `block range greater than 100 max` matches and no `/v1/demands` runtime errors in the post-deploy log query |
-| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, `exact`, `eip155:1952`, USD₮0 asset `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978` |
+The incident exposed an X Layer Testnet RPC limit of 100 inclusive blocks per eth_getLogs request. The backend now chunks ranges into windows of at most 100 blocks, merges decoded demand IDs, and preserves checkpoint and reorg-triggered rebuild behavior. Regression coverage exercises boundary, multi-window, empty-range, indexing-lag and changed-hash cases. The former Vercel deployment records are retired and do not establish current availability.
 
 No chain transaction or paid x402 request was performed while fixing or verifying this incident. Earlier contract and payment evidence below remains historical and was not repeated.
 
-The API checks above record the current network split. The deployment and x402 checks below describe earlier releases; their `eip155:1952` payment challenges are historical and are not the active production billing configuration.
+The following deployment and x402 records describe earlier releases; their `eip155:1952` payment challenges are historical and are not the active production billing configuration.
 
 **At the 2026-09-23 network-split verification:** deployed X Layer Testnet contract configuration and funded flows had successful receipts and state readbacks; local browser E2E, public frontend/API smoke checks, and one public UNMET seller 402 → payment → replay → 200 flow passed. Local checks are recorded below.
 
-**Unresolved at that check:** a paid mainnet x402 replay had not been performed; automated production wallet connection/write verification, OKX.AI listing/review, and an independent contract audit remained. Earlier paid Testnet replay evidence below does not verify mainnet settlement. This repository is not production-ready. See the dated read-only recheck above for the latest public endpoint state.
+**Unresolved at that check:** a paid mainnet x402 replay had not been performed; automated production wallet connection/write verification, OKX.AI listing/review, and an independent contract audit remained. Earlier paid Testnet replay evidence below does not verify mainnet settlement. This repository is not production-ready. Current public endpoint availability has not been rechecked as part of this historical record.
 
 In the earlier contract/payment E2E run recorded below, all chain writes used X Layer Testnet (`eip155:1952`); mainnet (`196`) and real assets were not used. The current network-split migration made no chain writes or payments. Private keys remain in the ignored local `.env` and were not copied into the browser. One test supporter key was accidentally included in a diagnostic tool output; that signer was not used afterward and must be replaced before reuse. No key value is recorded here.
 
-## Previous public Vercel deployment and smoke verification
+## Superseded public deployment record
 
-Both projects are production deployments from repository `riyannode/UNMET`, branch `main`, deployment source SHA `de77198aef994feae84059e1ae7413852a99326e`.
-
-| Project | URL | Deployment ID | Runtime/build |
-| --- | --- | --- | --- |
-| Frontend | [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app) | `dpl_B6dHSuUcdB6V4EMUY2rELjB3N4qC` | Vite; `READY` |
-| Backend | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) | `dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx` | Express, Node.js 24; `READY` |
-
-The backend deployment is configured without `DEPLOYER_PRIVATE_KEY`.
-
-| Public check | Result |
-| --- | --- |
-| `GET /health` | HTTP 200; `ok=true`, chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, block `41461618` |
-| `GET /v1/demands` | HTTP 200; chain `1952`, same contract, block `41461619`, 3 live demand records |
-| Unpaid `POST /v1/opportunities` | HTTP 402; x402 v2, scheme `exact`, network `eip155:1952`, USD₮0 `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`, EIP-712 name/version `USD₮0` / `1` |
-| CORS, frontend origin | `https://unmet-ai.vercel.app` is allowed |
-| CORS, localhost and foreign origin | No `Access-Control-Allow-Origin` header for `http://localhost:5173` or `https://untrusted.example` |
-
-The production browser loaded [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app), rendered the live testnet demand board, showed chain `1952` and the configured contract/token, and reported no console errors or localhost requests. The headless browser had no `window.ethereum`/wallet provider; clicking Connect reported `WALLET_NOT_FOUND`. No public frontend transaction was submitted. The previously recorded browser E2E used the same application source against the same deployed contract; this release changed Vercel configuration and backend entrypoint only.
+Earlier Vercel deployment URLs and runtime records are retired and are not current availability evidence. The supported hosted path is Docker Compose and Caddy; see [Self-hosting](SELF_HOSTING.md) and [Runbook](RUNBOOK.md). The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id). Transaction receipts and dated payment evidence below remain historical records only.
 
 ## Historical public production x402 payment on Testnet (before 2026-09-23 network split)
 

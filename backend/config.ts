@@ -35,7 +35,7 @@ export function loadOperationalConfig(env: Env = process.env) {
     if (new URL(origin).origin !== origin) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
   }
   const rpcMaxInFlight = integer(env, "RPC_MAX_IN_FLIGHT", 16, 4, 128);
-  if (env.PAYMENT_DB_PATH && (!env.PAYMENT_DB_PATH.startsWith("/") || env.VERCEL === "1")) {
+  if (env.PAYMENT_DB_PATH && !env.PAYMENT_DB_PATH.startsWith("/")) {
     throw new Error("CONFIG_INVALID: PAYMENT_DB_PATH");
   }
   return {
@@ -45,7 +45,6 @@ export function loadOperationalConfig(env: Env = process.env) {
     paymentMaxRecords: integer(env, "PAYMENT_MAX_RECORDS", 100_000, 1, 1_000_000),
     port: integer(env, "PORT", 8787, 1, 65535),
     trustedProxies,
-    vercel: env.VERCEL === "1",
     rateWindowMs: integer(env, "RATE_WINDOW_MS", 60_000, 100, 3_600_000),
     demandsPerWindow: integer(env, "RATE_DEMANDS", 60, 1, 100_000),
     opportunitiesPerWindow: integer(env, "RATE_OPPORTUNITIES", 20, 1, 100_000),

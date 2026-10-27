@@ -215,7 +215,7 @@ describe("bounded demand log indexing", () => {
   });
 });
 
-describe("Vercel Express entrypoint", () => {
+describe("Express app entrypoint", () => {
   test("exports an Express app and mounts payment middleware only on the paid route", async () => {
     expect(typeof app).toBe("function");
     let middlewareCalls = 0;
@@ -621,9 +621,11 @@ describe("independent market and x402 networks", () => {
 
   test("fails closed for unsupported x402 chains and non-mainnet production config", () => {
     expect(resolveX402PaymentConfig({ NODE_ENV: "test" }, 1952).network).toBe("eip155:1952");
-    expect(resolveX402PaymentConfig({ NODE_ENV: "production", VERCEL_ENV: "preview" }, 1952).network).toBe("eip155:1952");
+    const legacyPreview = { NODE_ENV: "production", VERCEL_ENV: "preview" };
+    const legacyProduction = { NODE_ENV: "test", VERCEL_ENV: "production" };
+    expect(() => resolveX402PaymentConfig(legacyPreview, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "test", X402_CHAIN_ID: "1" }, 1952)).toThrow("X402_CHAIN_ID must be 1952 or 196");
-    expect(() => resolveX402PaymentConfig({ VERCEL_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
+    expect(resolveX402PaymentConfig(legacyProduction, 1952).network).toBe("eip155:1952");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "production" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(() => resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "1952" }, 1952)).toThrow("X402_CHAIN_ID must be explicitly set to 196 in production");
     expect(resolveX402PaymentConfig({ NODE_ENV: "production", X402_CHAIN_ID: "196" }, 1952)).toMatchObject({
@@ -716,10 +718,9 @@ describe("independent market and x402 networks", () => {
   });
 
   test("runtime rejects discovery mismatch before payment storage or facilitator setup", async () => {
-    const keys = ["NODE_ENV", "VERCEL_ENV", "X402_CHAIN_ID"] as const;
+    const keys = ["NODE_ENV", "X402_CHAIN_ID"] as const;
     const previous = new Map(keys.map((key) => [key, process.env[key]]));
     process.env.NODE_ENV = "test";
-    process.env.VERCEL_ENV = "preview";
     process.env.X402_CHAIN_ID = "1952";
     try {
       await expect(createPaymentMiddleware()).rejects.toThrow("CONFIG_INVALID: PAYMENT_DISCOVERY");

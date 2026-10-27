@@ -4,7 +4,7 @@ One Compose stack runs a Bun/Express API and Caddy containing the production Rea
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
 
-The public frontend build includes `robots.txt`, `sitemap.xml`, an RFC 9727 API catalog, OpenAPI, and Markdown API/payment guides. The default canonical metadata and public URLs use `https://unmetxyz.my.id`; when self-hosting on another public origin, update the origin in `frontend/main.tsx`, `docker/Caddyfile` deployment settings, `frontend/public/robots.txt`, `frontend/public/sitemap.xml`, `frontend/public/.well-known/api-catalog`, and `frontend/docs/index.html`. Caddy serves known public files before its SPA fallback and returns 404 for unsupported `/.well-known/*` paths; ACME challenge paths remain available to Caddy's certificate handler.
+The public frontend build includes `robots.txt`, `sitemap.xml`, an RFC 9727 API catalog, OpenAPI, and Markdown API/payment guides. The default canonical metadata and public URLs use `https://unmetxyz.my.id`. For another public origin, inventory source and published URLs—including all Docs article canonicals, `frontend/public/openapi.json`, `frontend/public/api.md`, `frontend/public/payment.md` and Reown metadata—with `git grep -n 'unmetxyz.my.id' -- frontend scripts/check-discovery.py`. Configure Caddy `SITE_ADDRESS`, `WWW_SITE_ADDRESS` and `CANONICAL_ORIGIN` as described in the configuration matrix. `sync:payment-discovery` synchronizes payment metadata, not origin URLs; `check:payment-discovery` validates price, assets and network. Run `bun run test:frontend` to verify canonical metadata and generated docs routes. Caddy serves known public files before its SPA fallback and returns 404 for unsupported `/.well-known/*` paths; ACME challenge paths remain available to Caddy's certificate handler.
 
 ## WSL2 prerequisites
 
@@ -73,9 +73,9 @@ Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`
 
 Caddy serves the API catalog and `/docs` static documentation before other handlers, then handles `/v1`, `/v1/*`, `/live`, `/ready` and `/health` before SPA fallback. Unsupported `/.well-known/*` routes return 404, except ACME challenge paths. Unknown versioned API endpoints return Express JSON 404. Other paths use `index.html`, preserving existing React routes and its UI 404. Hashed `/assets/*` are cached for one year; HTML revalidates after deployment.
 
-Caddy replaces X-Forwarded-For with the actual TCP peer address. Express trusts only Caddy's fixed internal IP, not an arbitrary hop count. Direct access from an untrusted API peer ignores forwarding headers, including forged Vercel identity headers. Keep api without published ports and do not attach arbitrary containers to its network. Another CDN/proxy requires a separately designed trusted client-IP chain. CORS is not authentication or abuse protection.
+Caddy replaces X-Forwarded-For with the actual TCP peer address. Express trusts only Caddy's fixed internal IP, not an arbitrary hop count. Direct access from an untrusted API peer ignores spoofed forwarding headers. Keep api without published ports and do not attach arbitrary containers to its network. Another CDN/proxy requires a separately designed trusted client-IP chain. CORS is not authentication or abuse protection.
 
-On Vercel, the platform-owned VERCEL=1 runtime flag selects a validated single-IP x-vercel-forwarded-for identity instead of the internal socket peer. Changing x-forwarded-for/x-real-ip cannot change that identity; missing, invalid or multi-IP platform identity returns CLIENT_IP_UNAVAILABLE (503) before payment rather than assigning a shared proxy quota. Merely sending Vercel-looking headers never selects this policy. Docker's explicit environment allowlist does not pass VERCEL, so its Caddy-only proxy policy remains unchanged. Do not manually set VERCEL=1 on a directly reachable standalone server. This relies on [Vercel's ingress header contract](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for); custom proxy arrangements need separate validation. Quotas still remain process-local across Vercel instances.
+Rate limits use Express req.ip under the configured TRUSTED_PROXIES policy.
 
 Caddy forwards x402 headers/statuses unchanged. Its upstream response-header deadline is 90 seconds; RPC/facilitator calls have shorter independent deadlines. Interrupted paid requests may have ambiguous settlement state: never automatically replay signed payments.
 
@@ -174,7 +174,7 @@ Use this checklist for initial deployments, redeployments, and future installati
 4. Rebuild/start the same stack. Public Caddy certificates require valid domain/DNS and reachable ports. The caddy_data/caddy_config volumes preserve certificate state. The web image runs Caddy as UID/GID 10001 and initializes `/data/caddy` and `/config/caddy` as owner 10001 with mode 0700. For existing named volumes, apply `chmod 0700 /data/caddy /config/caddy` inside the running web container after confirming those two directories are owned by 10001; do not recursively change permissions or ownership. Keep the fixed runtime UID when using these volumes.
 5. Verify readiness, deep links, JSON API 404, unpaid 402, logs, resources, backups and alerting at the configured HTTPS origin using the [manual verification commands](#health-smoke-checks-and-logs). Paid settlement/replay requires separate authorization/evidence.
 
-Local validation changes no DNS, production certificates, Vercel environment or production configuration.
+Local validation changes no DNS, production certificates or production configuration.
 
 ## Update, rollback and stop
 
@@ -216,7 +216,7 @@ Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before incre
 
 ## Durable payment storage
 
-The Docker API requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Vercel has no durable SQLite: unpaid challenges may be served, but requests carrying payment headers fail closed with `PAYMENT_STORAGE_UNAVAILABLE`.
+The Docker API requires native Bun SQLite on the persistent payment_data volume at /data/payments.sqlite. Preserve this volume across recreate, updates and rollback; never use docker compose down -v with real payment data. Without durable storage, unpaid challenges may be served, but requests carrying payment headers fail closed with `PAYMENT_STORAGE_UNAVAILABLE`.
 
 SQLite uses WAL and synchronous=FULL; run exactly one Bun API replica with local storage. No automatic settlement retry or original paid-response replay is provided. Hashless ambiguous outcomes need operator investigation.
 

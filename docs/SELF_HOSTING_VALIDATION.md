@@ -103,9 +103,11 @@ Task-owned containers/network and browser processes were stopped/removed. Privat
 
 ## Pre-merge PR #13 review follow-up — 2026-10-23
 
+This dated report records the earlier platform-specific quota selector. That Vercel branch has since been removed; current request identity uses Express trusted-proxy policy behind Caddy. The following results remain historical security and admission evidence.
+
 Two issues were reproduced and fixed on the existing PR branch:
 
-1. With no proxy trust configured, Vercel requests were keyed by the shared internal socket peer. The platform-owned VERCEL=1 runtime flag now selects a validated single-IP x-vercel-forwarded-for identity, per [Vercel's request-header contract](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for). Missing/malformed/ambiguous platform identity fails closed with CLIENT_IP_UNAVAILABLE instead of sharing a proxy quota. Docker continues using the strict Caddy IP allowlist and ignores Vercel-looking client headers.
+1. Client quotas use Express trusted-proxy policy. Caddy replaces forwarded client identity at ingress; untrusted forwarding headers do not select the identity.
 2. Socket finish/close/error/abort previously released admission while async verification/settlement could still run. The gate now waits for connection termination and all returned middleware/execution promises, releasing exactly once. Both the SDK scope wrapper and lazy initializer propagate their promises. Disconnected requests do not start new paid execution; closed buffered errors complete the SDK without settlement rather than leaking its response wait. Settlement already in progress is not cancelled or retried.
 
 Before the fix, focused regressions demonstrated one Vercel client's request incorrectly receiving another client's 429, missing trusted identity being admitted, and disconnected/finished clients admitting extra work while prior work remained active.
@@ -121,4 +123,4 @@ Validation on the final implementation:
 - Exact scans of the three supplied OKX secret values across 118 source files, frontend output, validation/container logs, updated image history/layer bytes found no matches. Runtime allowlists still excluded deployer keys and web OKX credentials. This remains a targeted secret-isolation check, not an independent audit.
 - Both task containers exited 0; temporary client containers, stack containers/network were removed; ports 18080/18443/8787 were closed. Private env, reusable images and Caddy volumes retained.
 
-Remaining evidence limits: Vercel identity is verified against current official documentation and local ingress fixtures, not a changed/live Vercel deployment. Runtime trust depends on Vercel supplying that protected header; do not set VERCEL=1 on an independently reachable server. Limits remain per-process across Vercel instances/cold starts. Async handlers must return their work through admittedWork; detached work is not tracked. Slow or ambiguous existing settlement intentionally retains capacity until completion and may yield 503 to new requests. No real signed payment, paid replay, public deployment, VPS access, merge, production-setting change or credential rotation occurred. No lint script exists in the frontend.
+Remaining evidence limits: prior validation was local and does not establish current public availability or paid settlement. Async handlers must return work through admittedWork; detached work is not tracked. Slow or ambiguous settlement intentionally retains capacity until completion and may yield 503 to new requests. No production-setting change or credential rotation occurred. No lint script exists in the frontend.

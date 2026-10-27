@@ -204,46 +204,11 @@ Browser verification:
 - verify Refund and Reopen Demand appear only when eligible
 - explorer links open correctly
 
-## 8. Public deployment
+## 8. Production operations
 
-These are historical deployment observations. Availability, listing status, CORS and deployed commits have not been revalidated by the cleanup. Current/live descriptions within these snapshots refer to the original September checks.
+Use the Docker Compose and Caddy deployment documented in [Self-hosting](SELF_HOSTING.md). The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id); confirm current availability directly rather than relying on dated status records.
 
-### Historical network split (2026-09-23)
-
-Backend-only production deployment `dpl_HWDy1bPJXN11e1yKMK2RpXScG35n` is on Express / Node.js 24 and serves [https://unmet-api.vercel.app](https://unmet-api.vercel.app). It was deployed from branch `feat/unmet-x402-network`, commit `ef0c249f7381bc35a0ef2fe3e467948484ebd8b0`, now pushed as the first commit of [PR #2](https://github.com/riyannode/UNMET/pull/2). The production `X402_CHAIN_ID=196` variable is set; `CHAIN_ID=1952` was left unchanged.
-
-The current public frontend URL is [https://frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app).
-
-The current read-only public checks and their date, including the Mainnet x402 challenge and the unverified frontend-origin CORS result, are recorded in [STATUS.md](STATUS.md). The three-demand and Testnet-payment results below are the 2026-09-23 deployment snapshot, not a current Mainnet payment check.
-
-Three verification rounds returned `/health` HTTP 200 and `/v1/demands` HTTP 200 with chain `1952`, contract `0x7c51457235cFFBae862493D788137BFf1EF07e2E`, and 3 live demands. Unpaid `POST /v1/opportunities` returned x402 v2 HTTP 402, scheme `exact`, network `eip155:196`, asset `0x779ded0c9e1022225f8e0630b35a9b54be713736`, amount `10000`, payTo `0x237481F7Fd0A6F87f548FB3030015a82784e8978`. No payment or chain transaction was made. ASP `13853` / Service `40842` remain unlisted; review has not been submitted.
-
-### Earlier production state (before network split)
-
-The earlier public X Layer Testnet deployment was recorded from GitHub commit `de77198aef994feae84059e1ae7413852a99326e`:
-
-| Project | URL | Deployment | Runtime |
-| --- | --- | --- | --- |
-| Frontend | [https://unmet-ai.vercel.app](https://unmet-ai.vercel.app) | `dpl_B6dHSuUcdB6V4EMUY2rELjB3N4qC` | Vite static deployment |
-| Backend | [https://unmet-api.vercel.app](https://unmet-api.vercel.app) | `dpl_DCoAMDD9oJKuzUNoTTnf2DzLYMEx` | Express on Node.js 24 |
-
-Verified production requests: `/health` and `/v1/demands` return HTTP 200 on chain `1952`; unpaid `POST /v1/opportunities` returns an x402 v2 HTTP 402 challenge for exact USD₮0 at `0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, amount `10000`, and the configured treasury. One official SDK replay returned HTTP 200 and `PAYMENT-RESPONSE` status `success`; the successful receipt and token deltas are in [STATUS.md](STATUS.md). The paid request returned an empty opportunity list because no open demands were available.
-
-Production CORS returns `Access-Control-Allow-Origin: https://unmet-ai.vercel.app`; it does not allow `http://localhost:5173` or an arbitrary foreign origin. The backend runtime does not include `DEPLOYER_PRIVATE_KEY`. The headless browser smoke test loaded live chain state without console errors or localhost requests; it had no injected wallet provider, so production wallet transaction signing remains unverified.
-
-### Deployment configuration
-
-Backend:
-- bind to `0.0.0.0`
-- terminate TLS at platform/reverse proxy
-- `NODE_ENV=production`
-- set exact `FRONTEND_ORIGIN`
-- secrets only in platform secret store
-- health check `/health`
-
-Frontend:
-- static HTTPS deployment
-- correct main/testnet build-time variables
+For payment incidents, follow [Payment recovery](PAYMENT_RECOVERY.md). Preserve the persistent payment_data volume during updates and rollback; never infer settlement from a local build or smoke test.
 
 ## 9. Mainnet demand-market gate
 

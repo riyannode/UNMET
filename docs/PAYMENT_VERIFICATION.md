@@ -17,8 +17,6 @@ Tools: Bun 1.4.3, Docker 29.7.2, Compose 5.5.1, Git 2.43.0, Foundry 1.8.3. Produ
 | Frontend tests | 100 passed |
 | Foundry tests | 19 passed |
 | Frontend production build | Passed, existing chunk-size warning |
-| Local Vercel CLI 65.2.0 Preview build | Passed, no deployment |
-| Node import of compiled Express app with dependencies supplied | Passed with VERCEL=1 and no storage path; SQLite not loaded |
 | docker compose config --quiet | Passed without printing resolved credentials |
 | Production API/web image builds | Passed |
 | git diff --check | Passed |
@@ -68,12 +66,12 @@ Caddy matches the configured localhost Host. A request using a different Host do
 
 ## Security and boundaries
 
-Exact scans against the three private developer OKX values found zero matches in tracked/new source, frontend/Vercel build artifacts and both saved image archives (including gzip layer contents). Runtime secrets remain in ignored .env and the API runtime environment; no secret-bearing resolved Compose configuration was printed.
+Exact scans against the three private developer OKX values found zero matches in tracked/new source, frontend build artifacts and both saved image archives (including gzip layer contents). Runtime secrets remain in ignored .env and the API runtime environment; no secret-bearing resolved Compose configuration was printed.
 
-Contracts, ABIs, deployed addresses, wallet configuration, frontend UI, indexing behavior and production Vercel settings were not changed. Local Vercel build was performed in a disposable copy; no public deployment occurred. No merge, real payment or onchain write occurred.
+Contracts, ABIs, deployed addresses, wallet configuration, frontend UI, indexing behavior and production deployment settings were not changed. The validation used a disposable copy; no public deployment occurred. No merge, real payment or onchain write occurred.
 
 Task-owned Compose containers/network are stopped and removed after acceptance. The named test volumes remain intact to preserve restart evidence; no persistent local server is left running.
 
 ## Remaining payment acceptance
 
-This is a single-replica foundation, not distributed exactly-once settlement. Live paid settlement, authoritative onchain finality, real payer resource delivery, and a deployed Vercel runtime for these changes were not tested or authorized. A crash between external submission and hash persistence remains manually ambiguous. Original paid responses are not cached/replayed. New authorization without a stable logical key can be a second payment. See [payment recovery](PAYMENT_RECOVERY.md) for operator actions and backup/rollback limits.
+This is a single-replica foundation, not distributed exactly-once settlement. Live paid settlement, authoritative onchain finality, real payer resource delivery, and current public runtime acceptance were not tested or authorized. A crash between external submission and hash persistence remains manually ambiguous. Original paid responses are not cached/replayed. New authorization without a stable logical key can be a second payment. See [payment recovery](PAYMENT_RECOVERY.md) for operator actions and backup/rollback limits.

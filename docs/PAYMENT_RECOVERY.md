@@ -97,7 +97,7 @@ Interrupted shutdown/crash leaves a durable pre-settlement marker or an UNKNOWN 
 
 ## Platform and delivery limits
 
-With PAYMENT_DB_PATH unset, Vercel can still serve unpaid SDK challenges, but requests carrying payment headers receive 503 PAYMENT_STORAGE_UNAVAILABLE and readiness fails. No ephemeral function filesystem is advertised as durable. Setting PAYMENT_DB_PATH on Vercel is rejected. Docker cannot disable persistence through an env override because Compose fixes its required path. Production Vercel settings are unchanged.
+With PAYMENT_DB_PATH unset, the service can still serve unpaid SDK challenges, but requests carrying payment headers receive 503 PAYMENT_STORAGE_UNAVAILABLE and readiness fails. No ephemeral filesystem is advertised as durable. Docker cannot disable persistence through an env override because Compose fixes its required path.
 
 This prevents multiple independent settlements for retained identities under the single-replica deployment assumptions. It does **not** provide distributed exactly-once settlement across SQLite and OKX: there is no atomic transaction spanning those systems. PR #17 records historical isolated Docker staging acceptance at commit `cb346e2a73de917a01e2555363d6b54f4e4a58a7`: three Mainnet assets reached HTTP 200 and `SETTLED` after current-canonical L2 confirmation. Each response had an empty opportunity list, so nonempty paid results were not exercised. This evidence does not establish Ethereum L1 finality, a current public deployment, or a fresh acceptance run; no payment was authorized by this documentation update.
 
