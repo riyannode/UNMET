@@ -946,6 +946,16 @@
   object-fit: contain;
 }
 
+.unmet-ecosystem-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unmet-ecosystem-token .unmet-ecosystem-logo {
+  width: 32px;
+}
+
 .unmet-logo-usdt0 {
   width: 122px;
   object-fit: cover;

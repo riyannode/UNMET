@@ -771,11 +771,8 @@ html[data-theme="dark"] .demand-detail-content .demand-page .demand-detail-actio
 html[data-theme="dark"] .demand-detail-content [data-slot="tabs-trigger"] { color: #bdbdbd; }
 html[data-theme="dark"] .demand-detail-content [data-slot="tabs-trigger"][data-active] { background: #292929; color: #eaf5d9; }
 
-html[data-theme="dark"] .market-panel,
-html[data-theme="dark"] .analytics-panel { color-scheme: dark; color: var(--unmet-theme-text); }
+html[data-theme="dark"] .market-panel { color-scheme: dark; color: var(--unmet-theme-text); }
 html[data-theme="dark"] .market-panel .board-title h1,
-html[data-theme="dark"] .market-panel .market-card,
-html[data-theme="dark"] .market-panel .market-card-title,
 html[data-theme="dark"] .market-panel .market-card strong,
 html[data-theme="dark"] .market-panel .market-card b { color: var(--unmet-theme-text); }
 html[data-theme="dark"] .market-panel .unit,
@@ -783,13 +780,8 @@ html[data-theme="dark"] .market-panel .workflow-summary,
 html[data-theme="dark"] .market-panel .market-control-label,
 html[data-theme="dark"] .market-panel .market-search-count,
 html[data-theme="dark"] .market-panel .market-result-summary,
-html[data-theme="dark"] .market-panel .market-card-description,
-html[data-theme="dark"] .market-panel .market-card-metric-label,
 html[data-theme="dark"] .market-panel .market-card-wallet-count,
 html[data-theme="dark"] .market-panel .market-card label { color: #b3b3b3; }
-html[data-theme="dark"] .market-panel .market-card,
-html[data-theme="dark"] .market-panel .market-search-group,
-html[data-theme="dark"] .market-panel .market-sort-trigger,
 html[data-theme="dark"] .market-panel .market-card [data-slot="card"],
 html[data-theme="dark"] .market-panel .market-card input,
 html[data-theme="dark"] .market-panel .market-card textarea {

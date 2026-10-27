@@ -16,6 +16,12 @@ Demand details keep Request Details, Escrow & Support, and Builder Proposal toge
 
 Dark theme exceptions stay scoped: landing gradients and glow treatment live in `unmet-landing.css`, “How it works” colors and monochrome avatar filters in `unmet-how-it-works.css`, footer colors in `unmet-footer.css`, and app routes in `app.css`. Preserve original light gradients, images, and animation behavior. Apply logo filters only to monochrome assets; retain multicolor artwork unchanged.
 
+Landing typography uses `Satoshi Headings` at 500 for “Agent Demand Market” and 600 for “What AI Agents Need?” and “From Request to Funding”. The original `Satoshi` 700 face remains isolated for the UNMET wordmark; do not replace it with the variable face. Sizes, line heights and responsive rules stay in the owning landing/How stylesheets. The heading alias references the original, unmodified Fontshare variable WOFF2 with a 300–900 weight axis and `font-display: swap`; its internal default weight is 900, so always specify the approved CSS weight.
+
+Keep the existing Fontshare CDN delivery and sans-serif fallback. [ITF Free Font License 2.0](https://www.fontshare.com/licenses/itf-ffl) permits website use and self-hosting, but CDN availability is not guaranteed. The current approach avoids bundling or altering font software and retains the original wordmark resource. If CSP is introduced, allow the Fontshare stylesheet and font origins (`api.fontshare.com`, `cdn.fontshare.com`) alongside the existing Google font origins; account for the prepaint bootstrap separately. Revalidate rendered fonts, fallback and layout after any hosting change.
+
+The ecosystem marquee uses the unmodified transparent USDC token SVG from [Circle’s brand kit](https://www.circle.com/pressroom#brand-kit) and USDG token PNG from [Global Dollar’s brand resources](https://globaldollar.com/brand). Their adjacent text inherits the theme foreground; keep the official icon colors, existing track spacing and animation.
+
 The `.unmet-workspace-content` selectors style active demand content. Preserve the selectors and their scope when changing workspace styles.
 
 ## Interaction and acceptance

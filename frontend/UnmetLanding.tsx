@@ -91,6 +91,8 @@ const MARQUEE_ITEMS = [
   { id: "x-layer", label: "X Layer", logo: null, darkLogo: null },
   { id: "okx", label: "OKX", logo: "/logos/okx.png", darkLogo: "/logos/okx-dark.png" },
   { id: "usdt0", label: "USD₮0", logo: "/logos/usdt0.png", darkLogo: "/logos/usdt0-dark.png" },
+  { id: "usdc", label: "USDC", logo: "/logos/usdc.svg", darkLogo: null },
+  { id: "usdg", label: "USDG", logo: "/logos/usdg.png", darkLogo: null },
   { id: "x402", label: "x402", logo: null, darkLogo: null },
 ];
 
@@ -498,7 +500,12 @@ export default function UnmetLanding() {
               <div className="unmet-marquee-track jr-animate-marquee">
                 {MARQUEE_ITEMS.map((item) => (
                   <span className="unmet-ecosystem-mark" key={"a-" + item.id}>
-                    {item.logo ? (
+                    {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
+                      <span className="unmet-ecosystem-token">
+                        <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
+                        <span>{item.label}</span>
+                      </span>
+                    ) : item.logo ? (
                       <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
                     ) : item.label}
                   </span>
@@ -507,7 +514,12 @@ export default function UnmetLanding() {
               <div className="unmet-marquee-track jr-animate-marquee" aria-hidden="true">
                 {MARQUEE_ITEMS.map((item) => (
                   <span className="unmet-ecosystem-mark" key={"b-" + item.id}>
-                    {item.logo ? (
+                    {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
+                      <span className="unmet-ecosystem-token">
+                        <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
+                        <span>{item.label}</span>
+                      </span>
+                    ) : item.logo ? (
                       <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
                     ) : item.label}
                   </span>
