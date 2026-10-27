@@ -1,5 +1,7 @@
 "use client";
 
+import UnmetLogo from "./UnmetLogo.tsx";
+
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Pencil, RefreshCw } from "lucide-react";
@@ -495,7 +497,7 @@ export function CreateDemandChat({
     <section className="create-demand-chat" aria-labelledby="create-demand-title">
       <header className="create-demand-heading">
         <div className="create-demand-brand" role="img" aria-label="UNMET">
-          <img src="/logos/unmet.png" alt="" width="32" height="32" />
+          <UnmetLogo alt="" width="32" height="32" />
         </div>
         <h1 id="create-demand-title">Create Demand</h1>
         <p>Describe what you need and fund your request</p>

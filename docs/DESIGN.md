@@ -12,7 +12,7 @@ Demand details keep Request Details, Escrow & Support, and Builder Proposal toge
 
 `frontend/app.css` scopes the light app theme to `.unmet-app-shell`: white background/card/sidebar, `#192800` foreground/primary, `#dbffa6` accent and `#52663b` muted foreground. Reuse existing semantic variables, ReUI/Base UI primitives and components. Inter Tight is the app text font; addresses and transaction values use existing numeric/monospace styles. Landing typography/styles live in the `frontend/unmet-*.css` files.
 
-Legacy selectors still style active demand content. A legacy-looking selector or filename is not evidence that it can be removed.
+The `.unmet-workspace-content` selectors style active demand content. Preserve the selectors and their scope when changing workspace styles.
 
 ## Interaction and acceptance
 

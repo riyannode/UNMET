@@ -51,10 +51,11 @@ Run these from the root without payment credentials. For a credential-free run, 
 | `bun run test:frontend` | Wallet, receipt/recovery, routing, app state and guided demand creation |
 | `bun run test:contract` | Foundry escrow, votes, settlement, refunds and accounting tests |
 | `bun run typecheck` | Both backend TypeScript configurations and frontend |
+| `bun run lint` | Frontend JavaScript/TypeScript correctness checks (Oxlint) |
 | `bun run build:frontend` | Frontend typecheck and Vite production output |
 | `bun run check` | All checks above |
 
-Root `bun run test` covers backend and contracts only; run `test:frontend` too. The CI workflow runs frontend, backend, contract and Docker checks; there is no lint script. Foundry's initial compiler/dependency downloads and frozen installation need network access, but no credentials. Tests use deterministic facilitator fixtures and temporary databases, not live signed payments.
+Root `bun run test` covers backend and contracts only; run `test:frontend` too. The CI workflow runs frontend, backend, contract and Docker checks, including frontend lint. Foundry's initial compiler/dependency downloads and frozen installation need network access, but no credentials. Tests use deterministic facilitator fixtures and temporary databases, not live signed payments.
 
 For the existing real React wallet-session race fixture, start the frontend locally and open `/tests/create-demand-chat-race.html`; the final result must say PASS. It uses synthetic outcomes and sends no transactions. See [wallet limitations](docs/WALLET_DISCONNECT.md).
 

@@ -2,6 +2,7 @@ import { createAppKit } from "@reown/appkit/react";
 import { defineChain } from "@reown/appkit/networks";
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 import { CHAIN_ID, RPC_URL, targetChain } from "./contract.ts";
+import { getThemeSnapshot } from "./theme.ts";
 
 const projectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 
@@ -32,7 +33,7 @@ export const appKit = projectId
         url: typeof window === "undefined" ? "https://unmetxyz.my.id" : window.location.origin,
         icons: [],
       },
-      themeMode: "light",
+      themeMode: getThemeSnapshot(),
       defaultAccountTypes: { eip155: "eoa" },
       themeVariables: {
         "--apkt-accent": "#27764f",

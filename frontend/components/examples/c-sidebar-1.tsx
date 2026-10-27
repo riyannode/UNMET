@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ROUTES } from "@/routing";
+import { ThemeToggle } from "@/ThemeToggle";
+import UnmetLogo from "@/UnmetLogo";
 
 type AppNavRoute = "market" | "create-demand" | "analytics";
 
@@ -67,8 +69,7 @@ function BrandHeader() {
           aria-label="UNMET"
         >
           <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent">
-            <img
-              src="/logos/unmet.png"
+            <UnmetLogo
               alt=""
               width={32}
               height={32}
@@ -187,6 +188,7 @@ function Workbench({
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
+        <ThemeToggle className="unmet-workbench-theme-toggle" />
         <Button
           type="button"
           variant="outline"

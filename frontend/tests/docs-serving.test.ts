@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { docsFile, docsRoutes } from "../docs/layout.ts";
+import { THEME_BOOTSTRAP } from "../theme-bootstrap.ts";
 import { build, createServer, preview, type PreviewServer, type ViteDevServer } from "vite";
 
 const frontendRoot = path.resolve(import.meta.dir, "..");
@@ -55,6 +56,13 @@ describe("Vite documentation MPA", () => {
     for (const html of [app, docs]) {
       expect(html).toMatch(/<script[^>]+type="module"[^>]+src="\/assets\/[^"]+\.js"/);
       expect(html).toMatch(/<link[^>]+rel="stylesheet"[^>]+href="\/assets\/[^"]+\.css"/);
+      expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
+      expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
+    }
+    for (const route of docsRoutes) {
+      const html = await readFile(path.join(directory, docsFile(route)), "utf8");
+      expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
+      expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
     }
     expect(docs).not.toBe(source);
     expect(docs).not.toContain('src="/docs/navigation.tsx"');
