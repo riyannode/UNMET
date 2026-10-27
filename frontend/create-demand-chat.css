@@ -620,6 +620,7 @@ html[data-theme="dark"] .create-demand-review,
 html[data-theme="dark"] .create-demand-pricing-form,
 html[data-theme="dark"] .create-demand-turn .create-demand-assistant-bubble [data-slot="bubble-content"],
 html[data-theme="dark"] .create-demand-edit-row { border-color: var(--unmet-theme-border); background: var(--unmet-theme-surface); color: var(--unmet-theme-text); }
+html[data-theme="dark"] .create-demand-turns > .create-demand-turn:first-child .create-demand-assistant-bubble [data-slot="bubble-content"] { background: transparent; }
 html[data-theme="dark"] .create-demand-turn .create-demand-user-bubble [data-slot="bubble-content"] { border-color: var(--unmet-theme-border); background: #252b20; color: #e8f1dc; }
 html[data-theme="dark"] .create-demand-contract-note { background: #20251c; color: #d2e0c0; }
 html[data-theme="dark"] .create-demand-composer { border-color: var(--unmet-theme-border); background: var(--unmet-theme-surface); box-shadow: 0 8px 28px rgb(0 0 0 / 28%); }
