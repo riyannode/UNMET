@@ -15,7 +15,7 @@ export default function UnmetFooter() {
           <div className="unmet-footer-group">
             <h3>Resources</h3>
             <span>GitHub</span>
-            <span>Documentation</span>
+            <a href="/docs">Documentation</a>
           </div>
           <div className="unmet-footer-group">
             <h3>Community</h3>
