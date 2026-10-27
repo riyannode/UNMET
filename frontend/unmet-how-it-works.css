@@ -62,9 +62,9 @@
 .unmet-how-title {
   margin: 0 0 16px;
   color: #192800;
-  font-family: "Fraunces", "Newsreader", Georgia, serif;
+  font-family: "Satoshi Headings", "Satoshi", sans-serif;
   font-size: 48px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.02em;
 }
@@ -330,3 +330,24 @@
     margin-left: -13px;
   }
 }
+
+html[data-theme="dark"] .unmet-how { background: var(--unmet-theme-page); color: var(--unmet-theme-text); }
+html[data-theme="dark"] .unmet-how-title,
+html[data-theme="dark"] .unmet-how-step-copy-button h3,
+html[data-theme="dark"] .unmet-how-step-copy-button p.is-active,
+html[data-theme="dark"] .unmet-how-social-proof strong { color: var(--unmet-theme-text); }
+html[data-theme="dark"] .unmet-how-description,
+html[data-theme="dark"] .unmet-how-step-copy-button p,
+html[data-theme="dark"] .unmet-how-social-proof { color: var(--unmet-theme-muted); }
+html[data-theme="dark"] .unmet-how-eyebrow { background: #242424; color: #d0d0d0; }
+html[data-theme="dark"] .unmet-how-cta { color: var(--unmet-theme-interactive); }
+html[data-theme="dark"] .unmet-how-divider,
+html[data-theme="dark"] .unmet-how-connector { background: var(--unmet-theme-border); }
+html[data-theme="dark"] .unmet-how-avatar { border-color: var(--unmet-theme-page); }
+html[data-theme="dark"] .unmet-how-avatar img[src$="/cursor.svg"],
+html[data-theme="dark"] .unmet-how-avatar img[src$="/chatgpt.svg"],
+html[data-theme="dark"] .unmet-how-avatar img[src$="/hermes.svg"] { filter: brightness(0) invert(1); }
+html[data-theme="dark"] .unmet-how-step-number { border-color: #4b4b4b; background: var(--unmet-theme-surface); color: #c8c8c8; }
+html[data-theme="dark"] .unmet-how-step-number.is-active { border-color: var(--unmet-theme-interactive); color: var(--unmet-theme-interactive); box-shadow: 0 0 0 4px #29341f; }
+html[data-theme="dark"] .unmet-how-step-number:not(.is-active):hover { border-color: #777; color: var(--unmet-theme-text); }
+html[data-theme="dark"] .unmet-how-step-copy-button { background: transparent; color: var(--unmet-theme-text); }

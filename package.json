@@ -13,9 +13,10 @@
     "sync:payment-discovery": "bun run backend/payment-discovery-check.ts --write",
     "build": "bun run typecheck && bun run --cwd frontend build",
     "build:frontend": "bun run --cwd frontend build",
-    "check": "bun run typecheck && bun run test:frontend && bun run test:backend && bun run check:payment-discovery && bun run test:contract && bun run build:frontend",
+    "check": "bun run lint && bun run typecheck && bun run test:frontend && bun run test:backend && bun run check:payment-discovery && bun run test:contract && bun run build:frontend",
     "test:frontend": "bun --preload=./frontend/tests/test-env.ts test frontend/tests",
     "dev:backend": "bun run --cwd backend dev",
-    "dev:frontend": "bun run --cwd frontend dev"
+    "dev:frontend": "bun run --cwd frontend dev",
+    "lint": "bun run --cwd frontend lint"
   }
 }

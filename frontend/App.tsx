@@ -107,6 +107,7 @@ import {
 import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
 import { AnalyticsDashboard } from "./Analytics";
 import { errorMessage } from "./errors.ts";
+import { useTheme } from "./theme.ts";
 import { resolveReownStatus, runDisconnectRequest, WALLET_REQUIRED_TOAST_ID, type ReownStatus } from "./reown-status.ts";
 type CreateDemandInput = Parameters<typeof createDemand>[0];
 type CreateDemandPendingTransactionRecord = PendingTransactionRecord & {
@@ -244,6 +245,7 @@ type AppOutletContext = {
 };
 
 export default function App() {
+  const theme = useTheme();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const demandMatch = useMatch(ROUTES.demandDetail.href);
@@ -487,6 +489,8 @@ export default function App() {
       marketPollInFlightRef.current = false;
     }
   }, []);
+
+  useEffect(() => { walletKit?.setThemeMode(theme); }, [walletKit, theme]);
 
   const syncWallet = useCallback((kit: AppKit | null = walletKit) => {
     if (kit) {
@@ -945,7 +949,7 @@ export default function App() {
           void Promise.all([boardReadback, supportReadback]);
         }}
       >
-        <div className={"legacy-content" + (activeRoute === "create-demand" ? " create-demand-content" : "") + (routeIsDetail ? " demand-detail-content" : "")}>
+        <div className={"unmet-workspace-content" + (activeRoute === "create-demand" ? " create-demand-content" : "") + (routeIsDetail ? " demand-detail-content" : "")}>
           <a className="skip-link" href="#workspace">{activeRoute === "create-demand" ? "Skip to Create Demand" : activeRoute === "analytics" ? "Skip to Analytics" : "Skip to Market Requests"}</a>
           <div className="status-stack">
             {account && !chainOk && <div className="status-line err">Wrong network · writes request X Layer {CHAIN_ID}</div>}

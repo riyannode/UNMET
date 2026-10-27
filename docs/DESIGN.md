@@ -12,7 +12,17 @@ Demand details keep Request Details, Escrow & Support, and Builder Proposal toge
 
 `frontend/app.css` scopes the light app theme to `.unmet-app-shell`: white background/card/sidebar, `#192800` foreground/primary, `#dbffa6` accent and `#52663b` muted foreground. Reuse existing semantic variables, ReUI/Base UI primitives and components. Inter Tight is the app text font; addresses and transaction values use existing numeric/monospace styles. Landing typography/styles live in the `frontend/unmet-*.css` files.
 
-Legacy selectors still style active demand content. A legacy-looking selector or filename is not evidence that it can be removed.
+`frontend/theme.css` owns shared light defaults and dark overrides and is loaded by the SPA and every docs page. Keep the `--unmet-theme-*` names centralized there: `page` (`#101010`), `surface` (`#191919`), `surface-raised` (`#202020`), `text` (`#ededed`), `muted` (`#bcbcbc`), `subtle` (`#a8a8a8`), `border` (`#353535`), `accent` (`#dfffad`), `accent-text` (`#18210f`), `interactive` (`#a4cc7a`), `success` (`#93d4a8`), `warning` (`#e4c77e`) and `error` (`#f09595`). The Tailwind/ReUI dark aliases are also owned in `theme.css`; their `html[data-theme="dark"]:root` selector overrides the app's light `:root:has(...)` values. The `green-text` alias remains for existing app selectors. The theme controller and prepaint bootstrap own preference application and prepaint only; component colors belong to their component stylesheets, including `frontend/create-demand-chat.css` for Create-specific states. Put new palette values in `theme.css`, then consume them from `.css` files rather than adding local copies.
+
+Dark theme exceptions stay scoped: landing gradients and glow treatment live in `unmet-landing.css`, “How it works” colors and monochrome avatar filters in `unmet-how-it-works.css`, footer colors in `unmet-footer.css`, and app routes in `app.css`. Preserve original light gradients, images, and animation behavior. Apply logo filters only to monochrome assets; retain multicolor artwork unchanged.
+
+Landing typography uses `Satoshi Headings` at 500 for “Agent Demand Market” and 600 for “What AI Agents Need?” and “From Request to Funding”. The original `Satoshi` 700 face remains isolated for the UNMET wordmark; do not replace it with the variable face. Sizes, line heights and responsive rules stay in the owning landing/How stylesheets. The heading alias references the original, unmodified Fontshare variable WOFF2 with a 300–900 weight axis and `font-display: swap`; its internal default weight is 900, so always specify the approved CSS weight.
+
+Keep the existing Fontshare CDN delivery and sans-serif fallback. [ITF Free Font License 2.0](https://www.fontshare.com/licenses/itf-ffl) permits website use and self-hosting, but CDN availability is not guaranteed. The current approach avoids bundling or altering font software and retains the original wordmark resource. If CSP is introduced, allow the Fontshare stylesheet and font origins (`api.fontshare.com`, `cdn.fontshare.com`) alongside the existing Google font origins; account for the prepaint bootstrap separately. Revalidate rendered fonts, fallback and layout after any hosting change.
+
+The ecosystem marquee uses the unmodified transparent USDC token SVG from [Circle’s brand kit](https://www.circle.com/pressroom#brand-kit) and USDG token PNG from [Global Dollar’s brand resources](https://globaldollar.com/brand). Their adjacent text inherits the theme foreground; keep the official icon colors, existing track spacing and animation.
+
+The `.unmet-workspace-content` selectors style active demand content. Preserve the selectors and their scope when changing workspace styles.
 
 ## Interaction and acceptance
 

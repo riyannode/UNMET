@@ -2,8 +2,10 @@ import { lazy, StrictMode, Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes, useLocation } from "react-router";
 import { Toaster } from "sonner";
+import { useTheme } from "./theme.ts";
 import UnmetLanding from "./UnmetLanding.tsx";
 import { ROUTES } from "./routing.ts";
+import "./theme.css";
 import "./app.css";
 
 const App = lazy(() => import("./App.tsx"));
@@ -11,6 +13,31 @@ const MarketRoute = lazy(() => import("./App.tsx").then((module) => ({ default: 
 const DemandDetailRoute = lazy(() => import("./App.tsx").then((module) => ({ default: module.DemandDetailRoute })));
 const CreateDemandRoute = lazy(() => import("./App.tsx").then((module) => ({ default: module.CreateDemandRoute })));
 const AnalyticsRoute = lazy(() => import("./App.tsx").then((module) => ({ default: module.AnalyticsRoute })));
+
+function ThemeToaster() {
+  const theme = useTheme();
+  const dark = theme === "dark";
+  return (
+    <Toaster
+      position="top-right"
+      theme={theme}
+      closeButton
+      toastOptions={{
+        duration: 5000,
+        style: {
+          background: dark ? "var(--unmet-theme-surface)" : "#ffffff",
+          color: dark ? "var(--unmet-theme-text)" : "#192800",
+          border: dark ? "1px solid var(--unmet-theme-border)" : "1px solid #d9e3ce",
+          fontFamily: "Inter Tight, sans-serif",
+        },
+        actionButtonStyle: {
+          background: dark ? "var(--unmet-theme-surface-raised)" : "#eff6e5",
+          color: dark ? "var(--unmet-theme-text)" : "#192800",
+        },
+      }}
+    />
+  );
+}
 
 function WorkspaceLoading() {
   return <main className="unmet-not-found" role="status">Loading UNMET…</main>;
@@ -58,24 +85,7 @@ createRoot(el).render(
         </Route>
         <Route path="*" element={<NotFoundRoute />} />
       </Routes>
-      <Toaster
-        position="top-right"
-        theme="light"
-        closeButton
-        toastOptions={{
-          duration: 5000,
-          style: {
-            background: "#ffffff",
-            color: "#192800",
-            border: "1px solid #d9e3ce",
-            fontFamily: "Inter Tight, sans-serif",
-          },
-          actionButtonStyle: {
-            background: "#eff6e5",
-            color: "#192800",
-          },
-        }}
-      />
+      <ThemeToaster />
     </BrowserRouter>
   </StrictMode>,
 );

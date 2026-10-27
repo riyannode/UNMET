@@ -1,0 +1,17 @@
+.unmet-theme-toggle {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px;
+  padding: 0 !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: inherit !important;
+  transition: background-color 150ms ease, color 150ms ease !important;
+}
+.unmet-theme-toggle:hover { background: rgb(127 127 127 / 12%) !important; }
+.unmet-theme-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.unmet-theme-toggle svg { width: 18px; height: 18px; }
+@media (prefers-reduced-motion: reduce) {
+  .unmet-theme-toggle { transition: none !important; }
+}

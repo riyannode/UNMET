@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { docsFile, docsRoutes } from "../docs/layout.ts";
+import { THEME_BOOTSTRAP } from "../theme-bootstrap.ts";
 import { build, createServer, preview, type PreviewServer, type ViteDevServer } from "vite";
 
 const frontendRoot = path.resolve(import.meta.dir, "..");
@@ -55,6 +56,13 @@ describe("Vite documentation MPA", () => {
     for (const html of [app, docs]) {
       expect(html).toMatch(/<script[^>]+type="module"[^>]+src="\/assets\/[^"]+\.js"/);
       expect(html).toMatch(/<link[^>]+rel="stylesheet"[^>]+href="\/assets\/[^"]+\.css"/);
+      expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
+      expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
+    }
+    for (const route of docsRoutes) {
+      const html = await readFile(path.join(directory, docsFile(route)), "utf8");
+      expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
+      expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
     }
     expect(docs).not.toBe(source);
     expect(docs).not.toContain('src="/docs/navigation.tsx"');
@@ -62,6 +70,9 @@ describe("Vite documentation MPA", () => {
     expect(sharedAssets.some((asset) => asset.endsWith(".js"))).toBe(true);
     expect(sharedAssets.some((asset) => asset.endsWith(".css"))).toBe(true);
     for (const asset of sharedAssets) await access(path.join(directory, asset));
+    const sharedCss = sharedAssets.find((asset) => asset.endsWith(".css"));
+    expect(sharedCss).toBeDefined();
+    expect(await readFile(path.join(directory, sharedCss!), "utf8")).toContain("--unmet-theme-page");
   });
 
   test.each(docsPaths)("%s serves docs HTML through dev and built preview", async (route) => {
@@ -139,6 +150,7 @@ describe("Vite documentation MPA", () => {
       const css = (await Promise.all(cssLinks.map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
       expect(css).toContain(".docs-grid");
       expect(css).toContain("grid-template-columns");
+      expect(css).toContain("--unmet-theme-page");
     }
     const sitemap = await readFile(path.join(directory, "sitemap.xml"), "utf8");
     const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1]!).pathname);

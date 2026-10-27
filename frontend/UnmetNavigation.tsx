@@ -1,6 +1,8 @@
 import { useLayoutEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ROUTES } from "./routing.ts";
+import { ThemeToggle } from "./ThemeToggle.tsx";
+import UnmetLogo from "./UnmetLogo.tsx";
 
 export function RollText({
   text,
@@ -44,7 +46,7 @@ export function MiniBars() {
 function BrandChip() {
   return (
     <a className="unmet-brand-chip" href="/" aria-label="UNMET Home">
-      <img src="/logos/unmet.png" alt="" width="32" height="32" />
+      <UnmetLogo alt="" width="32" height="32" />
       <span className="unmet-wordmark">unmet</span>
     </a>
   );
@@ -97,7 +99,10 @@ export default function UnmetNavigation({ documentNavigation = false }: { docume
   return (
     <>
       <header className="unmet-nav">
-        <BrandChip />
+        <div className="unmet-nav-brand-controls">
+          <BrandChip />
+          <ThemeToggle className="unmet-nav-theme-toggle" />
+        </div>
 
         <div className="unmet-nav-cluster">
           <nav className="unmet-nav-capsule" aria-label="Landing navigation">

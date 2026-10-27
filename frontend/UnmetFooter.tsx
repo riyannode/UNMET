@@ -1,4 +1,5 @@
 import "./unmet-footer.css";
+import UnmetLogo from "./UnmetLogo.tsx";
 
 export default function UnmetFooter() {
   return (
@@ -14,7 +15,7 @@ export default function UnmetFooter() {
           <div className="unmet-footer-group">
             <h3>Resources</h3>
             <span>GitHub</span>
-            <span>Documentation</span>
+            <a href="/docs">Documentation</a>
           </div>
           <div className="unmet-footer-group">
             <h3>Community</h3>
@@ -24,7 +25,7 @@ export default function UnmetFooter() {
 
         <div className="unmet-footer-bottom">
           <a className="unmet-footer-logo" href="/" aria-label="UNMET Home">
-            <img src="/logos/unmet.png" alt="UNMET" />
+            <UnmetLogo alt="UNMET" />
           </a>
           <p>© 2026 UNMET. All rights reserved</p>
           <div className="unmet-footer-socials" aria-label="Social links">

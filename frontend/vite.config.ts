@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import type { Connect, Plugin } from "vite";
 import { defineConfig } from "vite";
 import { docsFile, docsLayoutPlugin, docsRoutes } from "./docs/layout.ts";
+import { THEME_BOOTSTRAP } from "./theme-bootstrap.ts";
 
 const rewriteDocumentPath = (development: boolean): Connect.NextHandleFunction => (request, response, next) => {
   const url = request.url ?? "";
@@ -27,6 +28,14 @@ const rewriteDocumentPath = (development: boolean): Connect.NextHandleFunction =
   next();
 };
 
+const themeBootstrapPlugin: Plugin = {
+  name: "theme-bootstrap",
+  transformIndexHtml: {
+    order: "pre",
+    handler: (html) => html.replace(/<head([^>]*)>/, `<head$1><script>${THEME_BOOTSTRAP}</script>`),
+  },
+};
+
 const documentPathPlugin: Plugin = {
   name: "document-path",
   configureServer(server) {
@@ -42,7 +51,7 @@ export default defineConfig({
     ["main", fileURLToPath(new URL("./index.html", import.meta.url))],
     ...docsRoutes.map((route) => [route.slice(1).replaceAll("/", "-"), fileURLToPath(new URL("./" + docsFile(route), import.meta.url))]),
   ]),
-  plugins: [documentPathPlugin, docsLayoutPlugin, tailwindcss(), react()],
+  plugins: [documentPathPlugin, docsLayoutPlugin, themeBootstrapPlugin, tailwindcss(), react()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),

@@ -15,6 +15,7 @@ import UnmetNavigation, { MiniBars, RollText } from "./UnmetNavigation.tsx";
 import MagicRings from "./MagicRings.tsx";
 import UnmetHowItWorks from "./UnmetHowItWorks.tsx";
 import UnmetFooter from "./UnmetFooter.tsx";
+import { useTheme } from "./theme.ts";
 import "./unmet-landing.css";
 
 type ModelKey = "chatgpt" | "claude" | "google" | "gemini";
@@ -87,10 +88,12 @@ const MODELS: Record<ModelKey, ModelConfig> = {
 };
 
 const MARQUEE_ITEMS = [
-  { id: "x-layer", label: "X Layer", logo: null },
-  { id: "okx", label: "OKX", logo: "/logos/okx.png" },
-  { id: "usdt0", label: "USD₮0", logo: "/logos/usdt0.png" },
-  { id: "x402", label: "x402", logo: null },
+  { id: "x-layer", label: "X Layer", logo: null, darkLogo: null },
+  { id: "okx", label: "OKX", logo: "/logos/okx.png", darkLogo: "/logos/okx-dark.png" },
+  { id: "usdt0", label: "USD₮0", logo: "/logos/usdt0.png", darkLogo: "/logos/usdt0-dark.png" },
+  { id: "usdc", label: "USDC", logo: "/logos/usdc.svg", darkLogo: null },
+  { id: "usdg", label: "USDG", logo: "/logos/usdg.png", darkLogo: null },
+  { id: "x402", label: "x402", logo: null, darkLogo: null },
 ];
 
 function seedMessages(key: ModelKey): Message[] {
@@ -316,6 +319,7 @@ function ProblemSection() {
 }
 
 export default function UnmetLanding() {
+  const theme = useTheme();
   const [loaded, setLoaded] = useState(false);
   const [activeModel, setActiveModel] = useState<ModelKey>("chatgpt");
   const [chatByModel, setChatByModel] = useState<Record<ModelKey, ChatState>>(() => ({
@@ -496,8 +500,13 @@ export default function UnmetLanding() {
               <div className="unmet-marquee-track jr-animate-marquee">
                 {MARQUEE_ITEMS.map((item) => (
                   <span className="unmet-ecosystem-mark" key={"a-" + item.id}>
-                    {item.logo ? (
-                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt={item.label} />
+                    {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
+                      <span className="unmet-ecosystem-token">
+                        <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
+                        <span>{item.label}</span>
+                      </span>
+                    ) : item.logo ? (
+                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
                     ) : item.label}
                   </span>
                 ))}
@@ -505,8 +514,13 @@ export default function UnmetLanding() {
               <div className="unmet-marquee-track jr-animate-marquee" aria-hidden="true">
                 {MARQUEE_ITEMS.map((item) => (
                   <span className="unmet-ecosystem-mark" key={"b-" + item.id}>
-                    {item.logo ? (
-                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt={item.label} />
+                    {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
+                      <span className="unmet-ecosystem-token">
+                        <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
+                        <span>{item.label}</span>
+                      </span>
+                    ) : item.logo ? (
+                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
                     ) : item.label}
                   </span>
                 ))}
