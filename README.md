@@ -18,7 +18,7 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 | Native `bun:sqlite` | Self-hosted x402 operation/idempotency and settlement records; **not the escrow database** |
 | Caddy + Docker Compose | Static frontend, reverse proxy and persistent payment volume |
 
-The chain index can be rebuilt. Payment records must survive restarts. Vercel uses the exported Express app without durable SQLite: unpaid challenges may be served, but submitted payment requests fail closed. Docker uses one Bun API replica with persistent SQLite. See [Architecture](docs/ARCHITECTURE.md).
+The chain index can be rebuilt. Payment records must survive restarts. The supported hosted path uses one Bun API replica with persistent SQLite behind Caddy. See [Architecture](docs/ARCHITECTURE.md). The active public site is [unmetxyz.my.id](https://unmetxyz.my.id). Deployment details and current operations live in [Self-hosting](docs/SELF_HOSTING.md) and [Runbook](docs/RUNBOOK.md).
 
 ## Local development
 

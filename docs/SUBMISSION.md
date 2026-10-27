@@ -62,7 +62,7 @@ The demand-market contract and escrow are deployed on **X Layer Testnet** (`eip1
 6. Open **Post a Request** to see the Request, Economics, and Initial Escrow sections and **Post Request & Commit Escrow**.
 7. Open **My Activity** and select a position to return to its Demand view.
 
-The current frontend is available at [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app). Further demo notes and transaction evidence are in [DEMO](DEMO.md) and [STATUS](STATUS.md).
+This is a dated submission record, not a current deployment check. The active public site is [unmetxyz.my.id](https://unmetxyz.my.id); further demo notes and historical transaction evidence are in [DEMO](DEMO.md) and [STATUS](STATUS.md).
 
 ## Submission status
 

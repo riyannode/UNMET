@@ -11,9 +11,7 @@ export function rateLimiter(config: OperationalConfig, now = Date.now) {
       if (entry.expires > time) break;
       clients.delete(key);
     }
-    // Vercel supplies this header at its ingress. Never infer platform trust
-    // from request headers; Docker/standalone still use Express's proxy policy.
-    const ip = config.vercel ? req.get("x-vercel-forwarded-for") : req.ip || req.socket.remoteAddress;
+    const ip = req.ip || req.socket.remoteAddress;
     if (!ip || !isIP(ip)) {
       res.setHeader("retry-after", "1");
       res.status(503).json({ error: { code: "CLIENT_IP_UNAVAILABLE", message: "Client identity unavailable" } });

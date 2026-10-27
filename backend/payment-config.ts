@@ -4,13 +4,12 @@ import type { Address } from "viem";
 
 type X402PaymentEnv = {
   NODE_ENV?: string;
-  VERCEL_ENV?: string;
   X402_CHAIN_ID?: string;
   OPPORTUNITY_PRICE?: string;
 };
 
 export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, coreChainId = 1952) {
-  const isProduction = env.VERCEL_ENV === "production" || (env.VERCEL_ENV !== "preview" && env.NODE_ENV === "production");
+  const isProduction = env.NODE_ENV === "production";
   if (isProduction && env.X402_CHAIN_ID !== "196") {
     throw new Error("X402_CHAIN_ID must be explicitly set to 196 in production");
   }

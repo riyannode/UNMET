@@ -91,7 +91,7 @@ UNMET does not accept a locally invented payment ID as proof.
 
 ### Optional Idempotency-Key (durable self-hosted mode)
 
-`Idempotency-Key` is optional: 1–128 printable non-space ASCII characters. It is scoped to the verified payer/network and binds the validated operation. A retained authorization or conflicting key returns 409; even a settled request does **not** replay its original paid response. A fresh nonce without a stable key can be another payment. After confirmed pre-settlement cancellation only, a new authorization may reclaim the key while the original authorization stays blocked. Ambiguous outcomes require observation/operator recovery, never automatic signing or settlement retry. Vercel has no durable-key guarantee. See [Payment recovery](PAYMENT_RECOVERY.md).
+`Idempotency-Key` is optional: 1–128 printable non-space ASCII characters. It is scoped to the verified payer/network and binds the validated operation. A retained authorization or conflicting key returns 409; even a settled request does **not** replay its original paid response. A fresh nonce without a stable key can be another payment. After confirmed pre-settlement cancellation only, a new authorization may reclaim the key while the original authorization stays blocked. Ambiguous outcomes require observation/operator recovery, never automatic signing or settlement retry. The supported self-hosted service requires durable SQLite for payment-key guarantees. See [Payment recovery](PAYMENT_RECOVERY.md).
 
 ### Body
 

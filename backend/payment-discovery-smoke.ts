@@ -12,7 +12,6 @@ if (["OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"].some((name) => process.e
 }
 
 process.env.NODE_ENV = "production";
-delete process.env.VERCEL_ENV;
 process.env.XLAYER_RPC_URL = "http://127.0.0.1:8545";
 process.env.CHAIN_ID = "1952";
 process.env.DEMAND_CONTRACT = "0x3333333333333333333333333333333333333333";
@@ -65,9 +64,8 @@ try {
   assert.equal(facilitatorContacts, 0);
   noStorageSideEffect();
 
-  process.env.VERCEL_ENV = "preview";
+  process.env.NODE_ENV = "test";
   await assert.rejects(createPaymentMiddleware(), { message: "X402_CHAIN_ID must be 1952 or 196" });
-  delete process.env.VERCEL_ENV;
   assert.equal(facilitatorContacts, 0);
   noStorageSideEffect();
 } finally {

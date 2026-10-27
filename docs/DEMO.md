@@ -9,7 +9,7 @@ This is the final edited judge-facing demo; the reproducible walkthrough below r
 
 ## Current status
 
-The demand contract and funded lifecycle evidence are on X Layer Testnet (`eip155:1952`). The live frontend is [frontend-omega-beige-33.vercel.app](https://frontend-omega-beige-33.vercel.app); the public API is [unmet-api.vercel.app](https://unmet-api.vercel.app). Current deployment readbacks are in [STATUS](STATUS.md).
+The demand contract and funded lifecycle evidence are on X Layer Testnet (`eip155:1952`). This is a historical demo; see [Self-hosting](SELF_HOSTING.md) for the active deployment path and [Status](STATUS.md) for dated evidence.
 
 The unpaid `POST /v1/opportunities` request currently returns an x402 v2 challenge on X Layer Mainnet (`eip155:196`). Show the challenge only; no paid Mainnet replay is documented. A successful paid Testnet replay is historical evidence in [STATUS](STATUS.md) and does not prove Mainnet settlement. The latest recorded OKX.AI status, dated 2026-09-23, is unlisted with review not submitted; no newer approval evidence was found for this update.
 
@@ -38,7 +38,7 @@ The successful receipts, state readbacks, and token deltas are recorded in [STAT
 
 ## Demand Intelligence endpoint
 
-Send an unpaid request to `POST https://unmet-api.vercel.app/v1/opportunities` and show the HTTP 402 challenge terms for `eip155:196`. Do not pay the challenge during this demo. Never use a fake payment header or local bypass. The historical paid Testnet replay is recorded separately in [STATUS](STATUS.md).
+Send an unpaid request to `POST /v1/opportunities` on the API base URL configured in the self-hosted deployment and show the HTTP 402 challenge terms for `eip155:196`. Do not pay the challenge during this demo. Never use a fake payment header or local bypass. The historical paid Testnet replay is recorded separately in [STATUS](STATUS.md).
 
 ## Evidence checklist
 

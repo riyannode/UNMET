@@ -614,7 +614,7 @@ export async function createPaymentMiddleware(): Promise<RequestHandler & { read
   } });
 }
 
-let vercelPaymentMiddlewarePromise: ReturnType<typeof createPaymentMiddleware> | null = null;
+let paymentMiddlewarePromise: ReturnType<typeof createPaymentMiddleware> | null = null;
 const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
   if (!operations.paymentDbPath && (req.get("payment-signature") || req.get("x-payment"))) {
     res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
@@ -635,8 +635,8 @@ type Payment = { middleware: RequestHandler; ready?: () => Promise<unknown> };
 let paymentRetryAt = 0;
 function initializedPayment() {
   if (Date.now() < paymentRetryAt) return Promise.reject(new Error("PAYMENT_UNAVAILABLE"));
-  return vercelPaymentMiddlewarePromise ??= createPaymentMiddleware().catch((error: unknown) => {
-    vercelPaymentMiddlewarePromise = null;
+  return paymentMiddlewarePromise ??= createPaymentMiddleware().catch((error: unknown) => {
+    paymentMiddlewarePromise = null;
     paymentRetryAt = Date.now() + operations.dependencyCacheMs;
     throw error;
   });

@@ -893,9 +893,9 @@ test("buyer-added transfer metadata cannot change the authoritative EIP-3009 dom
     .toBe(paymentIdentity(payload(), requirements, payer, { method: "POST", route: "/", input: {} }).payment);
 });
 
-test("Vercel rejects a configured local durable path rather than advertising false persistence", () => {
-  expect(() => loadOperationalConfig({ VERCEL: "1", PAYMENT_DB_PATH: "/tmp/payments.sqlite" })).toThrow("CONFIG_INVALID: PAYMENT_DB_PATH");
-  expect(loadOperationalConfig({ VERCEL: "1" }).paymentDbPath).toBeUndefined();
+test("payment storage path must be absolute", () => {
+  expect(() => loadOperationalConfig({ PAYMENT_DB_PATH: "payments.sqlite" })).toThrow("CONFIG_INVALID: PAYMENT_DB_PATH");
+  expect(loadOperationalConfig({ PAYMENT_DB_PATH: "/tmp/payments.sqlite" }).paymentDbPath).toBe("/tmp/payments.sqlite");
 });
 
 test("reconciliation selects hash-bearing records beyond permanent hashless ambiguity", async () => {

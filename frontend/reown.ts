@@ -29,7 +29,7 @@ export const appKit = projectId
       metadata: {
         name: "UNMET",
         description: "Agent demand market",
-        url: typeof window === "undefined" ? "https://unmet.vercel.app" : window.location.origin,
+        url: typeof window === "undefined" ? "https://unmetxyz.my.id" : window.location.origin,
         icons: [],
       },
       themeMode: "light",

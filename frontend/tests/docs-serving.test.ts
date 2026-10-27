@@ -82,14 +82,6 @@ describe("Vite documentation MPA", () => {
     }
   });
 
-  test("legacy Vercel docs routes target the same built entry", async () => {
-    const config = JSON.parse(await readFile(path.join(frontendRoot, "vercel.json"), "utf8"));
-    for (const route of ["/docs", "/docs/"]) {
-      expect(config.rewrites.find((rule: { source: string }) => rule.source === route)?.destination).toBe("/docs/index.html");
-    }
-    await access(path.join(directory, "docs/index.html"));
-  });
-
   test("keeps app fallback and discovery bytes unchanged", async () => {
     for (const base of [devOrigin, previewOrigin]) {
       for (const route of ["/market", "/market/1", "/create-demand", "/analytics", "/docs-other"]) {

@@ -36,30 +36,31 @@ UNMET/
 │   ├── UnmetHowItWorks.tsx, UnmetFooter.tsx, MagicRings.tsx
 │   ├── components/, hooks/, public/
 │   ├── tests/                        # Wallet, routing, chat and transaction tests
-│   └── package.json, tsconfig.json, vite.config.ts, vercel.json
+│   └── package.json, tsconfig.json, vite.config.ts
 ├── backend/
 │   ├── AgentDemand.sol, AgentDemand.t.sol, foundry.toml
 │   ├── server.ts, start.ts, contract.ts
 │   ├── config.ts, admission.ts, upstream.ts
 │   ├── durable-payment.ts, payment-identity.ts
-│   ├── payment-store.ts, payment-error.ts, payment-ops.ts
+│   ├── payment-store.ts, payment-error.ts, payment-ops.ts, payment-config.ts
+│   ├── payment-confirmation.ts, payment-discovery.ts
 │   ├── admin.ts, payment-debug.ts
 │   ├── server.test.ts, hardening.test.ts
 │   ├── payment-store.test.ts, durable-payment.test.ts
-│   └── package.json, tsconfig.json, tsconfig.bun.json, vercel.json
+│   └── package.json, tsconfig.json, tsconfig.bun.json
 ├── scripts/
 │   ├── smoke-unpaid.ts                # Local HTTP acceptance; no signature
 │   └── load-unpaid.ts                 # Bounded local unpaid probe
 └── docs/                             # Current references, operations, history
 ```
 
-Keep root manifests, lockfile, Compose, environment template and ignore files at root. Workspace manifests/configuration, Vite's HTML entrypoint, Vercel configuration and the browser race fixture stay in their functional locations.
+Keep root manifests, lockfile, Compose, environment template and ignore files at root. Workspace manifests/configuration, Vite HTML entrypoints and the browser race fixture stay in their functional locations.
 
 Foundry runs from `backend/`, where source and tests are siblings. Its dependencies are ignored under `backend/lib/`; `admin.ts` resolves build artifacts under `backend/out/`. Preserve those paths. Asset attribution stays at `frontend/public/avatars/ATTRIBUTION.md` beside its SVGs; `.hallmark` records are historical evidence.
 
 ## System architecture
 
-- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite, Caddy and Vercel. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
+- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
 - The app shell owns wallet/session orchestration. Reown AppKit is configured in `frontend/reown.ts`; `frontend/contract.ts` uses viem for direct RPC reads, approvals and contract writes. Ordinary demand actions do not pass through the Bun API.
 - `backend/AgentDemand.sol` is authoritative for demand state, escrow balances, voting, settlement and refunds. Frontend and backend ABIs are hand-maintained consumers of that contract.
 - `backend/server.ts` exports the Express app and implements API routes, health/readiness, demand indexing and ranking. `backend/start.ts` is the standalone Bun/container entrypoint.
@@ -67,7 +68,7 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 - Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.
 - Official OKX verification precedes buffered execution and settlement. Durable mode reserves the authorization, persists the in-flight marker before external settlement, and withholds content until confirmed success is persisted. Ambiguous results remain blocked for status-only recovery.
 - Root Compose builds from `context: .` using `docker/Dockerfile.api` and `docker/Dockerfile.web`. Caddy serves the frontend and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready` to the private API. Caddy replaces forwarded client identity; Express trusts only its configured hop.
-- Vercel is a separate path: it imports the Express default export, initializes payments lazily and uses platform ingress identity. `PAYMENT_DB_PATH` must remain unset there; without durable SQLite, unpaid challenges may be served but submitted payment requests fail closed with `PAYMENT_STORAGE_UNAVAILABLE`.
+- The only supported hosted path uses Docker Compose and Caddy. Durable payment storage remains a persistent SQLite volume.
 
 Read [Architecture](docs/ARCHITECTURE.md) for diagrams and detailed accounting/index behavior. Deployment configuration and historical receipts do not prove that a current public deployment is live or production-ready.
 
@@ -78,7 +79,7 @@ These are starting points, not isolated ownership boundaries. Trace the complete
 | Task | Start here; inspect related callers and tests |
 | --- | --- |
 | Workspace commands/dependencies | `package.json`, workspace manifests, `bun.lock`, `CONTRIBUTING.md` |
-| Frontend routing | `frontend/main.tsx`, `frontend/routing.ts`, `frontend/tests/routing.test.ts`, `frontend/vercel.json` |
+| Frontend routing/docs | `frontend/main.tsx`, `frontend/routing.ts`, `frontend/docs/`, `frontend/tests/routing.test.ts`, `frontend/tests/docs-serving.test.ts` |
 | App pages, wallet orchestration | `frontend/App.tsx`, `frontend/app-state.ts`, `frontend/tests/app-state.test.ts` |
 | Guided Create Demand | `frontend/CreateDemandChat.tsx`, `frontend/create-demand-chat-model.ts`, `frontend/capability.ts`, `frontend/tests/create-demand-chat.test.ts` |
 | Wallet connection/disconnect | `frontend/reown.ts`, `frontend/reown-status.ts`, `frontend/App.tsx`, `frontend/tests/wallet.test.ts`, `docs/WALLET_DISCONNECT.md` |
@@ -166,7 +167,7 @@ Use [Self-hosting](docs/SELF_HOSTING.md#health-smoke-checks-and-logs) for custom
 - Keep official OKX verification/settlement and validation → quota → admission → payment ordering. No custom proof or payment bypass.
 - Preserve SQLite atomic reservations, authorization uniqueness, request binding, logical-key protection and the existing durable state machine. Confirmed cancellation is distinct from ambiguous external settlement.
 - Persist in-flight state before settlement. Never automatically retry an ambiguous settlement or release durable paid content without confirmed payment. Recovery queries status only; a missing hash may require operator investigation.
-- Do not claim original paid-response replay or distributed exactly-once settlement. Keep Vercel's separate durability limits explicit.
+- Do not claim original paid-response replay or distributed exactly-once settlement. Keep durable SQLite reservation, settlement and recovery limits explicit.
 
 ### Infrastructure and data
 
