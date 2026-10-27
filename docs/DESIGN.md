@@ -12,6 +12,10 @@ Demand details keep Request Details, Escrow & Support, and Builder Proposal toge
 
 `frontend/app.css` scopes the light app theme to `.unmet-app-shell`: white background/card/sidebar, `#192800` foreground/primary, `#dbffa6` accent and `#52663b` muted foreground. Reuse existing semantic variables, ReUI/Base UI primitives and components. Inter Tight is the app text font; addresses and transaction values use existing numeric/monospace styles. Landing typography/styles live in the `frontend/unmet-*.css` files.
 
+`frontend/theme.css` owns shared light defaults and dark overrides and is loaded by the SPA and every docs page. Keep the `--unmet-theme-*` names centralized there: `page` (`#101010`), `surface` (`#191919`), `surface-raised` (`#202020`), `text` (`#ededed`), `muted` (`#bcbcbc`), `subtle` (`#a8a8a8`), `border` (`#353535`), `accent` (`#dfffad`), `accent-text` (`#18210f`), `interactive` (`#a4cc7a`), `success` (`#93d4a8`), `warning` (`#e4c77e`) and `error` (`#f09595`). The Tailwind/ReUI dark aliases are also owned in `theme.css`; their `html[data-theme="dark"]:root` selector overrides the app's light `:root:has(...)` values. The `green-text` alias remains for existing app selectors. The theme controller and prepaint bootstrap own preference application and prepaint only; component colors belong to their component stylesheets, including `frontend/create-demand-chat.css` for Create-specific states. Put new palette values in `theme.css`, then consume them from `.css` files rather than adding local copies.
+
+Dark theme exceptions stay scoped: landing gradients and glow treatment live in `unmet-landing.css`, “How it works” colors and monochrome avatar filters in `unmet-how-it-works.css`, footer colors in `unmet-footer.css`, and app routes in `app.css`. Preserve original light gradients, images, and animation behavior. Apply logo filters only to monochrome assets; retain multicolor artwork unchanged.
+
 The `.unmet-workspace-content` selectors style active demand content. Preserve the selectors and their scope when changing workspace styles.
 
 ## Interaction and acceptance

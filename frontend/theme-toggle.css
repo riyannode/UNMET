@@ -15,16 +15,3 @@
 @media (prefers-reduced-motion: reduce) {
   .unmet-theme-toggle { transition: none !important; }
 }
-
-html[data-theme="dark"] {
-  --unmet-theme-page: #101010;
-  --unmet-theme-surface: #191919;
-  --unmet-theme-surface-raised: #202020;
-  --unmet-theme-text: #ededed;
-  --unmet-theme-muted: #bcbcbc;
-  --unmet-theme-subtle: #a8a8a8;
-  --unmet-theme-border: #353535;
-  --unmet-theme-accent: #dfffad;
-  --unmet-theme-accent-text: #18210f;
-  --unmet-theme-green-text: #a4cc7a;
-}

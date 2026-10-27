@@ -139,11 +139,19 @@ try:
                 check(path, method="HEAD", mime="text/html")
             public_resources = {
                 "/logos/unmet.png": ("image/png", b"\x89PNG"),
+                "/logos/unmet-dark.png": ("image/png", b"\x89PNG"),
+                "/logos/okx-dark.png": ("image/png", b"\x89PNG"),
+                "/logos/usdt0-dark.png": ("image/png", b"\x89PNG"),
                 "/openapi.json": ("application/vnd.oai.openapi+json", b'"openapi": "3.1.0"'),
                 "/api.md": ("text/markdown", b"# UNMET Demand API"),
                 "/payment.md": ("text/markdown", b"# UNMET API payment guide"),
                 "/.well-known/api-catalog": ("application/linkset+json", b'"linkset"'),
             }
+            for path in ["/logos/unmet-dark.png", "/logos/okx-dark.png", "/logos/usdt0-dark.png"]:
+                _, body = check(path, mime="image/png")
+                asset = (dist / path.lstrip("/")).read_bytes()
+                assert body == asset and body.startswith(b"\x89PNG"), (path, "wrong PNG asset")
+                check(path, method="HEAD", mime="image/png")
 
             docs_pages = {
                 ("/docs" if page.parent == dist / "docs" else "/" + page.parent.relative_to(dist).as_posix() + "/"): page

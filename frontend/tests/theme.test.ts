@@ -47,6 +47,31 @@ describe("theme preference", () => {
     expect(getThemeSnapshot()).toBe("light");
   });
 
+  it("uses shared canvas tokens in dark mode and clears inline colors in light mode", () => {
+    const originalDocument = globalThis.document;
+    const appRoot = { style: {} as Record<string, string> };
+    const documentState = {
+      documentElement: { dataset: {} as Record<string, string>, style: {} as Record<string, string> },
+      body: { style: {} as Record<string, string> },
+      getElementById: () => appRoot,
+    };
+    Object.defineProperty(globalThis, "document", { configurable: true, value: documentState });
+    try {
+      setTheme("dark");
+      expect(documentState.documentElement.style.backgroundColor).toBe("var(--unmet-theme-page, #101010)");
+      expect(documentState.body.style.backgroundColor).toBe("var(--unmet-theme-page, #101010)");
+      expect(documentState.body.style.color).toBe("var(--unmet-theme-text, #ededed)");
+      expect(appRoot.style.backgroundColor).toBe("var(--unmet-theme-page, #101010)");
+      setTheme("light");
+      expect(documentState.documentElement.style.backgroundColor).toBe("");
+      expect(documentState.body.style.color).toBe("");
+      expect(appRoot.style.backgroundColor).toBe("");
+    } finally {
+      Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+      setTheme("light");
+    }
+  });
+
   it("keeps the in-memory selection when storage writes fail", () => {
     const originalWindow = globalThis.window;
     Object.defineProperty(globalThis, "window", {

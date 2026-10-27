@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { useTheme } from "./theme.ts";
 import UnmetLanding from "./UnmetLanding.tsx";
 import { ROUTES } from "./routing.ts";
+import "./theme.css";
 import "./app.css";
 
 const App = lazy(() => import("./App.tsx"));
@@ -24,14 +25,14 @@ function ThemeToaster() {
       toastOptions={{
         duration: 5000,
         style: {
-          background: dark ? "#1b1b1b" : "#ffffff",
-          color: dark ? "#f1f1f1" : "#192800",
-          border: dark ? "1px solid #353535" : "1px solid #d9e3ce",
+          background: dark ? "var(--unmet-theme-surface)" : "#ffffff",
+          color: dark ? "var(--unmet-theme-text)" : "#192800",
+          border: dark ? "1px solid var(--unmet-theme-border)" : "1px solid #d9e3ce",
           fontFamily: "Inter Tight, sans-serif",
         },
         actionButtonStyle: {
-          background: dark ? "#292929" : "#eff6e5",
-          color: dark ? "#f1f1f1" : "#192800",
+          background: dark ? "var(--unmet-theme-surface-raised)" : "#eff6e5",
+          color: dark ? "var(--unmet-theme-text)" : "#192800",
         },
       }}
     />

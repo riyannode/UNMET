@@ -13,13 +13,13 @@ function applyTheme(theme: Theme): void {
     const root = document.documentElement;
     root.dataset.theme = theme;
     root.style.colorScheme = theme === "dark" ? "dark" : "";
-    root.style.backgroundColor = theme === "dark" ? "#101010" : "";
+    root.style.backgroundColor = theme === "dark" ? "var(--unmet-theme-page, #101010)" : "";
     if (document.body) {
-      document.body.style.backgroundColor = theme === "dark" ? "#101010" : "";
-      document.body.style.color = theme === "dark" ? "#ededed" : "";
+      document.body.style.backgroundColor = theme === "dark" ? "var(--unmet-theme-page, #101010)" : "";
+      document.body.style.color = theme === "dark" ? "var(--unmet-theme-text, #ededed)" : "";
     }
     const appRoot = document.getElementById("root");
-    if (appRoot) appRoot.style.backgroundColor = theme === "dark" ? "#101010" : "";
+    if (appRoot) appRoot.style.backgroundColor = theme === "dark" ? "var(--unmet-theme-page, #101010)" : "";
   }
   listeners.forEach((listener) => listener());
 }

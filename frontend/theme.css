@@ -1,0 +1,70 @@
+:root {
+  --unmet-theme-page: #ffffff;
+  --unmet-theme-surface: #ffffff;
+  --unmet-theme-surface-raised: #f7f9f3;
+  --unmet-theme-text: #192800;
+  --unmet-theme-muted: #52663b;
+  --unmet-theme-subtle: #657052;
+  --unmet-theme-border: #e7ecdf;
+  --unmet-theme-accent: #dbffa6;
+  --unmet-theme-accent-text: #192800;
+  --unmet-theme-interactive: #5b8c32;
+  --unmet-theme-success: #247a43;
+  --unmet-theme-warning: #8a5a00;
+  --unmet-theme-error: #b4232c;
+  --unmet-theme-green-text: var(--unmet-theme-interactive);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --unmet-theme-page: #101010;
+  --unmet-theme-surface: #191919;
+  --unmet-theme-surface-raised: #202020;
+  --unmet-theme-text: #ededed;
+  --unmet-theme-muted: #bcbcbc;
+  --unmet-theme-subtle: #a8a8a8;
+  --unmet-theme-border: #353535;
+  --unmet-theme-accent: #dfffad;
+  --unmet-theme-accent-text: #18210f;
+  --unmet-theme-interactive: #a4cc7a;
+  --unmet-theme-success: #93d4a8;
+  --unmet-theme-warning: #e4c77e;
+  --unmet-theme-error: #f09595;
+  --unmet-theme-green-text: var(--unmet-theme-interactive);
+}
+
+html[data-theme="dark"] body,
+html[data-theme="dark"] #root { background: var(--unmet-theme-page); }
+html[data-theme="dark"] body { color: var(--unmet-theme-text); }
+
+html[data-theme="dark"]:root {
+  color-scheme: dark;
+  --background: var(--unmet-theme-page);
+  --foreground: var(--unmet-theme-text);
+  --card: #181818;
+  --card-foreground: var(--unmet-theme-text);
+  --popover: var(--unmet-theme-surface);
+  --popover-foreground: var(--unmet-theme-text);
+  --primary: var(--unmet-theme-accent);
+  --primary-foreground: var(--unmet-theme-accent-text);
+  --secondary: #242424;
+  --secondary-foreground: var(--unmet-theme-text);
+  --muted: #222222;
+  --muted-foreground: var(--unmet-theme-muted);
+  --accent: #29341f;
+  --accent-foreground: #e9f5d9;
+  --destructive: var(--unmet-theme-error);
+  --border: var(--unmet-theme-border);
+  --input: #393939;
+  --ring: var(--unmet-theme-interactive);
+  --sidebar: #151515;
+  --sidebar-foreground: var(--unmet-theme-text);
+  --sidebar-primary: var(--unmet-theme-accent);
+  --sidebar-primary-foreground: var(--unmet-theme-accent-text);
+  --sidebar-accent: #242424;
+  --sidebar-accent-foreground: var(--unmet-theme-text);
+  --sidebar-border: var(--unmet-theme-border);
+  --sidebar-ring: var(--unmet-theme-interactive);
+  --invert: #f4f4f4;
+  --invert-foreground: #161616;
+}

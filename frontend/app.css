@@ -705,61 +705,27 @@ body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: clip; backgro
 }
 
 
-html[data-theme="dark"],
-html[data-theme="dark"]:has(.unmet-app-shell) {
-  color-scheme: dark;
-  --background: #101010;
-  --foreground: #ededed;
-  --card: #181818;
-  --card-foreground: #ededed;
-  --popover: #1b1b1b;
-  --popover-foreground: #ededed;
-  --primary: #dbffa6;
-  --primary-foreground: #15200d;
-  --secondary: #242424;
-  --secondary-foreground: #ededed;
-  --muted: #222222;
-  --muted-foreground: #b0b0b0;
-  --accent: #29341f;
-  --accent-foreground: #e9f5d9;
-  --destructive: #ef7777;
-  --border: #333333;
-  --input: #393939;
-  --ring: #91bd68;
-  --sidebar: #151515;
-  --sidebar-foreground: #ededed;
-  --sidebar-primary: #dbffa6;
-  --sidebar-primary-foreground: #15200d;
-  --sidebar-accent: #242424;
-  --sidebar-accent-foreground: #ededed;
-  --sidebar-border: #303030;
-  --sidebar-ring: #91bd68;
-  --invert: #f4f4f4;
-  --invert-foreground: #161616;
-}
-
-html[data-theme="dark"] body { background: #101010; color: #ededed; }
-html[data-theme="dark"] .unmet-app-shell { color-scheme: dark; background: #101010; color: #ededed; }
+html[data-theme="dark"] .unmet-app-shell { color-scheme: dark; background: var(--unmet-theme-page); color: var(--unmet-theme-text); }
 html[data-theme="dark"] .unmet-workspace-content {
   color-scheme: dark;
-  --background-deep: #101010;
+  --background-deep: var(--unmet-theme-page);
   --background-base: #151515;
-  --surface-default: #191919;
-  --surface-elevated: #202020;
+  --surface-default: var(--unmet-theme-surface);
+  --surface-elevated: var(--unmet-theme-surface-raised);
   --surface-selected: #272d21;
-  --text-primary: #eeeeee;
+  --text-primary: var(--unmet-theme-text);
   --text-secondary: #c5c5c5;
-  --text-muted: #a0a0a0;
+  --text-muted: var(--unmet-theme-subtle);
   --text-inverse: #111111;
-  --signal-primary: #a4cc7a;
-  --signal-glow: #d5f2ae;
-  --signal-success: #85d6a6;
-  --signal-warning: #e4c77e;
-  --signal-danger: #f18f96;
-  --border-default: #333333;
+  --signal-primary: var(--unmet-theme-interactive);
+  --signal-glow: var(--unmet-theme-accent);
+  --signal-success: var(--unmet-theme-success);
+  --signal-warning: var(--unmet-theme-warning);
+  --signal-danger: var(--unmet-theme-error);
+  --border-default: var(--unmet-theme-border);
   --border-strong: #555555;
-  color: #eeeeee;
-  background: #101010;
+  color: var(--unmet-theme-text);
+  background: var(--unmet-theme-page);
 }
 html[data-theme="dark"] .unmet-workspace-content:has(.market-panel),
 html[data-theme="dark"] .unmet-workspace-content:has(.analytics-panel),
@@ -777,19 +743,19 @@ html[data-theme="dark"] .demand-detail-content [data-slot="tabs-list"] {
 html[data-theme="dark"] .demand-detail-content .demand-detail-heading,
 html[data-theme="dark"] .demand-detail-content .demand-detail-card h2,
 html[data-theme="dark"] .demand-detail-content .demand-detail-card h3,
-html[data-theme="dark"] .demand-detail-content .demand-detail-card strong { color: #eeeeee; }
+html[data-theme="dark"] .demand-detail-content .demand-detail-card strong { color: var(--unmet-theme-text); }
 html[data-theme="dark"] .demand-detail-content .demand-detail-kicker,
 html[data-theme="dark"] .demand-detail-content .demand-detail-summary,
 html[data-theme="dark"] .demand-detail-content .demand-detail-card p,
-html[data-theme="dark"] .demand-detail-content .demand-detail-card label { color: #bcbcbc; }
+html[data-theme="dark"] .demand-detail-content .demand-detail-card label { color: var(--unmet-theme-muted); }
 html[data-theme="dark"] .demand-detail-content .demand-detail-status,
-html[data-theme="dark"] .demand-detail-content .status-line { border-color: #353535; background: #202020; color: #d0d0d0; }
-html[data-theme="dark"] .demand-detail-content .status-line.ok { background: #1c2b21; color: #93d4a8; }
-html[data-theme="dark"] .demand-detail-content .status-line.err { background: #321f20; color: #f09595; }
+html[data-theme="dark"] .demand-detail-content .status-line { border-color: var(--unmet-theme-border); background: var(--unmet-theme-surface-raised); color: #d0d0d0; }
+html[data-theme="dark"] .demand-detail-content .status-line.ok { background: #1c2b21; color: var(--unmet-theme-success); }
+html[data-theme="dark"] .demand-detail-content .status-line.err { background: #321f20; color: var(--unmet-theme-error); }
 html[data-theme="dark"] .demand-detail-content button.ghost,
 html[data-theme="dark"] .demand-detail-content input,
 html[data-theme="dark"] .demand-detail-content textarea,
-html[data-theme="dark"] .demand-detail-content select { border-color: #444; background: #171717; color: #eee; }
+html[data-theme="dark"] .demand-detail-content select { border-color: #444; background: #171717; color: var(--unmet-theme-text); }
 html[data-theme="dark"] .demand-detail-content .demand-page input[data-slot="input"],
 html[data-theme="dark"] .demand-detail-content .demand-page textarea[data-slot="textarea"] {
   border-color: var(--unmet-theme-border);
@@ -806,12 +772,12 @@ html[data-theme="dark"] .demand-detail-content [data-slot="tabs-trigger"] { colo
 html[data-theme="dark"] .demand-detail-content [data-slot="tabs-trigger"][data-active] { background: #292929; color: #eaf5d9; }
 
 html[data-theme="dark"] .market-panel,
-html[data-theme="dark"] .analytics-panel { color-scheme: dark; color: #ededed; }
+html[data-theme="dark"] .analytics-panel { color-scheme: dark; color: var(--unmet-theme-text); }
 html[data-theme="dark"] .market-panel .board-title h1,
 html[data-theme="dark"] .market-panel .market-card,
 html[data-theme="dark"] .market-panel .market-card-title,
 html[data-theme="dark"] .market-panel .market-card strong,
-html[data-theme="dark"] .market-panel .market-card b { color: #ededed; }
+html[data-theme="dark"] .market-panel .market-card b { color: var(--unmet-theme-text); }
 html[data-theme="dark"] .market-panel .unit,
 html[data-theme="dark"] .market-panel .workflow-summary,
 html[data-theme="dark"] .market-panel .market-control-label,
@@ -827,35 +793,35 @@ html[data-theme="dark"] .market-panel .market-sort-trigger,
 html[data-theme="dark"] .market-panel .market-card [data-slot="card"],
 html[data-theme="dark"] .market-panel .market-card input,
 html[data-theme="dark"] .market-panel .market-card textarea {
-  border-color: #353535;
-  background: #191919;
-  color: #ededed;
+  border-color: var(--unmet-theme-border);
+  background: var(--unmet-theme-surface);
+  color: var(--unmet-theme-text);
 }
 html[data-theme="dark"] .market-panel .market-search-group [data-slot="input-group-control"] { background: transparent; color: var(--unmet-theme-text); }
 html[data-theme="dark"] .market-panel .market-search-group [data-slot="input-group-control"]::placeholder { color: var(--unmet-theme-muted); opacity: 1; }
-html[data-theme="dark"] .market-panel .market-status-tabs { border-color: #353535; }
-html[data-theme="dark"] .market-panel .market-status-tab { color: #bcbcbc; }
+html[data-theme="dark"] .market-panel .market-status-tabs { border-color: var(--unmet-theme-border); }
+html[data-theme="dark"] .market-panel .market-status-tab { color: var(--unmet-theme-muted); }
 html[data-theme="dark"] .market-panel .market-status-badge,
 html[data-theme="dark"] .market-panel .market-card [data-slot="badge"] { border-color: #414141; background: #262626; color: #d0d0d0; }
 html[data-theme="dark"] .market-panel .market-status-badge[data-status="OPEN"],
 html[data-theme="dark"] .market-panel .market-status-badge[data-status="READY"] { background: #263323; color: #c8e9a7; }
-html[data-theme="dark"] .market-panel .market-status-badge[data-status="SUBMITTED"] { background: #342f21; color: #e4c77e; }
-html[data-theme="dark"] .market-panel .market-status-badge[data-status="FULFILLED"] { background: #1d3025; color: #93d4a8; }
+html[data-theme="dark"] .market-panel .market-status-badge[data-status="SUBMITTED"] { background: #342f21; color: var(--unmet-theme-warning); }
+html[data-theme="dark"] .market-panel .market-status-badge[data-status="FULFILLED"] { background: #1d3025; color: var(--unmet-theme-success); }
 html[data-theme="dark"] .market-panel .market-status-badge[data-status="REJECTED"],
 html[data-theme="dark"] .market-panel .market-status-badge[data-status="EXPIRED"],
-html[data-theme="dark"] .market-panel .market-status-badge[data-status="CLOSED"] { background: #362324; color: #f09595; }
+html[data-theme="dark"] .market-panel .market-status-badge[data-status="CLOSED"] { background: #362324; color: var(--unmet-theme-error); }
 html[data-theme="dark"] .analytics-panel .analytics-card,
 html[data-theme="dark"] .analytics-panel .analytics-kpi,
 html[data-theme="dark"] .analytics-panel .analytics-state,
 html[data-theme="dark"] .analytics-panel .analytics-history-state,
-html[data-theme="dark"] .analytics-panel .analytics-loading i { border-color: #353535; background: #191919; color: #ededed; }
+html[data-theme="dark"] .analytics-panel .analytics-loading i { border-color: var(--unmet-theme-border); background: var(--unmet-theme-surface); color: var(--unmet-theme-text); }
 html[data-theme="dark"] .analytics-panel .analytics-card-heading h2,
 html[data-theme="dark"] .analytics-panel .analytics-donut-total,
 html[data-theme="dark"] .analytics-panel .analytics-status-legend strong,
 html[data-theme="dark"] .analytics-panel .analytics-escrow-label strong,
 html[data-theme="dark"] .analytics-panel .analytics-bar-value,
 html[data-theme="dark"] .analytics-panel .analytics-recent-list strong,
-html[data-theme="dark"] .analytics-panel .analytics-history-state strong { color: #ededed; }
+html[data-theme="dark"] .analytics-panel .analytics-history-state strong { color: var(--unmet-theme-text); }
 html[data-theme="dark"] .analytics-panel .analytics-donut-total { fill: var(--unmet-theme-text); }
 html[data-theme="dark"] .analytics-panel .analytics-card-heading p,
 html[data-theme="dark"] .analytics-panel .analytics-donut-caption,
@@ -869,61 +835,13 @@ html[data-theme="dark"] .analytics-panel .analytics-loading { color: #b5b5b5; }
 html[data-theme="dark"] .analytics-panel .analytics-donut-caption { fill: var(--unmet-theme-muted); }
 html[data-theme="dark"] .analytics-panel .analytics-donut-track,
 html[data-theme="dark"] .analytics-panel .analytics-bar-track { background: #2b2b2b; stroke: #2b2b2b; }
-html[data-theme="dark"] .analytics-panel .analytics-recent-list li { border-color: #353535; }
+html[data-theme="dark"] .analytics-panel .analytics-recent-list li { border-color: var(--unmet-theme-border); }
 html[data-theme="dark"] .analytics-panel .analytics-fulfilled-tag,
-html[data-theme="dark"] .analytics-panel .analytics-unavailable-tag { border-color: #353535; background: #262626; color: #d1d1d1; }
+html[data-theme="dark"] .analytics-panel .analytics-unavailable-tag { border-color: var(--unmet-theme-border); background: #262626; color: #d1d1d1; }
 
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content,
-html[data-theme="dark"] .unmet-workspace-content .create-demand-chat { color-scheme: dark; color: #ededed; background: #101010; }
-html[data-theme="dark"] .create-demand-heading h1,
-html[data-theme="dark"] .create-demand-review-heading h2,
-html[data-theme="dark"] .create-demand-review-row dd,
-html[data-theme="dark"] .create-demand-pricing-field label,
-html[data-theme="dark"] .create-demand-edit-row { color: #ededed; }
-html[data-theme="dark"] .create-demand-kicker,
-html[data-theme="dark"] .create-demand-heading > p:last-child,
-html[data-theme="dark"] .create-demand-review-row dt,
-html[data-theme="dark"] .create-demand-review-row > p,
-html[data-theme="dark"] .create-demand-wallet-note,
-html[data-theme="dark"] .create-demand-field-help { color: #b4b4b4; }
-html[data-theme="dark"] .create-demand-review,
-html[data-theme="dark"] .create-demand-pricing-form,
-html[data-theme="dark"] .create-demand-turn .create-demand-assistant-bubble [data-slot="bubble-content"],
-html[data-theme="dark"] .create-demand-edit-row { border-color: #353535; background: #191919; color: #ededed; }
-html[data-theme="dark"] .create-demand-turn .create-demand-user-bubble [data-slot="bubble-content"] { border-color: #353535; background: #252b20; color: #e8f1dc; }
-html[data-theme="dark"] .create-demand-contract-note { background: #20251c; color: #d2e0c0; }
-html[data-theme="dark"] .create-demand-composer { border-color: var(--unmet-theme-border); background: var(--unmet-theme-surface); box-shadow: 0 8px 28px rgb(0 0 0 / 28%); }
-html[data-theme="dark"] .create-demand-composer:focus-within { border-color: var(--unmet-theme-green-text); box-shadow: 0 0 0 3px rgb(168 220 120 / 18%); }
-html[data-theme="dark"] .create-demand-edit-trigger,
-html[data-theme="dark"] .create-demand-pricing-input[data-slot="input"],
-html[data-theme="dark"] .create-demand-composer input,
-html[data-theme="dark"] .create-demand-composer textarea,
-html[data-theme="dark"] .create-demand-composer button:not(.create-demand-submit) { border-color: #414141; background: #191919; color: #ededed; }
-html[data-theme="dark"] .create-demand-composer [data-slot="prompt-input-submit"] { border-color: var(--unmet-theme-green-text); background: var(--unmet-theme-green-text); color: #101010; }
-html[data-theme="dark"] .create-demand-composer [data-slot="prompt-input-submit"]:hover:not(:disabled) { background: #c7ed9e; }
-html[data-theme="dark"] .create-demand-composer [data-slot="prompt-input-submit"]:disabled { border-color: #5a5a5a; background: #3a3a3a; color: #bdbdbd; opacity: 1; }
-html[data-theme="dark"] .create-demand-pricing-input[data-slot="input"]::placeholder,
-html[data-theme="dark"] .create-demand-composer input::placeholder,
-html[data-theme="dark"] .create-demand-composer textarea::placeholder { color: #999; }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-submit { border-color: var(--signal-glow); background: var(--signal-glow); color: var(--text-inverse); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-submit:hover:not(:disabled) { background: var(--signal-primary); color: var(--text-inverse); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content input,
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content textarea,
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content select { color-scheme: dark; }
-html[data-theme="dark"] .unmet-workspace-content .status-line { background: #202020; color: #c8c8c8; }
-html[data-theme="dark"] .unmet-workspace-content .status-line.ok { background: #1c2b21; color: #93d4a8; }
-html[data-theme="dark"] .unmet-workspace-content .status-line.err { background: #321f20; color: #f09595; }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-field-error,
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-config-error,
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-composer [data-slot="prompt-input-error"] { color: var(--signal-danger); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-outcome { border-color: var(--border-default); background: var(--surface-default); color: var(--text-primary); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-outcome-success { border-color: #36583e; background: #1c2b21; color: var(--signal-success); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-outcome-error { border-color: #633435; background: #321f20; color: var(--signal-danger); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-outcome a { color: var(--signal-primary); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-outcome-success a { color: var(--signal-success); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-outcome-error a { color: var(--signal-danger); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-refresh-message { color: var(--signal-warning); }
-html[data-theme="dark"] .unmet-workspace-content.create-demand-content .create-demand-wallet-state { color: var(--text-secondary); }
+html[data-theme="dark"] .unmet-workspace-content .status-line { background: var(--unmet-theme-surface-raised); color: #c8c8c8; }
+html[data-theme="dark"] .unmet-workspace-content .status-line.ok { background: #1c2b21; color: var(--unmet-theme-success); }
+html[data-theme="dark"] .unmet-workspace-content .status-line.err { background: #321f20; color: var(--unmet-theme-error); }
 
 html[data-theme="dark"] .market-panel {
   --text-primary: var(--unmet-theme-text);

@@ -70,6 +70,9 @@ describe("Vite documentation MPA", () => {
     expect(sharedAssets.some((asset) => asset.endsWith(".js"))).toBe(true);
     expect(sharedAssets.some((asset) => asset.endsWith(".css"))).toBe(true);
     for (const asset of sharedAssets) await access(path.join(directory, asset));
+    const sharedCss = sharedAssets.find((asset) => asset.endsWith(".css"));
+    expect(sharedCss).toBeDefined();
+    expect(await readFile(path.join(directory, sharedCss!), "utf8")).toContain("--unmet-theme-page");
   });
 
   test.each(docsPaths)("%s serves docs HTML through dev and built preview", async (route) => {
@@ -147,6 +150,7 @@ describe("Vite documentation MPA", () => {
       const css = (await Promise.all(cssLinks.map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
       expect(css).toContain(".docs-grid");
       expect(css).toContain("grid-template-columns");
+      expect(css).toContain("--unmet-theme-page");
     }
     const sitemap = await readFile(path.join(directory, "sitemap.xml"), "utf8");
     const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1]!).pathname);
