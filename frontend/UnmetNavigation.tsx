@@ -13,7 +13,8 @@ export function RollText({
 }) {
   const chars = Array.from(text);
   return (
-    <span className={"unmet-roll-text " + (variant === "dark" ? "unmet-roll-dark" : "")} aria-label={text}>
+    <span className={"unmet-roll-text " + (variant === "dark" ? "unmet-roll-dark" : "")}>
+      <span className="unmet-roll-accessible">{text}</span>
       <span className="unmet-roll-layer unmet-roll-top" aria-hidden="true">
         {chars.map((char, index) => (
           <span key={"top-" + index} style={{ transitionDelay: String(index * 15) + "ms" }}>

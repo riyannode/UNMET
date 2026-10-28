@@ -12,6 +12,8 @@ function applyTheme(theme: Theme): void {
   if (typeof document !== "undefined") {
     const root = document.documentElement;
     root.dataset.theme = theme;
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = theme === "dark" ? "#101010" : "#070b12";
     root.style.colorScheme = theme === "dark" ? "dark" : "";
     root.style.backgroundColor = theme === "dark" ? "var(--unmet-theme-page, #101010)" : "";
     if (document.body) {
