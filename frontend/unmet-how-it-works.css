@@ -323,6 +323,18 @@
   .unmet-how {
     margin-left: -18px;
   }
+
+  .unmet-how-container {
+    box-sizing: border-box;
+  }
+
+  .unmet-how-step-copy-motion {
+    min-width: 0;
+  }
+
+  .unmet-how-social-proof {
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 430px) {

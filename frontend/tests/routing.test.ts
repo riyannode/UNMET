@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
-import UnmetNavigation from "../UnmetNavigation";
+import UnmetNavigation, { RollText } from "../UnmetNavigation";
 import { demandHref, parseDemandId, ROUTES } from "../routing";
 
 const routeObjects = Object.entries(ROUTES).flatMap(([id, route]) =>
@@ -36,6 +36,13 @@ describe("app routes", () => {
     expect(docsAnchor).not.toContain("data-discover");
     expect(marketAnchor).toContain("data-discover");
     expect(analyticsAnchor).toContain("data-discover");
+  });
+
+  test("exposes one readable label while hiding both animated layers", () => {
+    const markup = renderToStaticMarkup(createElement(RollText, { text: "Explore Market" }));
+    expect(markup).toContain('<span class="unmet-roll-accessible">Explore Market</span>');
+    expect(markup.match(/aria-hidden="true"/g)).toHaveLength(2);
+    expect(markup).not.toContain("aria-label=");
   });
 
   test("docs uses the original navigation component with document navigation", () => {

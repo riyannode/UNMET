@@ -56,11 +56,15 @@ describe("Vite documentation MPA", () => {
     for (const html of [app, docs]) {
       expect(html).toMatch(/<script[^>]+type="module"[^>]+src="\/assets\/[^"]+\.js"/);
       expect(html).toMatch(/<link[^>]+rel="stylesheet"[^>]+href="\/assets\/[^"]+\.css"/);
+      expect(html.match(/<meta name="theme-color"/g)).toHaveLength(1);
+      expect(html.indexOf('<meta name="theme-color"')).toBeLessThan(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`));
       expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
       expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
     }
     for (const route of docsRoutes) {
       const html = await readFile(path.join(directory, docsFile(route)), "utf8");
+      expect(html.match(/<meta name="theme-color"/g)).toHaveLength(1);
+      expect(html.indexOf('<meta name="theme-color"')).toBeLessThan(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`));
       expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
       expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
     }

@@ -32,7 +32,7 @@ const themeBootstrapPlugin: Plugin = {
   name: "theme-bootstrap",
   transformIndexHtml: {
     order: "pre",
-    handler: (html) => html.replace(/<head([^>]*)>/, `<head$1><script>${THEME_BOOTSTRAP}</script>`),
+    handler: (html) => html.replace(/<head([^>]*)>/, `<head$1><meta name="theme-color" content="#070b12"><script>${THEME_BOOTSTRAP}</script>`),
   },
 };
 

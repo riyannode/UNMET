@@ -657,7 +657,7 @@ export default function UnmetLanding() {
     </section>
     <ProblemSection />
     <div className="unmet-market-infrastructure" aria-hidden="true">
-      <img src="/images/unmet-market-infrastructure.png" alt="" />
+      <img src="/images/unmet-market-infrastructure.png" alt="" width="2172" height="724" loading="lazy" />
     </div>
     <UnmetHowItWorks />
     <UnmetFooter />
