@@ -35723,5 +35723,11 @@
         "errors": []
       }
     }
+  },
+  "encodingVerification": {
+    "method": "GET with Accept-Encoding: gzip",
+    "mainJavaScript": "Content-Encoding: gzip; Transfer-Encoding: chunked",
+    "infrastructurePNG": "identity; Content-Length:1692288",
+    "networkBytes": "CDP Network.loadingFinished.encodedDataLength; bundles recorded separately"
   }
 }
