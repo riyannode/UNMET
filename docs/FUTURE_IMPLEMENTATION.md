@@ -86,9 +86,9 @@ Builders discover funded requirements and independently develop services that sa
 
 A builder develops and hosts an x402-compatible API before submitting it to UNMET.
 
-An automatic validation Worker checks the proposed service's payment compatibility and required technical metadata.
+An automatic validation service checks the proposed service's payment compatibility and required technical metadata.
 
-The Worker issues a signed attestation when validation passes.
+The validation service issues a signed attestation when validation passes.
 
 The builder submits the service and attestation to the non-upgradeable escrow contract.
 
@@ -217,7 +217,7 @@ Payment protocol: x402
 
 Initial payment scheme: exact
 
-Validation runtime: Cloudflare Worker
+Validation runtime: isolated VPS-hosted Bun validation service
 
 Escrow: AgentDemandV2
 
@@ -254,7 +254,7 @@ Historical acceptance at PR #17 baseline `cb346e2a73de917a01e2555363d6b54f4e4a58
 
 ### 3.3 Configuration-Driven Payment Support
 
-The Worker must load its payment validation policy from an explicitly configured payment profile.
+The validation service must load its payment validation policy from an explicitly configured payment profile.
 
 The profile defines:
 
@@ -370,9 +370,9 @@ Do not build a generalized plugin framework before multiple implementations demo
 
 OKX payment infrastructure is responsible for the supported payment verification and settlement workflow used by the initial integration.
 
-The UNMET Validation Worker is different.
+The UNMET validation service is different.
 
-Worker: Validates proposed service payment requirements before onchain submission.
+Validation service: Validates proposed service payment requirements before onchain submission.
 
 Payment facilitator: Participates in verification and settlement when a client actually pays for the service.
 
@@ -397,7 +397,7 @@ Preserve the existing commitment-weighted escrow economic model.
 Required components:
 
 1. UNMET Frontend
-2. x402 Validation Worker
+2. x402 validation service
 3. Verifier Signing Authority
 4. AgentDemandV2
 5. Existing Bun Backend and Indexer
@@ -410,6 +410,47 @@ No curator role is required for selecting builders.
 
 No builder staking or bond is required.
 
+
+### G0.1 runtime boundary and deployment identity
+
+The initial validation runtime is a dedicated Bun service on an isolated VPS. It is separate from the existing Bun API, its payment database, and x402 settlement. The service has no signing key in its process or environment: a separately protected signer accepts only authenticated, narrowly scoped requests from the validation service and enforces its own policy before signing. Authentication, isolation and signer policy must be independently reviewed and tested on the target VPS before use. A local test cannot establish that host firewall rules or signer isolation are deployed.
+
+Run validator and signer under separate unprivileged identities and isolated namespaces, with neither process able to access the existing API's payment volume, credentials or runtime. Restrict validator target egress to checked public HTTPS destinations, and configure DNS and RPC control paths separately to specific approved endpoints. Deny access to VPS host, metadata, private, reserved and management addresses, including the VPS's own public management addresses. The signer has no arbitrary target egress. Authenticate validator-to-signer requests and enforce the exact typed message, approved deployment and policy, and timestamp bounds at the signer. Key isolation limits key exposure but cannot make a compromised validator's observations truthful: it can request false observations within signer policy.
+
+The runtime must resolve every A and AAAA result, reject non-public, mapped or otherwise special-use addresses, and bind each connection to a checked address. It must reject a mixed public/private answer rather than falling back to any unsafe address, preserve the original DNS hostname for TLS SNI and certificate verification, and revalidate every new connection. DNS resolution alone followed by an independent hostname connection is insufficient. Deny all redirects and proxies and enforce network egress restrictions outside the process as a second boundary. DNS, timeout, connect and TLS failures fail closed. An outbound request must never read a business response body: inspect the bounded 402 header then destroy the response. Admission and concurrency limits must be finite and configured before accepting work. The 10-second deadline applies across resolution, connect, TLS and response headers.
+
+The same reviewed V2 source supports escrow Testnet 1952 and Mainnet 196 through explicit deployment configuration; no chain-specific business logic or source edits. Constructor immutables and runtime bytecode may differ. Each deployment selects its RPC, chain ID, contract, verifier, pinned price denomination and payment profiles. Domain separation uses the selected escrow chain and contract, and V2 checks block.chainid and address(this). The payment network is independent of escrow chain. Mainnet activation requires separate security review, end-to-end verification and owner approval; this plan is neither an audit nor an activation.
+
+Consumer identity is (escrowChainId, escrowContract, demandId). The existing frontend and backend contract modules use one global deployment. Future work must select a deployment explicitly in RPC clients, frontend routes and wallet actions, transaction lifecycle and recovery keys, app action IDs, backend index/checkpoint keys and API responses, and validation profile/denomination lookup. Pending records must retain their originating deployment and never be replayed into another. Historical V1 routes and records remain reachable. This is a future interface map, not a claim that these consumers already support multiple deployments.
+
+The unmounted G0.1 transport primitive accepts DNS-name service URLs only (no IP-literal targets), and uses native DNS, TLS and HTTPS over one checked literal peer, and destroys the response immediately after bounded headers. Its resolver and trust roots are trusted service configuration, not caller input. The caller must supply already validated, canonical POST bytes; full request size, duplicate-key, JCS and semantic enforcement belong to G0.2. The per-request DNS resolver is canceled on timeout and late results cannot open a socket. G0.2 must impose finite admission and bound resolver work even when an injected resolver cannot be canceled.
+
+The address policy conservatively permits IPv4 outside the listed special-use subnets and IPv6 within 2000::/3 excluding 2001::/23, 2001:db8::/32, 2002::/16, 2620:4f:8000::/48 and 3fff::/20; mapped and translation addresses outside that range are denied. This is not a claim of exhaustive or current IANA registry equivalence: review the policy and deployment management-address denylist before deployment. Internal transport codes INVALID_TARGET, UNSAFE_ADDRESS and INVALID_RESPONSE map to FAIL; DNS_UNAVAILABLE, TRANSPORT_UNAVAILABLE and TRANSPORT_TIMEOUT map to UNAVAILABLE. HTTP status and challenge semantics remain the future evaluator's responsibility.
+
+Local adversarial tests use real Bun TLS/HTTPS sockets on public-shaped IPv4 and IPv6 loopback addresses inside a fresh network namespace with no external route. They check SNI, original hostname certificate identity, pinned peer, DNS changes, mixed answers, redirects, header bounds, timeout and body cancellation. CI invokes the namespace suite separately. Local Bun 1.4.3 evidence does not establish Bun 1.4.2 CI or target VPS behavior until those environments run it. Neither these tests nor the primitive establishes host egress or signer isolation.
+
+| Existing consumer | Future deployment-identity impact |
+| --- | --- |
+| frontend/contract.ts: CHAIN_ID, DEMAND_CONTRACT, getPublic, submitService and wallet actions | Select explicit chain, contract, RPC and V2 interface per originating deployment; keep V1 reads/actions. |
+| frontend/main.tsx, frontend/routing.ts: demandHref, parseDemandId; frontend/App.tsx | Carry deployment through routes, views and submission/action identity. |
+| frontend/transaction-lifecycle.ts: pending storage and action keys | Include chain and contract in keys and recovery records; preserve originating deployment. |
+| frontend/Analytics.tsx, frontend/CreateDemandChat.tsx and model | Bind analytics, creation and display to selected deployment. |
+| backend/contract.ts: loadConfig, getPublicClient, AGENT_DEMAND_ABI; backend/server.ts index | Select RPC/contract explicitly; scope index and checkpoint keys by deployment. |
+| backend/config.ts, backend/admin.ts | Resolve explicit deployment identity for configuration and administration; retain V1 operations. |
+| Existing billing and payment modules | Demand Intelligence x402 billing remains independent of escrow deployment selection. |
+
+### Security acceptance matrix
+
+| Gate | Adversarial acceptance requirement | Evidence boundary |
+| --- | --- | --- |
+| G0.2 | Reject loopback, private, link-local, metadata, mapped IPv6, reserved and mixed DNS answers; bind connection to a checked literal address and reject a different remote peer before HTTP bytes. Exercise rebinding, redirects, oversized headers, timeout and aborted bodies using actual local sockets. | Local socket tests do not prove VPS firewall enforcement. |
+| G0.2 | Verify original-host TLS SNI and certificate hostname against a local TLS server; reject mismatched certificates, untrusted chains and attempts to use the pinned IP as identity. | Local TLS results do not prove a deployed transport has the same runtime or configuration. |
+| G0.3 | Reject unauthorized signer callers, wrong typed data, deployment, policy, time or expiry; exercise signer failure without issuing PASS. | Local authorization tests do not prove VPS key isolation or custody. |
+| G0.6 | Independently verify namespace identities, mount and secret separation, host egress rules, fixed control paths and denied host/metadata/management access on the target VPS; repeat transport and signer negative cases there. | Requires future deployment approval and target-host evidence. |
+
+### Proposed V2 submission interface
+
+V2 exposes only `submitService(uint256 demandId, string serviceUrl, bytes32 evidenceHash, ValidationAttestation attestation, bytes verifierSignature)`; it must not expose the old unguarded three-argument overload. The attestation fields and their order are those of Section 4.10. Validate all bindings, expiry and current verifier before consuming the next nonce and recording the submission atomically. Preserve V1's submission fields and event semantics and add `paymentRequirementsHash` and `validationPolicyId` to V2's `ServiceSubmitted` event and persistent per-submission record keyed by demandId and nonce. Expose `submissionDigests(uint256 demandId,uint256 nonce) returns (bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`, `submissionNonce(uint256)`, `verifier()`, `verifierAdmin()`, and `setVerifier(address)` with `VerifierRotated(address indexed previousVerifier,address indexed newVerifier)`. The V2 event is `ServiceSubmitted(uint256 indexed demandId,uint256 indexed submissionNonce,address indexed builder,string serviceUrl,bytes32 evidenceHash,uint64 reviewEndsAt,uint128 reviewCommitted,uint128 approvalRequired,bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`. No signer, handler or contract is implemented by G0.1.
 
 ### 4.2 Non-Upgradeable Escrow
 
@@ -475,17 +516,17 @@ Step 3: The builder enters:
 - evidence reference
 - required validation request metadata
 
-Step 4: The frontend requests validation from the Worker.
+Step 4: The frontend requests validation from the validation service.
 
-Step 5: The Worker reads the target demand's canonical onchain requirements.
+Step 5: The validation service reads the target demand's canonical onchain requirements.
 
-Step 6: The Worker validates the service's x402 challenge.
+Step 6: The validation service validates the service's x402 challenge.
 
-Step 7: The Worker checks compatibility against the approved payment profile and demand requirements.
+Step 7: The validation service checks compatibility against the approved payment profile and demand requirements.
 
-Step 8: If validation fails, the Worker returns a structured error.
+Step 8: If validation fails, the validation service returns a structured error.
 
-Step 9: If validation succeeds, the Worker issues a short-lived signed attestation.
+Step 9: If validation succeeds, the validation service issues a short-lived signed attestation.
 
 Step 10: The frontend prepares the AgentDemandV2 submission transaction.
 
@@ -498,16 +539,16 @@ Step 13: A valid submission starts supporter review.
 
 ### Important
 
-The Worker must not sign the builder's blockchain transaction.
+The validation service must not sign the builder's blockchain transaction.
 
-The Worker must not broadcast transactions without the builder's authorization.
+The validation service must not broadcast transactions without the builder's authorization.
 
 The frontend must not report submission success until the transaction receipt and contract state confirm acceptance.
 
 
-### 4.5 Worker Validation Responsibilities
+### 4.5 Validation Service Responsibilities
 
-The Worker validates actual observed endpoint payment requirements.
+The validation service validates actual observed endpoint payment requirements.
 
 It must not trust builder-declared values alone.
 
@@ -573,7 +614,7 @@ If different, that relationship must be explicitly authorized by the builder.
 
 Do not silently assume the two wallets are equal.
 
-The builder must sign the receiver authorization defined in Section 4.8, including when payTo equals builderWallet. The Worker verifies that proof before issuing an attestation. A client-supplied builderWallet alone is not authorization.
+The builder must sign the receiver authorization defined in Section 4.8, including when payTo equals builderWallet. The validation service verifies that proof before issuing an attestation. A client-supplied builderWallet alone is not authorization.
 
 This authorization concerns future service payments. Escrow settlement still pays the accepted builder and configured treasury under the existing selective-settlement rules.
 
@@ -610,7 +651,7 @@ Gate 0 permits same-asset comparison only. Asset identity is the pair (payment n
 
 For the initial profile, maxUnitPrice retains the frontend's six-decimal USD₮0 price unit. Its payment denomination is eip155:196 / 0x779ded0c9e1022225f8e0630b35a9b54be713736 / 6 decimals. This labels the service-price constraint; it does not equate the Testnet escrow token with the Mainnet token or change escrow accounting.
 
-Trusted configuration must pin this demand price denomination to each approved (escrowChainId, escrowContract). The Worker reads maxUnitPrice onchain and obtains its denomination from that configuration. A request cannot choose or override either value, and a profile update must not reinterpret existing demand prices.
+Trusted configuration must pin this demand price denomination to each approved (escrowChainId, escrowContract). The validation service reads maxUnitPrice onchain and obtains its denomination from that configuration. A request cannot choose or override either value, and a profile update must not reinterpret existing demand prices.
 
 An offer is comparable only when its network, asset address, and verified decimals match the demand price denomination. Compare the atomic integer amount directly with maxUnitPrice using exact integer arithmetic: amount <= maxUnitPrice. Reject invalid, negative, fractional, out-of-range, or inconsistent amounts. Do not round or use floating point.
 
@@ -621,7 +662,7 @@ Every enabled profile must declare its price denomination and comparison policy.
 
 ### 4.7 Validation Results
 
-The Worker returns exactly one result category:
+The validation service returns exactly one result category:
 
 ### Pass Fail
 #### Unavailable
@@ -645,7 +686,7 @@ No successful attestation may be issued.
 
 #### Unavailable
 
-The Worker could not reliably complete the required checks.
+The validation service could not reliably complete the required checks.
 
 Examples:
 
@@ -659,13 +700,13 @@ UNAVAILABLE must not become PASS.
 No successful attestation may be issued.
 
 
-### 4.8 Worker Endpoint
+### 4.8 Validation Service Endpoint
 
 Proposed endpoint:
 
 POST /v1/x402/validate
 
-This endpoint is hosted by the validation Worker.
+This endpoint is hosted by the validation service.
 
 The frontend calls it before preparing the onchain submission.
 
@@ -689,9 +730,9 @@ request.method is GET or POST. request.query is an ordered array of [name, value
 
 GET requires contentType and body to be null. POST requires contentType application/json and a JSON-object body, including {} for an empty object. Send POST bytes as UTF-8 RFC 8785/JCS without a trailing newline. Accept only I-JSON data; reject duplicate keys, invalid Unicode, non-finite numbers, and integer JSON numbers outside the safe integer range. Large integers must be strings.
 
-The complete validation request is limited to 32 KiB, at most 32 query pairs, and JSON nesting depth 8, counting the outer object as depth 1. Reject unknown fields. Inputs must be public business test data; APIs requiring caller-provided secrets are outside this validation model. Do not accept caller-defined headers, Authorization, cookies, bearer tokens, scripts, or alternative protocols. The Worker sets Accept: application/json and the specified POST Content-Type; it never forwards the caller's headers or credentials to the service.
+The complete validation request is limited to 32 KiB, at most 32 query pairs, and JSON nesting depth 8, counting the outer object as depth 1. Reject unknown fields. Inputs must be public business test data; APIs requiring caller-provided secrets are outside this validation model. Do not accept caller-defined headers, Authorization, cookies, bearer tokens, scripts, or alternative protocols. The validation service sets Accept: application/json and the specified POST Content-Type; it never forwards the caller's headers or credentials to the service.
 
-requestHash is SHA-256 of the UTF-8 JCS bytes of {schemaVersion: "unmet-http-request-v1", url: resultingRequestUrl, method, contentType, body}. Query pair order is preserved in url. Builder, frontend, and Worker must use the same resulting URL and request bytes.
+requestHash is SHA-256 of the UTF-8 JCS bytes of {schemaVersion: "unmet-http-request-v1", url: resultingRequestUrl, method, contentType, body}. Query pair order is preserved in url. Builder, frontend, and validation service must use the same resulting URL and request bytes.
 
 ### Builder Receiver Authorization
 
@@ -714,9 +755,9 @@ struct BuilderValidationAuthorization {
 
 paymentNetworkHash is keccak256 of the exact UTF-8 paymentNetwork string. Derive the other fields from this request; use the URL/evidence rules in Section 4.10. Times are unsigned decimal strings in the JSON request and obey Section 4.11. signature is hex-encoded bytes, at most 4096 bytes.
 
-The Worker must recover builderWallet for an EOA signature using Section 4.10's ECDSA encoding or verify ERC-1271 on the escrow chain for a contract wallet. Invalid signatures fail; unavailable RPC verification returns UNAVAILABLE. The signature authorizes only this request and receiver, not a transaction, payment, or escrow withdrawal. The selected offer's network and payTo must match the authorization. Attestation expiry must not exceed authorization expiry.
+The validation service must recover builderWallet for an EOA signature using Section 4.10's ECDSA encoding or verify ERC-1271 on the escrow chain for a contract wallet. Invalid signatures fail; unavailable RPC verification returns UNAVAILABLE. The signature authorizes only this request and receiver, not a transaction, payment, or escrow withdrawal. The selected offer's network and payTo must match the authorization. Attestation expiry must not exceed authorization expiry.
 
-The Worker must not trust client-provided economic fields as canonical.
+The validation service must not trust client-provided economic fields as canonical.
 
 It must read and verify the relevant onchain demand state. Trusted configuration must select exactly one profile for the requested escrow deployment and paymentNetwork; missing or ambiguous profile configuration cannot produce PASS.
 
@@ -735,6 +776,8 @@ It must read and verify the relevant onchain demand state. Trusted configuration
 Return the complete typed attestation fields and signature so the frontend can recompute the digest and bind submission to its originating wallet, demand, URL, evidence, and nonce. PASS uses HTTP 200; FAIL uses HTTP 400; UNAVAILABLE uses HTTP 503. Neither failure response contains an attestation.
 
 
+The proposed response field names are defined by [validation-response.json](schemas/validation-response.json): PASS includes `profileId`, `selectedOffer`, `selectedOfferIndex`, `requestHash`, `validationPolicyId`, `paymentRequirementsHash`, `validatedAt`, `expiresAt`, `attestation`, and `signature`. FAIL and UNAVAILABLE contain `code`, `message`, and boolean `retryable`, and cannot contain an attestation. The request and policy schemas are [validation-request.json](schemas/validation-request.json) and [validation-policy.json](schemas/validation-policy.json). These schemas specify structural constraints only. Duplicate raw keys, invalid Unicode, safe integer and uint256 bounds, UTF-8 byte limits, depth, exact URL serialization, ordering and cross-field constraints require semantic checks before canonicalization. They do not enforce connect-time network safety.
+
 ### Failure Response
 
 - status: FAIL
@@ -751,7 +794,7 @@ Return the complete typed attestation fields and signature so the frontend can r
 - no valid attestation
 
 
-### 4.9 Worker Security
+### 4.9 Validation Service Security
 
 Every submitted endpoint is untrusted.
 
@@ -794,7 +837,7 @@ Do not log complete secret-bearing headers.
 
 ### 4.10 Signed Validation Attestation
 
-The Worker must sign successful validation results using a recognized verifier identity.
+The separately protected signer signs successful validation results using the configured verifier identity after authenticating the service request.
 
 The validation attestation must use EIP-712 typed structured data.
 
@@ -880,7 +923,7 @@ demandPriceAsset is the pinned denomination from Section 4.6; it cannot be chose
 
 Reject duplicate JSON keys, invalid Unicode, non-finite numbers, and type/range violations before JCS. Changing the schema or interpretation of a field requires a reviewed schema version. Other transfer methods or network families require a reviewed schema extension and corresponding checks, not an arbitrary metadata/plugin object or an automatic escrow redeployment. Policy value changes produce a new digest.
 
-The Worker signs only its configured policy digest. Policy updates affect new validations; issued attestations remain valid until expiry unless their verifier is rotated out. The contract authenticates that observation through the current verifier and records validationPolicyId and paymentRequirementsHash with the accepted submission. It does not parse HTTP, recompute the payment observation, or hardcode the initial payment network/profile as its only allowable policy ID. A reviewed profile for another payment network must not itself require a new escrow deployment.
+The separately protected signer signs only the configured policy digest. Policy updates affect new validations; issued attestations remain valid until expiry unless their verifier is rotated out. The contract authenticates that observation through the current verifier and records validationPolicyId and paymentRequirementsHash with the accepted submission. It does not parse HTTP, recompute the payment observation, or hardcode the initial payment network/profile as its only allowable policy ID. A reviewed profile for another payment network must not itself require a new escrow deployment.
 
 ### Payment Requirements Digest
 
@@ -1063,7 +1106,7 @@ For both EIP-712 vectors, digest = keccak256(0x1901 || domainSeparator || struct
 
 These literal outputs were independently reproduced with Python eth-account 0.14.0 plus rfc8785 0.1.4, and Node.js ethers 6.17.0 plus canonicalize 5.1.0. The implementations agreed on canonical policy bytes, SHA-256, EIP-712 type hashes, domain separator, struct hashes, and final digests. Acceptance tests must compare against the published literals, not regenerate expected values with the encoder under test.
 
-Contract, Worker, and frontend acceptance tests must share literal domain, type-hash, authorization, attestation, URL/evidence, and request/payment-digest vectors. Include reordered object keys, changed request/receiver/policy fields, reordered alternatives, and a large atomic amount encoded as a string. A shared implementation producing its own expected values is not a golden-vector test.
+Contract, validation service, and frontend acceptance tests must share literal domain, type-hash, authorization, attestation, URL/evidence, and request/payment-digest vectors. Include reordered object keys, changed request/receiver/policy fields, reordered alternatives, and a large atomic amount encoded as a string. A shared implementation producing its own expected values is not a golden-vector test.
 
 The escrow chain ID used in the EIP-712 domain is separate from the service payment network.
 
@@ -1100,13 +1143,13 @@ The contract must reject:
 
 The maximum lifetime is 15 minutes (900 seconds), with at most 60 seconds of future clock skew. All timestamps are Unix seconds.
 
-For the builder authorization, the Worker enforces issuedAt <= now + 60, issuedAt < expiresAt, expiresAt - issuedAt <= 900, and now < expiresAt. It issues attestations with issuedAt equal to its current time and expiresAt no later than min(issuedAt + 900, builderAuthorization.expiresAt).
+For the builder authorization, the validation service enforces issuedAt <= now + 60, issuedAt < expiresAt, expiresAt - issuedAt <= 900, and now < expiresAt. It issues attestations with issuedAt equal to its current time and expiresAt no later than min(issuedAt + 900, builderAuthorization.expiresAt).
 
 For attestations, AgentDemandV2 enforces the same inequalities using block.timestamp as now. Exactly 60 seconds of future skew is allowed; 61 is rejected. An attestation expires at expiresAt, including equality. Perform checked comparisons before subtraction. Lifetime runs from issuedAt; future skew does not authorize a longer signed interval.
 
-Expired attestations require a fresh Worker validation.
+Expired attestations require a fresh endpoint validation.
 
-The Worker may issue a new attestation only after completing the required checks.
+The validation service may issue a new attestation only after completing the required checks.
 
 A validation PASS is evidence of the checks performed at that time.
 
@@ -1139,7 +1182,7 @@ Only verifierAdmin may call setVerifier(address newVerifier). Reject the zero ad
 
 verifierAdmin has no other administrative setter or privileged escrow action. It cannot change itself, funds, fees, quorum, deadlines, recipients, votes, or refund eligibility. Verifier rotation does not make the contract upgradeable and is not required for finalize(), reopen(), or refund().
 
-A compromised verifier can authorize invalid submissions.
+A compromised validation service can supply false observations even if the signing key remains isolated. A compromised verifier can authorize invalid submissions.
 
 However, it must not be able to bypass supporter voting or independently transfer escrow funds.
 
@@ -1161,7 +1204,7 @@ When a valid submission is accepted:
 
 Additional submissions during active review must revert.
 
-A failed Worker validation does not change escrow state.
+A failed endpoint validation does not change escrow state.
 
 
 ### 4.14 Supporter Voting
@@ -1179,7 +1222,7 @@ Votes must not be counted twice.
 
 Voting weight is derived from the fixed review commitment snapshot.
 
-The Worker cannot cast supporter votes.
+The validation service cannot cast supporter votes.
 
 
 ### 4.15 Immediate Finalization
@@ -1197,7 +1240,7 @@ The 24-hour review period is a voting window, not a mandatory minimum payout del
 
 Finalization must not require:
 
-- Worker availability
+- validation service availability
 - verifier approval
 - backend availability
 - builder cooperation
@@ -1234,7 +1277,7 @@ After creation, the deadline is immutable.
 
 The deadline is the final time at which a new service submission may be accepted.
 
-Worker validation does not extend it.
+endpoint validation does not extend it.
 
 An attestation issued before the deadline does not permit submission after the deadline.
 
@@ -1306,11 +1349,11 @@ It does not guarantee automatic withdrawal.
 Actual withdrawal requires a successful onchain refund transaction.
 
 
-### 4.19 Worker Availability
+### 4.19 Validation Service Availability
 
-The Worker is required to issue new validation attestations.
+The validation service is required to issue new validation attestations.
 
-The Worker must not be required for:
+The validation service must not be required for:
 
 - supporter approval
 - supporter rejection
@@ -1318,7 +1361,7 @@ The Worker must not be required for:
 - reopen()
 - refund()
 
-A Worker outage may prevent new submissions.
+A validation service outage may prevent new submissions.
 
 It must not prevent eligible settlement or fund recovery.
 
@@ -1330,7 +1373,7 @@ Use distinct states.
 
 ### X402_COMPATIBLE
 
-The Worker observed payment requirements that satisfied the configured validation policy at a specific time.
+The validation service observed payment requirements that satisfied the configured validation policy at a specific time.
 
 
 ### SUPPORTER_APPROVED
@@ -1428,7 +1471,7 @@ Required:
 35. Rotation rejects unauthorized callers and zero addresses; the previous verifier is rejected while a different verifier is current; accepted proposals and fund-recovery paths are unaffected.
 
 
-### 5.2 Worker Tests
+### 5.2 Validation Service Tests
 
 Required:
 
@@ -1481,7 +1524,7 @@ Required:
 3. Network incompatibility error.
 4. Asset incompatibility error.
 5. Price incompatibility error.
-6. Worker unavailable state.
+6. validation service unavailable state.
 7. Valid attestation submission.
 8. Expired attestation revalidation.
 9. Wallet rejection handling.
@@ -1492,7 +1535,7 @@ Required:
 14. Contract state readback verification.
 15. No duplicate submission after
     an unknown transaction outcome.
-16. Builder receiver authorization and attestation details remain bound to the originating wallet and demand across Worker calls.
+16. Builder receiver authorization and attestation details remain bound to the originating wallet and demand across validation service calls.
 17. Changed endpoint, request, evidence, receiver, network, or nonce requires fresh authorization and validation; rotation invalidation is handled without resubmitting an unknown transaction.
 
 Existing valid tests must not be deleted or weakened.
@@ -2218,7 +2261,7 @@ Authoritative configuration for:
 A builder request cannot modify approved payment profiles.
 
 
-### Validation Worker
+### Validation Service
 
 Responsible for:
 
@@ -2321,7 +2364,7 @@ Deliver:
 
 - code impact map
 - non-upgradeable AgentDemandV2
-- configuration-driven x402 Worker
+- configuration-driven x402 validation service
 - initial OKX/X Layer payment profile
 - safe endpoint validation
 - signed attestation specification
@@ -2330,7 +2373,23 @@ Deliver:
 - frontend submission integration
 - preserved voting and refunds
 - V1/V2 compatibility
-- contract and Worker regression tests
+- contract and validation service regression tests
+
+Execution is serial: one gate, branch and Draft PR at a time, with owner review before the next gate. Merge, deployment, paid tests and Mainnet activation require separate authorization.
+
+| Gate | Scope and dependency | Acceptance |
+| --- | --- | --- |
+| G0.1 | Architecture, policy schemas, threat model, vectors and impact map; owner approval | Review schemas, vectors and transport evidence in Sections 3-6. |
+| G0.2 | Configuration-driven x402 validation service; G0.1 | Unpaid bounded challenge inspection and adversarial transport tests. |
+| G0.3 | Builder authorization, EIP-712 and verifier security; G0.1-G0.2 | Authorization, replay, signer policy and isolation tests. |
+| G0.4 | Non-upgradeable AgentDemandV2; G0.1 and G0.3 | Attestation verification and escrow regression tests. |
+| G0.5 | Frontend/backend integration and V1/V2 compatibility; G0.2-G0.4 | Deployment-bound consumers and recovery tests. |
+| G0.6 | Full Gate 0 E2E, adversarial and release readiness; all prior G0 gates | Independent target-host, signer and end-to-end evidence. |
+| G1 | Machine-readable RFQ; G0.6 | Section 7 acceptance. |
+| G2 | Fulfilled service registry; G1 and canonical fulfillment | Section 8 acceptance. |
+| G3 | x402 service discovery and optional A2MCP distribution; G2 and G0 validator | Section 9 acceptance. |
+| G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
+| G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
 
 Do not deploy before validation and explicit approval.
 
@@ -2407,7 +2466,7 @@ Deliver:
 - Synchronize ABIs and consumers.
 
 
-### Worker
+### Validation Service
 
 - Validate on demand.
 - Avoid permanent polling.
@@ -2466,7 +2525,7 @@ Run applicable finite checks:
 - Foundry build
 - Foundry tests
 - targeted fuzz tests where justified
-- Worker tests
+- validation service tests
 - backend tests
 - frontend tests
 - typecheck
@@ -2482,7 +2541,7 @@ Unavailable checks must be reported honestly.
 
 ### 1. Verifier Trust
 
-The Worker can authorize new submissions.
+The validation service can authorize new submissions.
 
 Its signing authority must be protected.
 
@@ -2508,9 +2567,9 @@ A valid x402 challenge does not prove paid execution correctness.
 Automatic compatibility checks do not fully eliminate proposal griefing.
 
 
-### 5. Worker Availability
+### 5. Validation Service Availability
 
-Worker outages may interrupt new submissions.
+Validation service outages may interrupt new submissions.
 
 They must not interrupt eligible finalization or refunds.
 
@@ -2566,7 +2625,7 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 1. Builders can submit through the frontend
    without manual registration.
 
-2. The Worker validates actual x402
+2. The validation service validates actual x402
    payment requirements.
 
 3. The initial payment profile targets
@@ -2599,14 +2658,14 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 14. Deadlines remain immutable.
 
 15. Finalize and refund do not depend
-    on the Worker.
+    on the validation service.
 
 16. Historical V1 state remains accessible.
 
 17. Validation is not mislabeled
     as independent service verification.
 
-18. Relevant contract, Worker, backend,
+18. Relevant contract, validation service, backend,
     and frontend regression checks pass.
 
 
@@ -2645,7 +2704,7 @@ Every implementation phase must report:
 4. Contract interfaces affected.
 5. Backend consumers affected.
 6. Frontend consumers affected.
-7. Worker configuration affected.
+7. validation service configuration affected.
 8. Tests added.
 9. Checks executed.
 10. Passing checks.
@@ -2677,7 +2736,7 @@ Agents publish funded capability requests.
 
 Builders independently develop APIs that satisfy those requirements.
 
-A configuration-driven Worker validates the proposed service's x402 compatibility.
+A configuration-driven validation service validates the proposed service's x402 compatibility.
 
 An immutable escrow contract accepts submissions carrying valid attestations.
 
@@ -2696,7 +2755,7 @@ Evidence-backed payments, executions, and technical outcomes improve future Dema
 Agents Publish Demand
 → Supporters Fund Requirements
 → Builders Create APIs
-→ Worker Validates x402
+→ Validation Service Validates x402
 → Escrow Accepts Submission
 → Supporters Approve
 → Escrow Settles
@@ -2780,7 +2839,7 @@ Documentation ownership is explicit:
 3. Do not claim AgentDemandV2 is deployed
    before verified deployment evidence.
 
-4. Do not claim the Worker is operational
+4. Do not claim the validation service is operational
    before verified runtime evidence.
 
 5. Do not claim an audit occurred

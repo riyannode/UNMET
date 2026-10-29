@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unmetxyz.my.id/schemas/validation-request.json",
+  "description": "Structural constraints only; see FUTURE_IMPLEMENTATION.md for mandatory semantic and transport validation.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "unmet-x402-validation-v1"
+    },
+    "escrowChainId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "escrowContract": {
+      "type": "string",
+      "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+    },
+    "demandId": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "submissionNonce": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "builderWallet": {
+      "type": "string",
+      "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+    },
+    "authorizedPayTo": {
+      "type": "string",
+      "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+    },
+    "serviceUrl": {
+      "type": "string",
+      "pattern": "^https://",
+      "maxLength": 512
+    },
+    "evidenceHash": {
+      "type": "string",
+      "pattern": "^0x(?!0{64}$)[0-9a-f]{64}$"
+    },
+    "paymentNetwork": {
+      "type": "string",
+      "pattern": "^eip155:[1-9][0-9]{0,31}$"
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "maxItems": 32
+        },
+        "contentType": {
+          "anyOf": [
+            {
+              "const": "application/json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "method",
+        "query",
+        "contentType",
+        "body"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "method": {
+              "const": "GET"
+            },
+            "contentType": {
+              "type": "null"
+            },
+            "body": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "POST"
+            },
+            "contentType": {
+              "const": "application/json"
+            },
+            "body": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "builderAuthorization": {
+      "type": "object",
+      "properties": {
+        "issuedAt": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^0x([0-9a-f]{2})*$",
+          "maxLength": 8194
+        }
+      },
+      "required": [
+        "issuedAt",
+        "expiresAt",
+        "signature"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "escrowChainId",
+    "escrowContract",
+    "demandId",
+    "submissionNonce",
+    "builderWallet",
+    "authorizedPayTo",
+    "serviceUrl",
+    "evidenceHash",
+    "paymentNetwork",
+    "request",
+    "builderAuthorization"
+  ],
+  "additionalProperties": false
+}

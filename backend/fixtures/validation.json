@@ -1,0 +1,160 @@
+{
+  "request": {
+    "body": {
+      "city": "Jakarta"
+    },
+    "contentType": "application/json",
+    "method": "POST",
+    "schemaVersion": "unmet-http-request-v1",
+    "url": "https://example.com/weather"
+  },
+  "payment": {
+    "requestHash": "0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8",
+    "resource": {
+      "url": "https://example.com/weather"
+    },
+    "schemaVersion": "unmet-payment-requirements-v2",
+    "selected": {
+      "amount": "10000",
+      "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+      "extra": {
+        "assetTransferMethod": "eip3009",
+        "name": "USD₮0",
+        "paymentFlow": "authorization",
+        "version": "1"
+      },
+      "maxTimeoutSeconds": 60,
+      "network": "eip155:196",
+      "payTo": "0x0000000000000000000000000000000000000001",
+      "scheme": "exact"
+    },
+    "x402Version": 2
+  },
+  "policy": {
+    "schemaVersion": "unmet-validation-policy-v2",
+    "escrowChainId": "1952",
+    "escrowContract": "0x1111111111111111111111111111111111111111",
+    "profile": {
+      "id": "codec-fixture",
+      "enabled": true,
+      "network": "eip155:196",
+      "x402Versions": [
+        2
+      ],
+      "schemes": [
+        "exact"
+      ],
+      "assets": [
+        {
+          "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+          "decimals": 6,
+          "enabled": true,
+          "defaultTransferMethod": null,
+          "transferMethods": [
+            {
+              "method": "eip3009",
+              "enabled": true,
+              "paymentFlows": [
+                "authorization"
+              ],
+              "defaultPaymentFlow": "authorization",
+              "tokenDomain": {
+                "name": "USD₮0",
+                "version": "1"
+              },
+              "permit2Contract": null,
+              "settlementSpender": null
+            },
+            {
+              "method": "permit2",
+              "enabled": true,
+              "tokenDomain": null,
+              "paymentFlows": [
+                "authorization"
+              ],
+              "defaultPaymentFlow": null,
+              "permit2Contract": "0x3333333333333333333333333333333333333333",
+              "settlementSpender": "0x4444444444444444444444444444444444444444"
+            }
+          ]
+        }
+      ],
+      "paymentRules": {
+        "amountType": "uint256",
+        "priceComparison": "same-asset-exact",
+        "maxTimeoutSeconds": 300
+      },
+      "receiverRules": {
+        "mode": "builder-authorized",
+        "allowZeroAddress": false
+      },
+      "facilitator": null
+    },
+    "demandPriceAsset": {
+      "network": "eip155:196",
+      "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+      "decimals": 6
+    }
+  },
+  "authorization": {
+    "domain": {
+      "name": "UNMET AgentDemand",
+      "version": "2",
+      "chainId": "1952",
+      "verifyingContract": "0x1111111111111111111111111111111111111111"
+    },
+    "primaryType": "BuilderValidationAuthorization",
+    "message": {
+      "demandId": "9007199254740993",
+      "builderWallet": "0x2222222222222222222222222222222222222222",
+      "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
+      "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
+      "requestHash": "0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8",
+      "paymentNetworkHash": "0xefa922b302ee91bbef8a50fbd535e6277fb2e0c069dbc7cf376483bd56ca7095",
+      "authorizedPayTo": "0x0000000000000000000000000000000000000001",
+      "submissionNonce": "1",
+      "issuedAt": "1792886400",
+      "expiresAt": "1792887300"
+    }
+  },
+  "attestation": {
+    "domain": {
+      "name": "UNMET AgentDemand",
+      "version": "2",
+      "chainId": "1952",
+      "verifyingContract": "0x1111111111111111111111111111111111111111"
+    },
+    "primaryType": "ValidationAttestation",
+    "message": {
+      "escrowChainId": "1952",
+      "verifyingContract": "0x1111111111111111111111111111111111111111",
+      "demandId": "9007199254740993",
+      "builderWallet": "0x2222222222222222222222222222222222222222",
+      "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
+      "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
+      "paymentRequirementsHash": "0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49",
+      "submissionNonce": "1",
+      "validationPolicyId": "0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691",
+      "issuedAt": "1792886400",
+      "expiresAt": "1792887300"
+    }
+  },
+  "expected": {
+    "requestHash": "0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8",
+    "paymentRequirementsHash": "0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49",
+    "validationPolicyId": "0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691",
+    "authorizationDigest": "0xad07348d634d39a1aecc174a1eaa6b3316a349f257fc30c1d3f9347745da7cc7",
+    "attestationDigest": "0x2917ee6a3d428ef2088a6f96d9873f46dbba4cf3da8c9cd75a3b0dd2ec284301",
+    "authorizationTypeHash": "0x3106130d2f2debb598f33e31a4a5c4de61d71023209b265d6bd7d65004a304fe",
+    "attestationTypeHash": "0x67beb001f81b85e71e91091bf36753e1a578fbec204642b1bee40134161f22dd",
+    "domainSeparator": "0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a",
+    "mainnetDomainSeparator": "0x3b498f6b453e903e27784b54b84b95a04703c543f2e11bdc0fd574db5e9adcd9",
+    "authorizationStructHash": "0x7f295adbc67658dfd5561880112a18fc8302ca4bbe4d21ce3f07f8c8c03d0beb",
+    "attestationStructHash": "0x57d9261a3e04d73fc8c39e6d110b718b839c7816a76830d61ac2ff951e53927d"
+  },
+  "preimages": {
+    "serviceUrl": "https://example.com/weather",
+    "evidence": "unmet-codec-fixture",
+    "paymentNetwork": "eip155:196"
+  }
+}
