@@ -47,6 +47,8 @@ jobs:
       - run: bun run check:payment-discovery
       - run: bun run test:backend
       - run: bun run --cwd backend typecheck
+      - name: Isolated validation transport tests
+        run: bash scripts/test-validation-transport.sh --ci
 
   contracts:
     runs-on: ubuntu-24.04

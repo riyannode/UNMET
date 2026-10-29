@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unmetxyz.my.id/schemas/validation-response.json",
+  "description": "Structural constraints only; see FUTURE_IMPLEMENTATION.md for mandatory semantic and transport validation.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "PASS"
+        },
+        "profileId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "selectedOffer": {
+          "type": "object",
+          "properties": {
+            "scheme": {
+              "const": "exact"
+            },
+            "network": {
+              "type": "string",
+              "pattern": "^eip155:[1-9][0-9]{0,31}$"
+            },
+            "asset": {
+              "type": "string",
+              "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+            },
+            "amount": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "payTo": {
+              "type": "string",
+              "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+            },
+            "maxTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "extra": {
+              "type": "object",
+              "properties": {
+                "assetTransferMethod": {
+                  "enum": [
+                    "eip3009",
+                    "permit2"
+                  ]
+                },
+                "paymentFlow": {
+                  "const": "authorization"
+                }
+              },
+              "required": [
+                "assetTransferMethod",
+                "paymentFlow"
+              ]
+            }
+          },
+          "required": [
+            "scheme",
+            "network",
+            "asset",
+            "amount",
+            "payTo",
+            "maxTimeoutSeconds",
+            "extra"
+          ],
+          "additionalProperties": false
+        },
+        "selectedOfferIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requestHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "validationPolicyId": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "paymentRequirementsHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "validatedAt": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "attestation": {
+          "type": "object",
+          "properties": {
+            "escrowChainId": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "verifyingContract": {
+              "type": "string",
+              "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+            },
+            "demandId": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "builderWallet": {
+              "type": "string",
+              "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$"
+            },
+            "serviceUrlHash": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "evidenceHash": {
+              "type": "string",
+              "pattern": "^0x(?!0{64}$)[0-9a-f]{64}$"
+            },
+            "paymentRequirementsHash": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "submissionNonce": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "validationPolicyId": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          },
+          "required": [
+            "escrowChainId",
+            "verifyingContract",
+            "demandId",
+            "builderWallet",
+            "serviceUrlHash",
+            "evidenceHash",
+            "paymentRequirementsHash",
+            "submissionNonce",
+            "validationPolicyId",
+            "issuedAt",
+            "expiresAt"
+          ],
+          "additionalProperties": false
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{128}(1b|1c)$"
+        }
+      },
+      "required": [
+        "status",
+        "profileId",
+        "selectedOffer",
+        "selectedOfferIndex",
+        "requestHash",
+        "validationPolicyId",
+        "paymentRequirementsHash",
+        "validatedAt",
+        "expiresAt",
+        "attestation",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "FAIL",
+            "UNAVAILABLE"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
