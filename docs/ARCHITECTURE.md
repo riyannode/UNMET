@@ -21,6 +21,12 @@ Docker starts `backend/start.ts` through `docker/Dockerfile.api`; Caddy serves t
 
 The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id).
 
+## Local G0.2 validation source
+
+The repository also contains a separate Bun validation runtime, described in [API](API.md#standalone-g02-validation-runtime). Its dependency path is `validation-service` → `validation-config`, `validation-evaluator`, `validation-codec` and `validation-transport`. It uses a local read-only ABI for chain reads and does not import the existing payment runtime, SQLite storage or API entrypoint. It is not wired into the production Compose deployment.
+
+The runtime obtains a block identity and pins demand and nonce reads to its canonical block hash, checks the block again after evaluation, and verifies configured enabled token decimals against the payment network at startup. It inspects the target without payment and binds the selected offer and normalized resource to the request digest. The receiver check establishes declaration consistency only. Internal eligibility yields `UNAVAILABLE`, because builder authorization verification, a protected signer and public signed PASS are deferred to G0.3. No deployment or production readiness follows from source or local test results; in particular, they do not establish VPS firewall, namespace, mount, secret or egress isolation.
+
 ## Independent network contexts
 
 The demand market is configured by `CHAIN_ID` and remains on X Layer Testnet (`1952`): contract reads, indexing, frontend writes, escrow, and health/readback reporting use this network. `PAYMENT_TOKEN` is the Testnet escrow token.

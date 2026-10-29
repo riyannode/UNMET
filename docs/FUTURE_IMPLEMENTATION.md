@@ -6,7 +6,9 @@ Version: V2.0
 Date: 24 October 2026
 Repository: https://github.com/riyannode/UNMET
 
-Status: PROPOSED — NOT IMPLEMENTED
+Status: PROPOSED — except the local G0.2 foundation noted below
+
+Implementation note: the repository now contains a local G0.2 validation runtime foundation, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It is not deployed or production-ready, and internal eligibility does not issue PASS. Builder authorization verification and attestation signing remain G0.3. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls.
 
 ## 0. DOCUMENT PURPOSE
 

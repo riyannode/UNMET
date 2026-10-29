@@ -55,6 +55,35 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 
 Official x402 payment errors/challenges are produced by the OKX x402 middleware/facilitator; UNMET does not substitute custom payment-proof headers.
 
+## G0.2 validation runtime
+
+These codes apply to the separate local validation runtime described in [API](API.md#standalone-g02-validation-runtime). FAIL maps to HTTP 400 and UNAVAILABLE to HTTP 503. Public responses contain a stable code, not raw provider diagnostics. Startup configuration and asset-verification errors prevent the runtime from starting.
+
+| Code | Context | Meaning |
+| --- | --- | --- |
+| `INVALID_JSON` | FAIL | Raw JSON, Unicode, numeric or nesting rules failed. |
+| `INVALID_UINT256` | Internal FAIL | A decimal uint256 is invalid or out of range; callers may map this to a more specific request or challenge code. |
+| `INVALID_REQUEST` | FAIL | Request schema, size, method, URL or semantic rules failed. |
+| `UNSUPPORTED_POLICY` | FAIL | No enabled trusted profile matches the requested deployment and payment network. |
+| `INVALID_POLICY` | FAIL | Evaluator policy identity does not match the request. |
+| `DEMAND_INELIGIBLE` | FAIL | Demand is absent, closed, expired or has an invalid next nonce. |
+| `INVALID_TARGET`, `UNSAFE_ADDRESS` | FAIL | The target URL or resolved/connected address violates transport rules. |
+| `INVALID_RESPONSE` | FAIL | Target response headers violate transport bounds or framing. |
+| `INVALID_CHALLENGE` | FAIL | Response is not an acceptable 402 challenge, or the encoded envelope or an offer is malformed. |
+| `INVALID_RESOURCE` | FAIL | Challenge resource does not match the requested origin, path or query rules. |
+| `NO_ELIGIBLE_OFFER` | FAIL | No structurally valid offer meets the configured eligibility rules. |
+| `UNSUPPORTED_PRICE_COMPARISON` | FAIL | The required same-asset comparison cannot be made. |
+| `CAPACITY_EXHAUSTED` | UNAVAILABLE | All admission slots are occupied. |
+| `REQUEST_TIMEOUT`, `REQUEST_ABORTED` | UNAVAILABLE | Request upload timed out or was aborted. |
+| `DNS_UNAVAILABLE`, `TRANSPORT_UNAVAILABLE`, `TRANSPORT_TIMEOUT` | UNAVAILABLE | DNS, connection/TLS or endpoint deadline prevented observation. |
+| `ENDPOINT_UNAVAILABLE` | UNAVAILABLE | The target returned HTTP 5xx. |
+| `RPC_UNAVAILABLE` | UNAVAILABLE | A required RPC read, chain check or canonical snapshot check could not be completed reliably. |
+| `INTERNAL_UNAVAILABLE` | UNAVAILABLE | An unexpected internal or dependency failure prevented evaluation. |
+| `ATTESTATION_UNAVAILABLE` | UNAVAILABLE | Internal eligibility was reached; G0.3 authorization verification and attestation signing are not implemented. |
+| `INVALID_CONFIG` | Startup | Trusted configuration or policy failed validation. |
+| `INVALID_ASSET_DECIMALS` | Startup | An enabled asset's observed decimals differ from its configured value. |
+| `VALIDATION_CONFIG_PATH_REQUIRED` | Startup | No validation configuration path was supplied. |
+
 ## Durable payment operations
 
 These codes apply to durable self-hosted payment handling. Error responses never return database paths, raw signatures, upstream diagnostics or paid content.
