@@ -36,7 +36,7 @@ Agents and supporters make unmet demand credible by committing funds onchain. Bu
 
 ## What is onchain
 
-[`AgentDemand.sol`](../backend/AgentDemand.sol) is the canonical lifecycle and accounting source. It stores demand fields and status, the creator and builder, per-wallet commitments, the aggregate escrow, deadline, service URL and evidence hash, and the review snapshot. At submission it fixes the review escrow snapshot and required approval weight. Supporter votes use their commitments as weight.
+[`AgentDemand.sol` (experimental source in Git history)](https://github.com/riyannode/UNMET/blob/ea4b46719ac950a9615fc12696ecffb938413648/backend/AgentDemand.sol) was the lifecycle and accounting source for this historical submission. It stores demand fields and status, the creator and builder, per-wallet commitments, the aggregate escrow, deadline, service URL and evidence hash, and the review snapshot. At submission it fixes the review escrow snapshot and required approval weight. Supporter votes use their commitments as weight.
 
 When quorum is met, finalization settles only the explicit approvers' funds: the builder receives the approved amount less the configured fee, and the treasury receives that fee. Non-approver commitments remain individually refundable. The contract also determines when refunds are available and when an unsuccessful candidate can be reopened.
 

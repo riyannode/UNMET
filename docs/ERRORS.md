@@ -148,6 +148,8 @@ Wallet transaction recovery also distinguishes `broadcast`, `confirmed`, `revert
 | `QuorumNotReached` | finalize attempted below fixed threshold |
 | `NothingToRefund` | caller has no currently refundable commitment |
 | `InvalidEvidence` | zero evidence hash |
+| `InvalidAttestation` | attestation binding, time interval or canonical current-verifier signature is invalid; nonce is not consumed |
+| `Unauthorized` | caller is not the immutable verifier administrator |
 | `UnsupportedToken` | transfer received amount differs from requested amount |
 
 Reaching the rejection threshold is a successful vote, not a revert: the contract marks the candidate rejected and allows `reopen` while the demand deadline is still active. `SubmissionRejected` is the event emitted when a candidate is cleared during reopen.

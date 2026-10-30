@@ -79,6 +79,8 @@ UNMET_TREASURY=0x...
 DEPLOYER_PRIVATE_KEY=0x...
 ```
 
+Historical experimental deployment procedure: the commands below use the removed V1 artifact and six-argument constructor. They are unavailable from a fresh G0.4 build and do not deploy V2. V2-only deployment tooling is deferred to G0.5 and requires separate deployment approval. Do not substitute V2 bytecode into this procedure.
+
 Deploy:
 
 ```bash

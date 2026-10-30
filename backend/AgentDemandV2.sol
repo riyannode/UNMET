@@ -3,12 +3,14 @@ pragma solidity 0.8.37;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-/// @title AgentDemand
+/// @title AgentDemandV2
 /// @notice Funded onchain demand order book for AI-agent capabilities.
 /// @dev Non-upgradeable. Exact-string duplicate prevention only; semantic clustering is offchain.
-contract AgentDemand is ReentrancyGuard {
+contract AgentDemandV2 is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
 
     enum Status {
@@ -36,6 +38,31 @@ contract AgentDemand is ReentrancyGuard {
         bytes32 evidenceHash;
     }
 
+    struct ValidationAttestation {
+        uint256 escrowChainId;
+        address verifyingContract;
+        uint256 demandId;
+        address builderWallet;
+        bytes32 serviceUrlHash;
+        bytes32 evidenceHash;
+        bytes32 paymentRequirementsHash;
+        uint256 submissionNonce;
+        bytes32 validationPolicyId;
+        uint64 issuedAt;
+        uint64 expiresAt;
+    }
+
+    struct SubmissionDigests {
+        bytes32 paymentRequirementsHash;
+        bytes32 validationPolicyId;
+    }
+
+    bytes32 internal constant ATTESTATION_TYPEHASH = keccak256(
+        "ValidationAttestation(uint256 escrowChainId,address verifyingContract,uint256 demandId,address builderWallet,bytes32 serviceUrlHash,bytes32 evidenceHash,bytes32 paymentRequirementsHash,uint256 submissionNonce,bytes32 validationPolicyId,uint64 issuedAt,uint64 expiresAt)"
+    );
+
+    address public verifier;
+    address public immutable verifierAdmin;
     IERC20 public immutable token;
     address public immutable treasury;
     uint16 public immutable feeBps;
@@ -45,6 +72,7 @@ contract AgentDemand is ReentrancyGuard {
     uint256 public nextDemandId = 1;
     uint256 public totalEscrowed;
 
+    mapping(uint256 => mapping(uint256 => SubmissionDigests)) public submissionDigests;
     mapping(uint256 => Demand) private demands;
     mapping(uint256 => mapping(address => uint96)) public commitmentOf;
     mapping(uint256 => mapping(address => uint64)) public expectedCallsOf;
@@ -82,8 +110,11 @@ contract AgentDemand is ReentrancyGuard {
         bytes32 evidenceHash,
         uint64 reviewEndsAt,
         uint128 reviewCommitted,
-        uint128 approvalRequired
+        uint128 approvalRequired,
+        bytes32 paymentRequirementsHash,
+        bytes32 validationPolicyId
     );
+    event VerifierRotated(address indexed previousVerifier, address indexed newVerifier);
     event ServiceApproved(
         uint256 indexed demandId,
         uint256 indexed submissionNonce,
@@ -140,6 +171,8 @@ contract AgentDemand is ReentrancyGuard {
     error NothingToRefund();
     error InvalidEvidence();
     error UnsupportedToken();
+    error InvalidAttestation();
+    error Unauthorized();
 
     constructor(
         address token_,
@@ -147,14 +180,18 @@ contract AgentDemand is ReentrancyGuard {
         uint16 feeBps_,
         uint16 quorumBps_,
         uint96 minCommitment_,
-        uint32 reviewPeriod_
-    ) {
-        if (token_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
+        uint32 reviewPeriod_,
+        address verifier_,
+        address verifierAdmin_
+    ) EIP712("UNMET AgentDemand", "2") {
+        if (token_ == address(0) || treasury_ == address(0) || verifier_ == address(0) || verifierAdmin_ == address(0)) revert ZeroAddress();
         if (feeBps_ > 1000) revert InvalidFee();
         if (quorumBps_ <= 5000 || quorumBps_ > 10000) revert InvalidQuorum();
         if (minCommitment_ == 0) revert InvalidAmount();
         if (reviewPeriod_ < 1 hours || reviewPeriod_ > 7 days) revert InvalidDeadline();
 
+        verifier = verifier_;
+        verifierAdmin = verifierAdmin_;
         token = IERC20(token_);
         treasury = treasury_;
         feeBps = feeBps_;
@@ -229,12 +266,29 @@ contract AgentDemand is ReentrancyGuard {
         emit DemandSupported(demandId, msg.sender, amount, expectedCalls, d.committed, d.supporterCount);
     }
 
-    function submitService(uint256 demandId, string calldata serviceUrl, bytes32 evidenceHash) external {
+    function setVerifier(address newVerifier) external nonReentrant {
+        if (msg.sender != verifierAdmin) revert Unauthorized();
+        if (newVerifier == address(0)) revert ZeroAddress();
+        address previousVerifier = verifier;
+        verifier = newVerifier;
+        emit VerifierRotated(previousVerifier, newVerifier);
+    }
+
+    function submitService(
+        uint256 demandId,
+        string calldata serviceUrl,
+        bytes32 evidenceHash,
+        ValidationAttestation calldata attestation,
+        bytes calldata verifierSignature
+    ) external nonReentrant {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Open) revert InvalidStatus();
         if (block.timestamp >= d.deadline) revert DeadlinePassed();
         _checkTextLength(serviceUrl, 512);
         if (evidenceHash == bytes32(0)) revert InvalidEvidence();
+
+        uint256 nonce = submissionNonce[demandId] + 1;
+        _verifyAttestation(demandId, serviceUrl, evidenceHash, nonce, attestation, verifierSignature);
 
         d.builder = msg.sender;
         d.serviceUrl = serviceUrl;
@@ -244,16 +298,27 @@ contract AgentDemand is ReentrancyGuard {
         d.approvalRequired = uint128(_ceilDiv(uint256(d.committed) * quorumBps, 10_000));
         d.status = Status.Submitted;
 
-        uint256 nonce = ++submissionNonce[demandId];
+        submissionNonce[demandId] = nonce;
+        submissionDigests[demandId][nonce] =
+            SubmissionDigests(attestation.paymentRequirementsHash, attestation.validationPolicyId);
         approvalWeight[demandId] = 0;
         rejectionWeight[demandId] = 0;
 
         emit ServiceSubmitted(
-            demandId, nonce, msg.sender, serviceUrl, evidenceHash, d.reviewEndsAt, d.reviewCommitted, d.approvalRequired
+            demandId,
+            nonce,
+            msg.sender,
+            serviceUrl,
+            evidenceHash,
+            d.reviewEndsAt,
+            d.reviewCommitted,
+            d.approvalRequired,
+            attestation.paymentRequirementsHash,
+            attestation.validationPolicyId
         );
     }
 
-    function approveService(uint256 demandId) external {
+    function approveService(uint256 demandId) external nonReentrant {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Submitted) revert InvalidStatus();
         if (block.timestamp >= d.reviewEndsAt) revert ReviewEnded();
@@ -271,7 +336,7 @@ contract AgentDemand is ReentrancyGuard {
         emit ServiceApproved(demandId, nonce, msg.sender, weight, approvalWeight[demandId]);
     }
 
-    function rejectService(uint256 demandId) external {
+    function rejectService(uint256 demandId) external nonReentrant {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Submitted) revert InvalidStatus();
         if (block.timestamp >= d.reviewEndsAt) revert ReviewEnded();
@@ -311,7 +376,7 @@ contract AgentDemand is ReentrancyGuard {
         _pushExact(d.builder, payout);
     }
 
-    function reopen(uint256 demandId) external {
+    function reopen(uint256 demandId) external nonReentrant {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Submitted) revert InvalidStatus();
         if (block.timestamp >= d.deadline) revert DeadlinePassed();
@@ -410,6 +475,32 @@ contract AgentDemand is ReentrancyGuard {
 
     function computeDemandKey(string calldata capability, string calldata specification) public pure returns (bytes32) {
         return keccak256(abi.encode(keccak256(bytes(capability)), keccak256(bytes(specification))));
+    }
+
+    function _verifyAttestation(
+        uint256 demandId,
+        string calldata serviceUrl,
+        bytes32 evidenceHash,
+        uint256 nonce,
+        ValidationAttestation calldata attestation,
+        bytes calldata verifierSignature
+    ) private view {
+        if (
+            attestation.escrowChainId != block.chainid || attestation.verifyingContract != address(this)
+                || attestation.demandId != demandId || attestation.builderWallet != msg.sender
+                || attestation.serviceUrlHash != keccak256(bytes(serviceUrl))
+                || attestation.evidenceHash != evidenceHash || attestation.submissionNonce != nonce
+                || uint256(attestation.issuedAt) > block.timestamp + 60 || attestation.issuedAt >= attestation.expiresAt
+                || uint256(attestation.expiresAt) - attestation.issuedAt > 900
+                || block.timestamp >= attestation.expiresAt
+        ) revert InvalidAttestation();
+        (address signer, ECDSA.RecoverError err,) =
+            ECDSA.tryRecoverCalldata(_hashTypedDataV4(_attestationStructHash(attestation)), verifierSignature);
+        if (err != ECDSA.RecoverError.NoError || signer != verifier) revert InvalidAttestation();
+    }
+
+    function _attestationStructHash(ValidationAttestation calldata attestation) internal pure returns (bytes32) {
+        return keccak256(abi.encode(ATTESTATION_TYPEHASH, attestation));
     }
 
     function _replaceable(uint256 demandId) private view returns (bool) {

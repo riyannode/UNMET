@@ -6,9 +6,9 @@ Version: V2.0
 Date: 24 October 2026
 Repository: https://github.com/riyannode/UNMET
 
-Status: PROPOSED — except the local G0.3 source noted below
+Status: PROPOSED — except the local G0.3 and G0.4 source noted below
 
-Implementation note: the repository contains a local G0.3 validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. It is not deployed or production-ready. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls.
+Implementation note: the repository contains a local G0.3 validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. It is not deployed or production-ready. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls. G0.4 adds the canonical non-upgradeable `AgentDemandV2.sol`, onchain attestation consumption, verifier rotation and escrow regression coverage. V2 consumer integration remains G0.5; no deployment is included.
 
 ## 0. DOCUMENT PURPOSE
 
@@ -423,7 +423,7 @@ The runtime must resolve every A and AAAA result, reject non-public, mapped or o
 
 The same reviewed V2 source supports escrow Testnet 1952 and Mainnet 196 through explicit deployment configuration; no chain-specific business logic or source edits. Constructor immutables and runtime bytecode may differ. Each deployment selects its RPC, chain ID, contract, verifier, pinned price denomination and payment profiles. Domain separation uses the selected escrow chain and contract, and V2 checks block.chainid and address(this). The payment network is independent of escrow chain. Mainnet activation requires separate security review, end-to-end verification and owner approval; this plan is neither an audit nor an activation.
 
-Consumer identity is (escrowChainId, escrowContract, demandId). The existing frontend and backend contract modules use one global deployment. Future work must select a deployment explicitly in RPC clients, frontend routes and wallet actions, transaction lifecycle and recovery keys, app action IDs, backend index/checkpoint keys and API responses, and validation profile/denomination lookup. Pending records must retain their originating deployment and never be replayed into another. Historical V1 routes and records remain reachable. This is a future interface map, not a claim that these consumers already support multiple deployments.
+Consumer identity is (escrowChainId, escrowContract, demandId). The existing frontend and backend contract modules use one global deployment. Future work must select a deployment explicitly in RPC clients, frontend routes and wallet actions, transaction lifecycle and recovery keys, app action IDs, backend index/checkpoint keys and API responses, and validation profile/denomination lookup. Pending records must retain their originating deployment and never be replayed into another. Future consumers target V2 only; the experimental V1 implementation is retained in Git history, without a dual-version runtime. This is a future interface map, not a claim that these consumers already support multiple deployments.
 
 The unmounted G0.1 transport primitive accepts DNS-name service URLs only (no IP-literal targets), and uses native DNS, TLS and HTTPS over one checked literal peer, and destroys the response immediately after bounded headers. Its resolver and trust roots are trusted service configuration, not caller input. The caller must supply already validated, canonical POST bytes; full request size, duplicate-key, JCS and semantic enforcement belong to G0.2. The per-request DNS resolver is canceled on timeout and late results cannot open a socket. G0.2 must impose finite admission and bound resolver work even when an injected resolver cannot be canceled.
 
@@ -433,12 +433,12 @@ Local adversarial tests use real Bun TLS/HTTPS sockets on public-shaped IPv4 and
 
 | Existing consumer | Future deployment-identity impact |
 | --- | --- |
-| frontend/contract.ts: CHAIN_ID, DEMAND_CONTRACT, getPublic, submitService and wallet actions | Select explicit chain, contract, RPC and V2 interface per originating deployment; keep V1 reads/actions. |
+| frontend/contract.ts: CHAIN_ID, DEMAND_CONTRACT, getPublic, submitService and wallet actions | Select explicit chain, contract, RPC and V2 interface per originating deployment; target V2 only. |
 | frontend/main.tsx, frontend/routing.ts: demandHref, parseDemandId; frontend/App.tsx | Carry deployment through routes, views and submission/action identity. |
 | frontend/transaction-lifecycle.ts: pending storage and action keys | Include chain and contract in keys and recovery records; preserve originating deployment. |
 | frontend/Analytics.tsx, frontend/CreateDemandChat.tsx and model | Bind analytics, creation and display to selected deployment. |
 | backend/contract.ts: loadConfig, getPublicClient, AGENT_DEMAND_ABI; backend/server.ts index | Select RPC/contract explicitly; scope index and checkpoint keys by deployment. |
-| backend/config.ts, backend/admin.ts | Resolve explicit deployment identity for configuration and administration; retain V1 operations. |
+| backend/config.ts, backend/admin.ts | Resolve explicit deployment identity for configuration and administration; target V2 only. |
 | Existing billing and payment modules | Demand Intelligence x402 billing remains independent of escrow deployment selection. |
 
 ### Security acceptance matrix
@@ -452,7 +452,7 @@ Local adversarial tests use real Bun TLS/HTTPS sockets on public-shaped IPv4 and
 
 ### Proposed V2 submission interface
 
-V2 exposes only `submitService(uint256 demandId, string serviceUrl, bytes32 evidenceHash, ValidationAttestation attestation, bytes verifierSignature)`; it must not expose the old unguarded three-argument overload. The attestation fields and their order are those of Section 4.10. Validate all bindings, expiry and current verifier before consuming the next nonce and recording the submission atomically. Preserve V1's submission fields and event semantics and add `paymentRequirementsHash` and `validationPolicyId` to V2's `ServiceSubmitted` event and persistent per-submission record keyed by demandId and nonce. Expose `submissionDigests(uint256 demandId,uint256 nonce) returns (bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`, `submissionNonce(uint256)`, `verifier()`, `verifierAdmin()`, and `setVerifier(address)` with `VerifierRotated(address indexed previousVerifier,address indexed newVerifier)`. The V2 event is `ServiceSubmitted(uint256 indexed demandId,uint256 indexed submissionNonce,address indexed builder,string serviceUrl,bytes32 evidenceHash,uint64 reviewEndsAt,uint128 reviewCommitted,uint128 approvalRequired,bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`. No signer, handler or contract is implemented by G0.1.
+V2 exposes only `submitService(uint256 demandId, string serviceUrl, bytes32 evidenceHash, ValidationAttestation attestation, bytes verifierSignature)`; it must not expose the old unguarded three-argument overload. The attestation fields and their order are those of Section 4.10. Validate all bindings, expiry and current verifier before consuming the next nonce and recording the submission atomically. Preserve the existing submission fields and event semantics and add `paymentRequirementsHash` and `validationPolicyId` to V2's `ServiceSubmitted` event and persistent per-submission record keyed by demandId and nonce. Expose `submissionDigests(uint256 demandId,uint256 nonce) returns (bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`, `submissionNonce(uint256)`, `verifier()`, `verifierAdmin()`, and `setVerifier(address)` with `VerifierRotated(address indexed previousVerifier,address indexed newVerifier)`. The V2 event is `ServiceSubmitted(uint256 indexed demandId,uint256 indexed submissionNonce,address indexed builder,string serviceUrl,bytes32 evidenceHash,uint64 reviewEndsAt,uint128 reviewCommitted,uint128 approvalRequired,bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`. No signer, handler or contract is implemented by G0.1.
 
 ### 4.2 Non-Upgradeable Escrow
 
@@ -1543,77 +1543,29 @@ Required:
 Existing valid tests must not be deleted or weakened.
 
 
-## 6. CONTRACT VERSIONING AND MIGRATION
+## 6. CANONICAL V2 ESCROW
 
-AgentDemandV1 is immutable.
+AgentDemand V1 was an experimental development implementation. AgentDemandV2 is the only canonical escrow protocol. This owner decision supersedes earlier requirements for permanent V1/V2 coexistence.
 
-Its deployed implementation cannot be modified in place.
+The V1 Solidity source and tests are replaced by V2. Git history preserves the experiment. No V1 compatibility router, deployment-version selector, legacy frontend/indexer or migration framework is planned.
 
-Onchain attestation enforcement therefore requires a new contract version.
+### Gate boundaries
 
+G0.4 implements the non-upgradeable attestation-gated escrow and contract tests. It does not deploy V2, change live addresses, migrate funds or modify existing onchain contracts and balances.
 
-### Target
+G0.5 targets V2 only: frontend/backend ABI consumers, validation/submission flow, event indexing and deployment tooling. Existing TypeScript consumers still use the experimental ABI until that gate; they must not be pointed at V2 before integration is complete.
 
-AgentDemandV2: Non-upgradeable escrow with attestation-gated service submission.
+`backend/admin.ts` still expects `out/AgentDemand.sol/AgentDemand.json` and the six-argument experimental constructor. That lazy deployment path is not a build dependency and is unavailable from a fresh G0.4 build. Do not substitute V2 bytecode with that constructor. V2 deployment tooling and configuration require G0.5 integration and separate deployment approval.
 
-No BuilderRegistry is required.
-
-No curated admission contract is required.
-
-No upgradeable proxy is required.
-
-
-### Migration Rules
-
-1. Preserve V1 deployments.
-
-2. Preserve historical V1 demands.
-
-3. Preserve outstanding V1 balances.
-
-4. Preserve V1 finalization access.
-
-5. Preserve V1 refund access.
-
-6. Do not automatically migrate funds.
-
-7. Route new demands to V2 only after
-   explicit rollout approval.
-
-8. Keep V1 and V2 records distinguishable.
-
-9. Update frontend and backend ABI consumers.
-
-10. Update addresses and documentation
-    only for the approved deployment.
-
+Historical deployment records remain evidence of earlier experiments. They do not establish a supported V1 product or authorize any blockchain action.
 
 ### Canonical Demand Identity
 
-Use:
-
-```text
-chainId escrowContractAddress demandId
-```
-
-Demand IDs are not globally unique.
-
-Different contract versions may have the same numeric demand ID.
-
+Use `(escrowChainId, escrowContract, demandId)` for V2 consumers. Demand IDs are not globally unique across Testnet/Mainnet or separate deployments. Pending records retain their originating deployment.
 
 ### Future Contract Versions
 
-Deploy a new immutable escrow version only when changing onchain behavior.
-
-Examples:
-
-- voting rules
-- settlement accounting
-- refund rules
-- custody rules
-- incompatible submission verification
-
-RFQ metadata, analytics, service discovery, and resolver improvements should not automatically require escrow redeployment.
+Deploy a new immutable escrow only when changing onchain voting, settlement, refund, custody or incompatible submission-verification behavior, with explicit approval. RFQ metadata, analytics, service discovery and resolver improvements do not automatically require escrow redeployment.
 
 
 ## 7. PHASE 1 — MACHINE-READABLE RFQ
@@ -2374,7 +2326,7 @@ Deliver:
 - verifier authority model
 - frontend submission integration
 - preserved voting and refunds
-- V1/V2 compatibility
+- V2-only consumer integration
 - contract and validation service regression tests
 
 Execution is serial: one gate, branch and Draft PR at a time, with owner review before the next gate. Merge, deployment, paid tests and Mainnet activation require separate authorization.
@@ -2384,8 +2336,8 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G0.1 | Architecture, policy schemas, threat model, vectors and impact map; owner approval | Review schemas, vectors and transport evidence in Sections 3-6. |
 | G0.2 | Configuration-driven x402 validation service; G0.1 | Unpaid bounded challenge inspection and adversarial transport tests. |
 | G0.3 | Builder authorization, EIP-712 and verifier security; G0.1-G0.2 | Authorization, replay, signer policy and isolation tests. |
-| G0.4 | Non-upgradeable AgentDemandV2; G0.1 and G0.3 | Attestation verification and escrow regression tests. |
-| G0.5 | Frontend/backend integration and V1/V2 compatibility; G0.2-G0.4 | Deployment-bound consumers and recovery tests. |
+| G0.4 | Canonical non-upgradeable AgentDemandV2; G0.1 and G0.3 | Attestation, nonce/replay, verifier authority and escrow regression tests. |
+| G0.5 | V2-only frontend/backend, indexer and deployment-tool integration; G0.2-G0.4 | V2 ABI, attestation submission, deployment-bound consumers and recovery tests. |
 | G0.6 | Full Gate 0 E2E, adversarial and release readiness; all prior G0 gates | Independent target-host, signer and end-to-end evidence. |
 | G1 | Machine-readable RFQ; G0.6 | Section 7 acceptance. |
 | G2 | Fulfilled service registry; G1 and canonical fulfillment | Section 8 acceptance. |
@@ -2393,7 +2345,7 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
 | G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
 
-The local G0.3 source implements builder authorization and a separate authenticated attestation signer. Onchain attestation consumption and nonce replay prevention remain G0.4; local signer tests do not establish deployment isolation.
+The local G0.3 source implements builder authorization and a separate authenticated attestation signer. G0.4 implements onchain attestation consumption and monotonic nonce replay prevention in the canonical V2 escrow. Consumer integration remains G0.5; local signer and contract tests do not establish deployment isolation.
 
 Do not deploy before validation and explicit approval.
 
@@ -2617,7 +2569,7 @@ Do not introduce:
 - automatic wallet spending
 - arbitrary cross-chain payment support
 - administrative escrow withdrawals
-- forced V1 fund migration
+- production fund migration without separate approval
 
 Do not turn UNMET into a generic API marketplace without funded demand provenance.
 
@@ -2664,7 +2616,7 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 15. Finalize and refund do not depend
     on the validation service.
 
-16. Historical V1 state remains accessible.
+16. Frontend and backend consumers target canonical V2 only.
 
 17. Validation is not mislabeled
     as independent service verification.

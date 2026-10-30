@@ -38,7 +38,7 @@ UNMET/
 │   ├── tests/                        # Wallet, routing, chat and transaction tests
 │   └── package.json, tsconfig.json, vite.config.ts
 ├── backend/
-│   ├── AgentDemand.sol, AgentDemand.t.sol, foundry.toml
+│   ├── AgentDemandV2.sol, AgentDemandV2.t.sol, foundry.toml
 │   ├── server.ts, start.ts, contract.ts
 │   ├── config.ts, admission.ts, upstream.ts
 │   ├── durable-payment.ts, payment-identity.ts
@@ -62,7 +62,7 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 
 - `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
 - The app shell owns wallet/session orchestration. Reown AppKit is configured in `frontend/reown.ts`; `frontend/contract.ts` uses viem for direct RPC reads, approvals and contract writes. Ordinary demand actions do not pass through the Bun API.
-- `backend/AgentDemand.sol` is authoritative for demand state, escrow balances, voting, settlement and refunds. Frontend and backend ABIs are hand-maintained consumers of that contract.
+- `backend/AgentDemandV2.sol` is the canonical escrow source. Frontend/backend ABIs and deployment tooling still use the experimental interface pending V2-only G0.5 integration; inspect [Architecture](docs/ARCHITECTURE.md#canonical-v2-attestation) before changing those consumers.
 - `backend/server.ts` exports the Express app and implements API routes, health/readiness, demand indexing and ranking. `backend/start.ts` is the standalone Bun/container entrypoint.
 - The backend index is disposable, process-local derived chain state. Reads use pinned blocks; canonical hashes, bounded log windows and atomic checkpoints protect refreshes and reorg recovery.
 - Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.
@@ -89,7 +89,7 @@ These are starting points, not isolated ownership boundaries. Trace the complete
 | Landing and visual conventions | `frontend/UnmetLanding.tsx`, `frontend/UnmetHowItWorks.tsx`, `frontend/UnmetNavigation.tsx`, `frontend/UnmetFooter.tsx`, `frontend/MagicRings.tsx`, `docs/DESIGN.md` |
 | Styles and reusable UI | `frontend/app.css`, `frontend/create-demand-chat.css`, `frontend/components/ui/`, `frontend/components/reui/`; landing styles remain in `frontend/` |
 | Analytics and derived frontend state | `frontend/Analytics.tsx`, `frontend/analytics.ts`, `frontend/app-state.ts` |
-| Escrow/economics and ABI | `backend/AgentDemand.sol`, `backend/AgentDemand.t.sol`, `backend/contract.ts`, `frontend/contract.ts` |
+| Escrow/economics and ABI | `backend/AgentDemandV2.sol`, `backend/AgentDemandV2.t.sol`, `backend/contract.ts`, `frontend/contract.ts` |
 | API routes, schemas, index/ranking | `backend/server.ts`, `backend/contract.ts`, `backend/server.test.ts`, `docs/API.md` |
 | Configuration, trust and bounded work | `backend/config.ts`, `backend/admission.ts`, `backend/upstream.ts`, `backend/hardening.test.ts` |
 | SQLite reservations/state/backups | `backend/payment-store.ts`, `backend/payment-store.test.ts`, `docs/PAYMENT_RECOVERY.md` |

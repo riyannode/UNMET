@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-    U[Browser / AI Agent] -->|wallet / contract calls via RPC| X[X Layer Testnet: AgentDemand.sol]
+    U[Browser / AI Agent] -->|wallet / contract calls via RPC| X[Configured experimental escrow: X Layer Testnet]
     X --- E[Demand, escrow, voting, settlement, refund]
     U -->|HTTP: UI and API| C[Caddy]
     C -->|static files / SPA fallback| F[React / Vite build]
@@ -25,7 +25,7 @@ The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id).
 
 The repository also contains a separate Bun validation runtime, described in [API](API.md#standalone-g02-validation-runtime). Its dependency path is `validation-service` → `validation-config`, `validation-evaluator`, `validation-codec` and `validation-transport`. It uses a local read-only ABI for chain reads and does not import the existing payment runtime, SQLite storage or API entrypoint. It is not wired into the production Compose deployment.
 
-The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, checks the block again after evaluation, and verifies enabled token decimals at startup. It verifies builder authorization before unpaid target inspection. A separate authenticated Unix-socket signer owns the verifier key, accepts only the attestation type and allowlisted deployment/policy, and returns a signature the validator independently recovers before PASS. Isolation protects the key but does not establish the truth of a compromised validator's observations. No deployment or production readiness follows from local tests; they do not establish VPS firewall, namespace, mount, secret or egress isolation. Onchain consumption and replay prevention remain in G0.4.
+The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, checks the block again after evaluation, and verifies enabled token decimals at startup. It verifies builder authorization before unpaid target inspection. A separate authenticated Unix-socket signer owns the verifier key, accepts only the attestation type and allowlisted deployment/policy, and returns a signature the validator independently recovers before PASS. Isolation protects the key but does not establish the truth of a compromised validator's observations. No deployment or production readiness follows from local tests; they do not establish VPS firewall, namespace, mount, secret or egress isolation. Onchain consumption and replay prevention are implemented in the local G0.4 V2 source; frontend/backend integration remains G0.5.
 
 ## Independent network contexts
 
@@ -33,7 +33,7 @@ The demand market is configured by `CHAIN_ID` and remains on X Layer Testnet (`1
 
 Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`) and advertises three fixed native EIP-3009 assets. `X402_RPC_URL` independently confirms Mainnet settlement receipts; it is never sourced from the market Testnet RPC. This payment setting is never used by `backend/contract.ts` or demand-market clients.
 
-`AgentDemand.sol` is canonical for demand and escrow state. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
+`backend/AgentDemandV2.sol` is the canonical escrow source. V1 was an experimental development implementation and is preserved in Git history. V2 is the only planned protocol; no dual-version runtime is planned. G0.4 replaces Solidity source/tests without deploying or migrating funds. Existing frontend/backend ABI consumers and indexer behavior remain experimental until V2-only G0.5 integration. The old `backend/admin.ts` deployment command still expects the removed V1 artifact and six-argument constructor; it is unavailable from a fresh build until G0.5. Live addresses and onchain state are unchanged. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
 
 ## Free discovery and paid intelligence
 
@@ -42,6 +42,12 @@ Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Prod
 `POST /v1/opportunities` uses the same index and filters, with no additional RPC reads. It adds rank within the full matching pool before the response limit, a reproducible score breakdown, current escrow per historically expected call, remaining deadline/review time, review gaps, and deterministic reasons and cautions. Requested response order remains independent of score rank. Percentile tables are prepared once per pool; premium row enrichment applies only to the returned rows.
 
 Premium serialization executes after the existing official payment middleware. SDK response buffering and durable settlement confirmation continue to control release. Free and unpaid challenge responses contain no new premium fields. All existing onchain facts remain public; paid value is the scoped comparison and interpretation. Scores are relative signals, and escrow is not guaranteed builder earnings. See [API calculations and examples](API.md#deterministic-demand-score).
+
+## Canonical V2 attestation
+
+V2 accepts only the five-argument `submitService(demandId, serviceUrl, evidenceHash, attestation, verifierSignature)`. The G0.3 `ValidationAttestation` EIP-712 domain is `UNMET AgentDemand`, version `2`, the current chain ID and this contract, without salt. The signature binds every typed field, the caller, exact URL bytes, evidence and next submission nonce. Time bounds are `issuedAt <= now + 60`, `issuedAt < expiresAt`, lifetime at most 900 seconds and `now < expiresAt`.
+
+Only the current verifier's canonical 65-byte low-s ECDSA signature is accepted. The immutable `verifierAdmin` may only rotate that verifier through `setVerifier`; rotation is immediate and leaves accepted proposals and escrow rights unchanged. Submission atomically advances `submissionNonce`; invalid attempts do not consume it, and reopen never resets it. `submissionDigests(demandId, nonce)` preserves authenticated payment-requirements and validation-policy hashes across proposals. Voting, finalization, reopen and refunds require no verifier availability.
 
 ## Contract state
 
