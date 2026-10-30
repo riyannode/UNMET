@@ -33,6 +33,39 @@ test("rejects ambiguous identities, unsorted sets and invalid defaults", () => {
   const wrongDefault = JSON.stringify(input()).replace('"defaultTransferMethod":null', '"defaultTransferMethod":"unknown"');
   expect(() => parseValidationConfig(new TextEncoder().encode(wrongDefault))).toThrow();
 });
+test("one deployment owns its denomination and supports distinct profile networks", () => {
+  for (const changeDenomination of [false, true]) {
+    const split = input();
+    const second = structuredClone(split.deployments[0]);
+    second.paymentProfiles[0].network = "eip155:1";
+    if (changeDenomination) second.demandPriceAsset = { ...second.demandPriceAsset, network: "eip155:1" };
+    split.deployments.push(second);
+    expect(() => parse(split)).toThrow("INVALID_CONFIG");
+  }
+  const combined = input();
+  const profile = structuredClone(combined.deployments[0].paymentProfiles[0]);
+  profile.network = "eip155:1";
+  combined.deployments[0].paymentProfiles.push(profile);
+  const combinedConfig = parse(combined);
+  expect(combinedConfig.deployments[0].paymentProfiles).toHaveLength(2);
+  for (const network of [fixture.policy.profile.network, profile.network]) {
+    expect(resolvePolicy(combinedConfig, fixture.policy.escrowChainId, fixture.policy.escrowContract, network)?.policy.demandPriceAsset).toEqual(fixture.policy.demandPriceAsset);
+  }
+  const alias = input();
+  alias.deployments[0].escrowContract = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const upper = structuredClone(alias.deployments[0]);
+  upper.escrowContract = "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  alias.deployments.push(upper);
+  expect(() => parse(alias)).toThrow("INVALID_CONFIG");
+  for (const field of ["escrowContract", "escrowChainId"] as const) {
+    const distinct = input();
+    const second = structuredClone(distinct.deployments[0]);
+    if (field === "escrowContract") second.escrowContract = "0x0000000000000000000000000000000000000002";
+    else second.escrowChainId = "196";
+    distinct.deployments.push(second);
+    expect(parse(distinct).deployments).toHaveLength(2);
+  }
+});
 test("requires bounded concurrency, exact keys and explicit valid defaults", () => {
   const raw = JSON.stringify(input());
   for (const invalid of [

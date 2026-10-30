@@ -80,17 +80,20 @@ export function parseValidationConfig(raw: Uint8Array): ValidationConfig {
   const config = parseStrictJSON(raw, 12);
   if (!validateConfig(config)) invalid();
   if (config.managementAddresses.some(address => !isIP(address))) invalid();
-  const identities = new Set<string>();
+  const deployments = new Set<string>();
   for (const deployment of config.deployments) {
     if (!validUrl(deployment.escrowRpcUrl)) invalid();
+    const key = `${deployment.escrowChainId}:${deployment.escrowContract}`;
+    if (deployments.has(key)) invalid();
+    deployments.add(key);
+    const networks = new Set<string>();
     for (const entry of deployment.paymentProfiles) {
       const { paymentRpcUrl, ...profile } = entry;
       if (!validUrl(paymentRpcUrl)) invalid();
       const policy: PolicyEnvelope = { schemaVersion: "unmet-validation-policy-v2", escrowChainId: deployment.escrowChainId, escrowContract: deployment.escrowContract, profile, demandPriceAsset: deployment.demandPriceAsset };
       validateEnvelope(policy);
-      const key = `${deployment.escrowChainId}:${deployment.escrowContract}:${profile.network}`;
-      if (identities.has(key)) invalid();
-      identities.add(key);
+      if (networks.has(profile.network)) invalid();
+      networks.add(profile.network);
     }
   }
   return config;

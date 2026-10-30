@@ -81,14 +81,17 @@ export function evaluateChallenge(parsed: ParsedValidationRequest, observation: 
   if (url.username || url.password || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:[\\/]*|[\\/]{2,})[^/\\?#]*@/.test(resource.url as string) || (resource.url as string).includes("#") || url.origin !== requested.origin || url.pathname !== requested.pathname || (url.search && url.search !== requested.search)) return fail("INVALID_RESOURCE");
   const normalizedResource: JSONObject = { ...resource, url: url.href };
   let incomparable = false;
+  let comparable = false;
   for (const [index, item] of (value.accepts as JSONObject[]).entries()) {
     const offer = item;
     const network = offer.network as string, asset = offer.asset as string, payTo = offer.payTo as string;
     if (!policy.profile.enabled || offer.scheme !== "exact" || !policy.profile.schemes.includes("exact") || !address(asset) || !address(payTo)) continue;
-    if (network !== policy.demandPriceAsset.network || asset.toLowerCase() !== policy.demandPriceAsset.asset) incomparable = true;
     if (network !== policy.profile.network) continue;
+    if (network !== policy.demandPriceAsset.network || asset.toLowerCase() !== policy.demandPriceAsset.asset) { incomparable = true; continue; }
     const configured = policy.profile.assets.find(a => a.asset === asset.toLowerCase() && a.enabled);
     if (!configured) continue;
+    if (configured.decimals !== policy.demandPriceAsset.decimals || verifiedDecimals !== configured.decimals) { incomparable = true; continue; }
+    comparable = true;
     const extra = obj(offer.extra) ? offer.extra : {};
     const methodName = "assetTransferMethod" in extra ? extra.assetTransferMethod : configured.defaultTransferMethod;
     const method = configured.transferMethods.find(m => m.method === methodName && m.enabled);
@@ -97,7 +100,6 @@ export function evaluateChallenge(parsed: ParsedValidationRequest, observation: 
     if (flow !== "authorization" || !method.paymentFlows.includes("authorization")) continue;
     if (method.method === "eip3009" && (!method.tokenDomain || extra.name !== method.tokenDomain.name || extra.version !== method.tokenDomain.version)) continue;
     if (payTo.toLowerCase() !== parsed.input.authorizedPayTo || !Number.isSafeInteger(offer.maxTimeoutSeconds) || (offer.maxTimeoutSeconds as number) > policy.profile.paymentRules.maxTimeoutSeconds) continue;
-    if (network !== policy.demandPriceAsset.network || asset.toLowerCase() !== policy.demandPriceAsset.asset || configured.decimals !== policy.demandPriceAsset.decimals || verifiedDecimals !== configured.decimals) { incomparable = true; continue; }
     let amount: bigint;
     try { amount = parseUint256(offer.amount as string); } catch { continue; }
     if (amount > maxUnitPrice) continue;
@@ -105,5 +107,5 @@ export function evaluateChallenge(parsed: ParsedValidationRequest, observation: 
     const paymentRequirementsHash = hashJSON({ schemaVersion: "unmet-payment-requirements-v2", x402Version: 2, resource: normalizedResource, requestHash: parsed.requestHash, selected });
     return { eligible: true as const, selectedOffer: selected, selectedOfferIndex: index, requestHash: parsed.requestHash, paymentRequirementsHash, validationPolicyId: validationPolicyId(policy) };
   }
-  return fail(incomparable ? "UNSUPPORTED_PRICE_COMPARISON" : "NO_ELIGIBLE_OFFER");
+  return fail(incomparable && !comparable ? "UNSUPPORTED_PRICE_COMPARISON" : "NO_ELIGIBLE_OFFER");
 }

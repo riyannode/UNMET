@@ -49,6 +49,21 @@ describe("validation evaluator", () => {
     expect(run([offer], fixture.payment.resource, policy, 10000n).eligible).toBe(true);
     expect(() => run([offer], fixture.payment.resource, policy, 10000n, 18)).toThrow("UNSUPPORTED_PRICE_COMPARISON");
   });
+  test("price diagnostics distinguish relevant incomparable and comparable offers", () => {
+    const otherAsset = { ...offer, asset: "0x0000000000000000000000000000000000000002" };
+    const wrongReceiver = { ...offer, payTo: "0x0000000000000000000000000000000000000002" };
+    expect(() => run([wrongReceiver, otherAsset])).toThrow("NO_ELIGIBLE_OFFER");
+    expect(() => run([otherAsset, wrongReceiver])).toThrow("NO_ELIGIBLE_OFFER");
+    expect(() => run([wrongReceiver])).toThrow("NO_ELIGIBLE_OFFER");
+    expect(() => run([otherAsset])).toThrow("UNSUPPORTED_PRICE_COMPARISON");
+    const selected = run([otherAsset, offer]);
+    expect(selected.selectedOfferIndex).toBe(1);
+    expect<string>(selected.paymentRequirementsHash).toBe(fixture.expected.paymentRequirementsHash);
+    expect<string>(selected.validationPolicyId).toBe(fixture.expected.validationPolicyId);
+    for (const irrelevant of [{ ...otherAsset, network: "eip155:1" }, { ...otherAsset, scheme: "unknown" }]) {
+      expect(() => run([irrelevant])).toThrow("NO_ELIGIBLE_OFFER");
+    }
+  });
   test("resource binds origin, path, query and preserves metadata", () => {
     expect(run([offer], { url: "/weather", description: "Weather" }).paymentRequirementsHash).not.toBe(fixture.expected.paymentRequirementsHash);
     for (const url of ["", "  ", "https://other.example/weather", "/other", "/weather?a=1", "https://user@example.com/weather", "https://@example.com/weather", "//@example.com/weather", "/weather#x"]) expect(() => run([offer], { url })).toThrow();
