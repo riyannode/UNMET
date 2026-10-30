@@ -85,9 +85,9 @@ export function evaluateChallenge(parsed: ParsedValidationRequest, observation: 
   for (const [index, item] of (value.accepts as JSONObject[]).entries()) {
     const offer = item;
     const network = offer.network as string, asset = offer.asset as string, payTo = offer.payTo as string;
-    if (!policy.profile.enabled || offer.scheme !== "exact" || !policy.profile.schemes.includes("exact") || !address(asset) || !address(payTo)) continue;
-    if (network !== policy.profile.network) continue;
+    if (!policy.profile.enabled || offer.scheme !== "exact" || !policy.profile.schemes.includes("exact") || !/^eip155:[1-9][0-9]{0,31}$/.test(network) || !address(asset) || !address(payTo)) continue;
     if (network !== policy.demandPriceAsset.network || asset.toLowerCase() !== policy.demandPriceAsset.asset) { incomparable = true; continue; }
+    if (network !== policy.profile.network) continue;
     const configured = policy.profile.assets.find(a => a.asset === asset.toLowerCase() && a.enabled);
     if (!configured) continue;
     if (configured.decimals !== policy.demandPriceAsset.decimals || verifiedDecimals !== configured.decimals) { incomparable = true; continue; }

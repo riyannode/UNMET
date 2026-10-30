@@ -52,15 +52,22 @@ describe("validation evaluator", () => {
   test("price diagnostics distinguish relevant incomparable and comparable offers", () => {
     const otherAsset = { ...offer, asset: "0x0000000000000000000000000000000000000002" };
     const wrongReceiver = { ...offer, payTo: "0x0000000000000000000000000000000000000002" };
+    const otherNetwork = { ...offer, network: "eip155:1" };
     expect(() => run([wrongReceiver, otherAsset])).toThrow("NO_ELIGIBLE_OFFER");
     expect(() => run([otherAsset, wrongReceiver])).toThrow("NO_ELIGIBLE_OFFER");
     expect(() => run([wrongReceiver])).toThrow("NO_ELIGIBLE_OFFER");
     expect(() => run([otherAsset])).toThrow("UNSUPPORTED_PRICE_COMPARISON");
+    for (const incompatible of [otherNetwork, { ...otherAsset, network: "eip155:1" }]) {
+      expect(() => run([incompatible])).toThrow("UNSUPPORTED_PRICE_COMPARISON");
+      expect(() => run([wrongReceiver, incompatible])).toThrow("NO_ELIGIBLE_OFFER");
+      expect(() => run([incompatible, wrongReceiver])).toThrow("NO_ELIGIBLE_OFFER");
+      expect(run([incompatible, offer]).selectedOfferIndex).toBe(1);
+    }
     const selected = run([otherAsset, offer]);
     expect(selected.selectedOfferIndex).toBe(1);
     expect<string>(selected.paymentRequirementsHash).toBe(fixture.expected.paymentRequirementsHash);
     expect<string>(selected.validationPolicyId).toBe(fixture.expected.validationPolicyId);
-    for (const irrelevant of [{ ...otherAsset, network: "eip155:1" }, { ...otherAsset, scheme: "unknown" }]) {
+    for (const irrelevant of [{ ...otherAsset, scheme: "unknown" }, { ...otherAsset, network: "solana:main_net" }, { ...offer, network: "solana:main_net", asset: "token", payTo: "wallet" }]) {
       expect(() => run([irrelevant])).toThrow("NO_ELIGIBLE_OFFER");
     }
   });
