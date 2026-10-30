@@ -19,6 +19,8 @@ type TransportOptions = {
   resolve?: (hostname: string) => Promise<string[]>;
   ca?: string;
   timeoutMs?: number;
+  // Trusted test seam for exercising TLS against an isolated namespace fixture.
+  testOnlyPort?: number;
 };
 
 const denied = new BlockList();
@@ -47,7 +49,7 @@ function validString(value: string): boolean {
 function target(serviceUrl: string, request: ValidationHttpRequest): { url: URL; body: string } {
   let url: URL;
   try { url = new URL(serviceUrl); } catch { throw new ValidationTransportError("INVALID_TARGET"); }
-  if (Buffer.byteLength(serviceUrl) > 512 || url.href !== serviceUrl || url.protocol !== "https:" ||
+  if (Buffer.byteLength(serviceUrl) > 512 || (url.href !== serviceUrl && serviceUrl.replace(/:443(?=\/|$)/, "") !== url.href) || url.protocol !== "https:" || url.port ||
       url.username || url.password || serviceUrl.includes("?") || serviceUrl.includes("#") ||
       !url.hostname || isIP(url.hostname.replace(/^\[|\]$/g, ""))) throw new ValidationTransportError("INVALID_TARGET");
   if (!request || Object.keys(request).sort().join(",") !== "body,contentType,method,query" ||
@@ -81,6 +83,7 @@ export function createValidationTransport(options: TransportOptions) {
     management.addAddress(address, family === 4 ? "ipv4" : "ipv6");
   }
   const timeoutMs = options.timeoutMs ?? 10000;
+  if (options.testOnlyPort !== undefined && (!options.resolve || options.ca === undefined || !Number.isInteger(options.testOnlyPort) || options.testOnlyPort < 1 || options.testOnlyPort > 65535)) throw new ValidationTransportError("INVALID_TARGET");
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 10000) throw new ValidationTransportError("INVALID_TARGET");
 
   return async function inspect(serviceUrl: string, request: ValidationHttpRequest): Promise<{ status: number; paymentRequired: string | null }> {
@@ -102,10 +105,17 @@ export function createValidationTransport(options: TransportOptions) {
         if (error) reject(error);
         else if (result) resolve(result);
       };
-      const timer = setTimeout(() => finish(new ValidationTransportError("TRANSPORT_TIMEOUT")), timeoutMs);
+      let resolving = !!options.resolve;
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        if (!resolving) finish(new ValidationTransportError("TRANSPORT_TIMEOUT"));
+      }, timeoutMs);
       void (async () => {
         try {
           const addresses = await (options.resolve ? options.resolve(url.hostname) : resolveAll(resolver, url.hostname));
+          resolving = false;
+          if (timedOut) { finish(new ValidationTransportError("TRANSPORT_TIMEOUT")); return; }
           if (finished) return;
           if (!Array.isArray(addresses) || addresses.length === 0) {
             finish(new ValidationTransportError("DNS_UNAVAILABLE"));
@@ -119,7 +129,7 @@ export function createValidationTransport(options: TransportOptions) {
             return;
           }
           const address = addresses[0];
-          const connection = connect({ host: address, port: Number(url.port || "443"), servername: url.hostname, rejectUnauthorized: true, ca: options.ca });
+          const connection = connect({ host: address, port: options.testOnlyPort ?? 443, servername: url.hostname, rejectUnauthorized: true, ca: options.ca });
           socket = connection;
           connection.on("error", () => finish(new ValidationTransportError("TRANSPORT_UNAVAILABLE")));
           connection.once("secureConnect", () => {
@@ -140,7 +150,7 @@ export function createValidationTransport(options: TransportOptions) {
               headers["Content-Length"] = String(Buffer.byteLength(body));
             }
             requestHandle = httpsRequest({
-              hostname: url.hostname, port: Number(url.port || "443"), path: url.pathname + url.search,
+              hostname: url.hostname, port: options.testOnlyPort ?? 443, path: url.pathname + url.search,
               method: request.method, agent, headers, maxHeaderSize: 32768,
             }, (response) => {
               if (finished) { response.destroy(); return; }
@@ -158,12 +168,14 @@ export function createValidationTransport(options: TransportOptions) {
               finish(undefined, result);
             });
             requestHandle.on("error", (error: NodeJS.ErrnoException) => finish(new ValidationTransportError(error.code === "HPE_HEADER_OVERFLOW" ? "INVALID_RESPONSE" : "TRANSPORT_UNAVAILABLE")));
+            requestHandle.maxHeadersCount = 0;
             requestHandle.end(body);
           });
           connection.once("end", () => finish(new ValidationTransportError("INVALID_RESPONSE")));
           connection.once("close", () => finish(new ValidationTransportError("TRANSPORT_UNAVAILABLE")));
         } catch {
-          finish(new ValidationTransportError("DNS_UNAVAILABLE"));
+          resolving = false;
+          finish(new ValidationTransportError(timedOut ? "TRANSPORT_TIMEOUT" : "DNS_UNAVAILABLE"));
         }
       })();
     });

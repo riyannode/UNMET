@@ -30,15 +30,17 @@ const server = createServer({ key, cert }, (socket) => {
       setTimeout(() => { if (!socket.destroyed) { bodySent = true; socket.write("business response"); } }, 50);
     } else if (path === "/informational") socket.write("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 402 Payment Required\r\nPayment-Required: e30=\r\n\r\n");
     else if (path === "/duplicate") socket.write("HTTP/1.1 402 Payment Required\r\nPayment-Required: e30=\r\nPayment-Required: e30=\r\n\r\n");
+    else if (path === "/late-duplicate") socket.write("HTTP/1.1 402 Payment Required\r\nPayment-Required: e30=\r\n" + "X: y\r\n".repeat(2000) + "Payment-Required: e30=\r\n\r\n");
     else if (path === "/redirect") socket.write("HTTP/1.1 302 Found\r\nLocation: https://elsewhere.test/\r\n\r\n");
+    else if (path === "/header-limit") socket.write("HTTP/1.1 402 Payment Required\r\nPayment-Required: " + "a".repeat(16384) + "\r\n\r\n");
     else if (path === "/large") socket.write("HTTP/1.1 402 Payment Required\r\nPayment-Required: " + "a".repeat(16385) + "\r\n\r\n");
     else if (path === "/many") socket.write("HTTP/1.1 402 Payment Required\r\nX-Fill: " + "a".repeat(33000) + "\r\n\r\n");
     else socket.write("HTTP/1.1 402 Payment Required\r\nPayment-Required: e30=\r\nContent-Length: 999999\r\n\r\n");
   });
 });
-const url = (path = "/") => "https://fixture.test:" + port + path;
+const url = (path = "/") => "https://fixture.test" + path;
 const transport = (resolve: (hostname: string) => Promise<string[]> = async () => [ip], timeoutMs = 1000, trust = ca) =>
-  createValidationTransport({ managementAddresses: [], resolve, timeoutMs, ca: trust });
+  createValidationTransport({ managementAddresses: [], resolve, timeoutMs, ca: trust, testOnlyPort: port });
 const code = async (promise: Promise<unknown>) => {
   try { await promise; return "NO_ERROR"; }
   catch (error) { return error instanceof ValidationTransportError ? error.code : "UNEXPECTED"; }
@@ -61,7 +63,7 @@ test("invalid targets and request shapes fail before DNS", async () => {
   let calls = 0;
   const inspect = transport(async () => { calls++; return [ip]; });
   for (const target of [
-    "http://fixture.test/", "https://user:pass@fixture.test/", "https://fixture.test/?x=1",
+    "https://fixture.test:8443/", "http://fixture.test/", "https://user:pass@fixture.test/", "https://fixture.test/?x=1",
     "https://fixture.test/#fragment", "https://127.0.0.1/", "https://fixture.test/" + "x".repeat(512),
     "https://fixture.test/" + "é".repeat(250),
   ]) expect(await code(inspect(target, get))).toBe("INVALID_TARGET");
@@ -78,15 +80,20 @@ test("public policy rejects special, mapped and management addresses", async () 
     "64:ff9b::808:808", "2001:db8::1", "2002:808:808::1", "2620:4f:8000::1", "fc00::1", "fe80::1"]) expect(isPublicAddress(address)).toBe(false);
   expect(isPublicAddress(ip)).toBe(true);
   expect(isPublicAddress("2606:4700::1111")).toBe(true);
-  const inspect = createValidationTransport({ managementAddresses: [ip], resolve: async () => [ip], ca });
+  const inspect = createValidationTransport({ managementAddresses: [ip], resolve: async () => [ip], ca, testOnlyPort: port });
   expect(await code(inspect(url(), get))).toBe("UNSAFE_ADDRESS");
 });
 
 test("real TLS uses pinned peer and original SNI and Host", async () => {
   expect(await transport()(url("/ok"), get)).toEqual({ status: 402, paymentRequired: "e30=" });
+  expect((await transport()("https://fixture.test:443/ok", get)).status).toBe(402);
+  expect((await transport()("https://fixture.test:443/", get)).status).toBe(402);
   expect(sni).toBe("fixture.test");
-  expect(received).toContain("Host: fixture.test:" + port + "\r\n");
+  expect(received).toContain("Host: fixture.test\r\n");
   expect(received).toContain("Accept: application/json\r\n");
+  for (const name of ["payment-signature", "x-payment", "authorization", "cookie"]) {
+    expect(received.toLowerCase()).not.toContain(`\r\n${name}:`);
+  }
 });
 
 test("global-shaped IPv6 reaches a real pinned peer", async () => {
@@ -100,8 +107,8 @@ test("global-shaped IPv6 reaches a real pinned peer", async () => {
   const address = server6.address();
   if (!address || typeof address === "string") throw new Error("missing IPv6 address");
   try {
-    const inspect = transport(async () => ["2606:4700::1111"]);
-    expect((await inspect("https://fixture.test:" + address.port + "/", get)).status).toBe(402);
+    const inspect = createValidationTransport({ managementAddresses: [], resolve: async () => ["2606:4700::1111"], ca, testOnlyPort: address.port });
+    expect((await inspect("https://fixture.test/", get)).status).toBe(402);
   } finally {
     await new Promise<void>((resolve) => server6.close(() => resolve()));
   }
@@ -138,9 +145,11 @@ test("redirect is returned without following and oversized headers fail", async 
   const before = connections;
   expect((await transport()(url("/redirect"), get)).status).toBe(302);
   expect(connections).toBe(before + 1);
+  expect((await transport()(url("/header-limit"), get)).paymentRequired).toHaveLength(16384);
   expect(await code(transport()(url("/large"), get))).toBe("INVALID_RESPONSE");
   expect(await code(transport()(url("/many"), get))).toBe("INVALID_RESPONSE");
   expect(await code(transport()(url("/duplicate"), get))).toBe("INVALID_RESPONSE");
+  expect(await code(transport()(url("/late-duplicate"), get))).toBe("INVALID_RESPONSE");
   expect((await transport()(url("/informational"), get)).status).toBe(402);
 });
 
@@ -156,7 +165,7 @@ test("deadline stops late DNS, TLS handshake and headers", async () => {
   const address = tcp.address();
   if (!address || typeof address === "string") throw new Error("missing TCP address");
   try {
-    expect(await code(transport(undefined, 80)("https://fixture.test:" + address.port + "/", get))).toBe("TRANSPORT_TIMEOUT");
+    expect(await code(createValidationTransport({ managementAddresses: [], resolve: async () => [ip], ca, timeoutMs: 80, testOnlyPort: address.port })(url(), get))).toBe("TRANSPORT_TIMEOUT");
     expect(await code(transport(undefined, 80)(url("/hang"), get))).toBe("TRANSPORT_TIMEOUT");
   } finally {
     for (const peer of peers) peer.destroy();

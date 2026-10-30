@@ -1,17 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { hashJSON as sha } from "./validation-codec";
 import { hashDomain, hashTypedData, keccak256, stringToHex, type Address, type Hex } from "viem";
 import fixture from "./fixtures/validation.json";
 
-// Fixture-only encoder; this is not a general I-JSON or JCS implementation.
-function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
-}
-function sha(value: unknown): string {
-  return `0x${createHash("sha256").update(canonical(value)).digest("hex")}`;
-}
 function hex(value: string): Hex {
   if (!/^0x[0-9a-f]*$/.test(value)) throw new Error("invalid fixture hex");
   return value as Hex;
@@ -56,12 +47,12 @@ const attestation = {
 };
 describe("published synthetic validation vectors", () => {
   test("JCS fixture digests and mutations", () => {
-    expect(sha(fixture.request)).toBe(fixture.expected.requestHash);
-    expect(sha(fixture.payment)).toBe(fixture.expected.paymentRequirementsHash);
-    expect(sha(fixture.policy)).toBe(fixture.expected.validationPolicyId);
+    expect<string>(sha(fixture.request)).toBe(fixture.expected.requestHash);
+    expect<string>(sha(fixture.payment)).toBe(fixture.expected.paymentRequirementsHash);
+    expect<string>(sha(fixture.policy)).toBe(fixture.expected.validationPolicyId);
     expect(sha({...fixture.request, body: {city: "Bali"}})).not.toBe(fixture.expected.requestHash);
     expect(sha({...fixture.policy, escrowChainId: "196"})).not.toBe(fixture.expected.validationPolicyId);
-    expect(sha(Object.fromEntries(Object.entries(fixture.request).reverse()))).toBe(fixture.expected.requestHash);
+    expect<string>(sha(Object.fromEntries(Object.entries(fixture.request).reverse()))).toBe(fixture.expected.requestHash);
   });
   test("EIP-712 authorization and attestation bind deployment and receiver", () => {
     const digest = hashTypedData({domain,types: authorizationTypes,primaryType: "BuilderValidationAuthorization",message: authorization});
