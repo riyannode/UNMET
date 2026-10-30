@@ -6,9 +6,9 @@ Version: V2.0
 Date: 24 October 2026
 Repository: https://github.com/riyannode/UNMET
 
-Status: PROPOSED — except the local G0.2 foundation noted below
+Status: PROPOSED — except the local G0.3 source noted below
 
-Implementation note: the repository now contains a local G0.2 validation runtime foundation, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It is not deployed or production-ready, and internal eligibility does not issue PASS. Builder authorization verification and attestation signing remain G0.3. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls.
+Implementation note: the repository contains a local G0.3 validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. It is not deployed or production-ready. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls.
 
 ## 0. DOCUMENT PURPOSE
 
@@ -2392,6 +2392,8 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G3 | x402 service discovery and optional A2MCP distribution; G2 and G0 validator | Section 9 acceptance. |
 | G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
 | G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
+
+The local G0.3 source implements builder authorization and a separate authenticated attestation signer. Onchain attestation consumption and nonce replay prevention remain G0.4; local signer tests do not establish deployment isolation.
 
 Do not deploy before validation and explicit approval.
 

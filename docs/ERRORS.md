@@ -79,10 +79,16 @@ These codes apply to the separate local validation runtime described in [API](AP
 | `ENDPOINT_UNAVAILABLE` | UNAVAILABLE | The target returned HTTP 5xx. |
 | `RPC_UNAVAILABLE` | UNAVAILABLE | A required RPC read, chain check or canonical snapshot check could not be completed reliably. |
 | `INTERNAL_UNAVAILABLE` | UNAVAILABLE | An unexpected internal or dependency failure prevented evaluation. |
-| `ATTESTATION_UNAVAILABLE` | UNAVAILABLE | Internal eligibility was reached; G0.3 authorization verification and attestation signing are not implemented. |
+| `INVALID_BUILDER_AUTHORIZATION` | FAIL | Builder signature, ERC-1271 proof or authorization timing is invalid. |
+| `SIGNER_UNAVAILABLE` | UNAVAILABLE | The protected signer failed or returned an invalid signature. |
 | `INVALID_CONFIG` | Startup | Trusted configuration or policy failed validation. |
 | `INVALID_ASSET_DECIMALS` | Startup | An enabled asset's observed decimals differ from its configured value. |
 | `VALIDATION_CONFIG_PATH_REQUIRED` | Startup | No validation configuration path was supplied. |
+| `SIGNER_CONFIG_REQUIRED` | Startup | No signer configuration path was supplied. |
+| `INVALID_SIGNER_CONFIG` | Startup | Signer configuration or allowlist is invalid. |
+| `INVALID_SIGNER_TOKEN` | Startup | The signer token file does not contain the required lowercase hexadecimal token. |
+| `INVALID_SIGNER_KEY` | Startup | The signer key file is not a valid private key. |
+| `VERIFIER_MISMATCH` | Startup | The signer key does not derive the configured verifier. |
 
 ## Durable payment operations
 
