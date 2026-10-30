@@ -25,23 +25,24 @@ export interface PolicyEnvelope {
   profile: PaymentProfile; demandPriceAsset: PriceAsset;
 }
 export interface Deployment {
-  escrowChainId: string; escrowContract: string; escrowRpcUrl: string; demandPriceAsset: PriceAsset;
+  escrowChainId: string; escrowContract: string; escrowRpcUrl: string; verifier: string; demandPriceAsset: PriceAsset;
   paymentProfiles: (PaymentProfile & { paymentRpcUrl: string })[];
 }
-export interface ValidationConfig { maxInFlight: number; managementAddresses: string[]; deployments: Deployment[] }
+export interface ValidationConfig { maxInFlight: number; managementAddresses: string[]; deployments: Deployment[]; signerSocketPath: string; signerAuthTokenPath: string }
 
 const ajv = new Ajv2020();
 const validatePolicy = ajv.compile<PolicyEnvelope>(schema);
 const configSchema = {
-  type: "object", additionalProperties: false, required: ["maxInFlight", "managementAddresses", "deployments"],
+  type: "object", additionalProperties: false, required: ["maxInFlight", "managementAddresses", "deployments", "signerSocketPath", "signerAuthTokenPath"],
   properties: {
+    signerSocketPath: {type:"string",pattern:"^/"}, signerAuthTokenPath: {type:"string",pattern:"^/"},
     maxInFlight: { type: "integer", minimum: 1, maximum: 1024 },
     managementAddresses: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
     deployments: { type: "array", minItems: 1, items: {
       type: "object", additionalProperties: false,
-      required: ["escrowChainId", "escrowContract", "escrowRpcUrl", "demandPriceAsset", "paymentProfiles"],
+      required: ["escrowChainId", "escrowContract", "escrowRpcUrl", "verifier", "demandPriceAsset", "paymentProfiles"],
       properties: {
-        escrowChainId: { type: "string" }, escrowContract: { type: "string" }, escrowRpcUrl: { type: "string" },
+        escrowChainId: { type: "string" }, escrowContract: { type: "string" }, escrowRpcUrl: { type: "string" }, verifier: {type:"string",pattern:"^0x(?!0{40}$)[0-9a-f]{40}$"},
         demandPriceAsset: { type: "object" },
         paymentProfiles: { type: "array", minItems: 1, items: { type: "object", required: ["paymentRpcUrl"], properties: { paymentRpcUrl: { type: "string" } } } },
       },
@@ -82,6 +83,7 @@ export function parseValidationConfig(raw: Uint8Array): ValidationConfig {
   if (config.managementAddresses.some(address => !isIP(address))) invalid();
   const deployments = new Set<string>();
   for (const deployment of config.deployments) {
+    if (deployment.verifier.length !== 42 || !/^0x[0-9a-f]{40}$/.test(deployment.verifier) || deployment.verifier === `0x${"0".repeat(40)}`) invalid();
     if (!validUrl(deployment.escrowRpcUrl)) invalid();
     const key = `${deployment.escrowChainId}:${deployment.escrowContract}`;
     if (deployments.has(key)) invalid();
@@ -98,13 +100,13 @@ export function parseValidationConfig(raw: Uint8Array): ValidationConfig {
   }
   return config;
 }
-export function resolvePolicy(config: ValidationConfig, chainId: string, contract: string, network: string): { policy: PolicyEnvelope; escrowRpcUrl: string; paymentRpcUrl: string } | undefined {
+export function resolvePolicy(config: ValidationConfig, chainId: string, contract: string, network: string): { policy: PolicyEnvelope; escrowRpcUrl: string; paymentRpcUrl: string; verifier:string } | undefined {
   for (const deployment of config.deployments) {
     if (deployment.escrowChainId !== chainId || deployment.escrowContract !== contract) continue;
     for (const entry of deployment.paymentProfiles) {
       if (entry.network !== network || !entry.enabled) continue;
       const { paymentRpcUrl, ...profile } = entry;
-      return { policy: { schemaVersion: "unmet-validation-policy-v2", escrowChainId: chainId, escrowContract: contract, profile, demandPriceAsset: deployment.demandPriceAsset }, escrowRpcUrl: deployment.escrowRpcUrl, paymentRpcUrl };
+      return { policy: { schemaVersion: "unmet-validation-policy-v2", escrowChainId: chainId, escrowContract: contract, profile, demandPriceAsset: deployment.demandPriceAsset }, escrowRpcUrl: deployment.escrowRpcUrl, paymentRpcUrl, verifier:deployment.verifier };
     }
   }
   return undefined;

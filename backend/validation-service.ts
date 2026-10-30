@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
-import { decodeFunctionResult, encodeFunctionData, toFunctionSelector, type Hex } from "viem";
+import { request as httpRequest } from "node:http";
+import { decodeFunctionResult, encodeFunctionData, keccak256, stringToHex, toFunctionSelector, type Hex } from "viem";
 import { parseValidationConfig, resolvePolicy, type ValidationConfig } from "./validation-config";
 import { parseValidationRequest, evaluateChallenge } from "./validation-evaluator";
 import { ValidationError } from "./validation-codec";
 import { createValidationTransport, ValidationTransportError } from "./validation-transport";
+import { authorizationDigest, attestationDigest, signedBy, validTime, type Attestation } from "./validation-crypto";
+
+const walletAbi = [{type:"function",name:"isValidSignature",stateMutability:"view",inputs:[{name:"hash",type:"bytes32"},{name:"signature",type:"bytes"}],outputs:[{name:"magicValue",type:"bytes4"}]}] as const;
 
 export const validationReadAbi = [
   { type: "function", name: "getDemand", stateMutability: "view", inputs: [{ name: "demandId", type: "uint256" }], outputs: [{ name: "", type: "tuple", components: [
@@ -49,6 +53,10 @@ async function rpc(url: string, method: string, params: unknown[]): Promise<unkn
     if (!body || typeof body !== "object" || !("jsonrpc" in body) || body.jsonrpc !== "2.0" ||
         !("id" in body) || body.id !== 1 || (("result" in body) === ("error" in body))) throw new Error();
     const callRequest = params[0];
+    if ("error" in body && (!body.error || typeof body.error !== "object" || !("code" in body.error) || typeof body.error.code !== "number" || !Number.isInteger(body.error.code) || !("message" in body.error) || typeof body.error.message !== "string")) throw new Error();
+    if ("error" in body && body.error && typeof body.error === "object" && "code" in body.error &&
+        (body.error.code === 3 || ((body.error.code === -32000 || body.error.code === -32603) && "message" in body.error && body.error.message === "execution reverted" && "data" in body.error && typeof body.error.data === "string" && /^0x(?:[0-9a-fA-F]{2})*$/.test(body.error.data))) &&
+        method === "eth_call" && callRequest && typeof callRequest === "object" && "data" in callRequest && typeof callRequest.data === "string" && callRequest.data.startsWith(toFunctionSelector("isValidSignature(bytes32,bytes)"))) throw new ValidationError("FAIL","INVALID_BUILDER_AUTHORIZATION");
     if ("error" in body && body.error && typeof body.error === "object" && "data" in body.error &&
         body.error.data === toFunctionSelector("DemandNotFound()") && method === "eth_call" &&
         callRequest && typeof callRequest === "object" && "data" in callRequest &&
@@ -69,6 +77,26 @@ async function rpc(url: string, method: string, params: unknown[]): Promise<unkn
     }
     clearTimeout(timer);
   }
+}
+async function sign(socketPath: string, tokenPath: string, attestation: Attestation, verifier: string): Promise<string> {
+  try {
+    const token = readFileSync(tokenPath);
+    if (token.length < 64 || token.length > 256 || /[^0-9a-f]/.test(token.toString("utf8")) || !Buffer.from(token.toString("utf8")).equals(token)) throw new Error();
+    const result = await new Promise<string>((resolve,reject) => {
+      const req = httpRequest({socketPath,path:"/sign",method:"POST",headers:{authorization:token.toString(),"content-type":"application/json"}},res => {
+        const chunks: Buffer[] = []; let size = 0;
+        res.on("data",(chunk:Buffer) => { size += chunk.length; if (size > 4096) res.destroy(); else chunks.push(chunk); });
+        res.on("error",reject);
+        res.on("end",() => { if (res.statusCode !== 200) reject(new Error()); else resolve(Buffer.concat(chunks).toString()); });
+      });
+      const timer = setTimeout(() => req.destroy(new Error()),5000);
+      req.on("close",() => clearTimeout(timer)); req.on("error",reject);
+      req.end(JSON.stringify({schemaVersion:"unmet-validation-sign-v1",attestation}));
+    });
+    const value: unknown = JSON.parse(result);
+    if (!value || typeof value !== "object" || Object.keys(value).sort().join(",") !== "signature,verifier" || !("verifier" in value) || value.verifier !== verifier || !("signature" in value) || typeof value.signature !== "string" || !await signedBy(attestationDigest(attestation),value.signature,verifier)) throw new Error();
+    return value.signature;
+  } catch { throw new ValidationError("UNAVAILABLE","SIGNER_UNAVAILABLE"); }
 }
 async function call(url: string, address: string, data: Hex, block: unknown): Promise<Hex> {
   const result = await rpc(url,"eth_call",[{to:address,data},block]);
@@ -112,7 +140,7 @@ export async function initializeValidationService(config: ValidationConfig, insp
     const respond = (status: "FAIL" | "UNAVAILABLE", code: string) => Response.json({
       status, code,
       message: status === "FAIL" ? "Validation failed" : "Validation service unavailable",
-      retryable: status === "UNAVAILABLE" && code !== "ATTESTATION_UNAVAILABLE",
+      retryable: status === "UNAVAILABLE",
     }, {status:status === "FAIL" ? 400 : 503});
     if (new URL(request.url).pathname !== "/v1/x402/validate" || request.method !== "POST") return new Response(null,{status:404});
     if (active >= config.maxInFlight) return respond("UNAVAILABLE","CAPACITY_EXHAUSTED");
@@ -154,13 +182,31 @@ export async function initializeValidationService(config: ValidationConfig, insp
       const demand = decodeFunctionResult({abi,functionName:"getDemand",data:demandData});
       const nonce = decodeFunctionResult({abi,functionName:"submissionNonce",data:nonceData});
       if (demand.creator === "0x0000000000000000000000000000000000000000" || demand.status !== 0 || demand.deadline <= BigInt(snapshot.timestamp) || nonce === (1n << 256n) - 1n || nonce + 1n !== BigInt(input.submissionNonce)) return respond("FAIL","DEMAND_INELIGIBLE");
+      const auth = input.builderAuthorization;
+      const authValid = () => validTime(BigInt(auth.issuedAt),BigInt(auth.expiresAt),BigInt(Math.floor(Date.now()/1000)));
+      if (!authValid()) return respond("FAIL","INVALID_BUILDER_AUTHORIZATION");
+      const digest = authorizationDigest(parsed);
+      if (!await signedBy(digest,auth.signature,input.builderWallet)) {
+        const result = await rpc(selected.escrowRpcUrl,"eth_call",[{to:input.builderWallet,data:encodeFunctionData({abi:walletAbi,functionName:"isValidSignature",args:[digest,auth.signature as Hex]})},pin]);
+        if (typeof result !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(result)) return respond("UNAVAILABLE","RPC_UNAVAILABLE");
+        try {
+          if (decodeFunctionResult({abi:walletAbi,functionName:"isValidSignature",data:result as Hex}) !== "0x1626ba7e") return respond("FAIL","INVALID_BUILDER_AUTHORIZATION");
+        } catch { return respond("FAIL","INVALID_BUILDER_AUTHORIZATION"); }
+      }
       const observation = await inspect(input.serviceUrl,{method:input.request.method,query:input.request.query,contentType:input.request.contentType,body:parsed.postBody});
       const priceAsset = selected.policy.demandPriceAsset;
       const decimals = selected.policy.profile.assets.find((asset) => asset.asset === priceAsset.asset)?.decimals;
       if (decimals === undefined) return respond("FAIL","UNSUPPORTED_PRICE_COMPARISON");
-      evaluateChallenge(parsed,observation,selected.policy,demand.maxUnitPrice,decimals);
+      const evaluation = evaluateChallenge(parsed,observation,selected.policy,demand.maxUnitPrice,decimals);
       if (!await isSnapshotCanonical(selected.escrowRpcUrl,snapshot)) return respond("UNAVAILABLE","RPC_UNAVAILABLE");
-      return respond("UNAVAILABLE","ATTESTATION_UNAVAILABLE");
+      if (!authValid()) return respond("FAIL","INVALID_BUILDER_AUTHORIZATION");
+      const now = BigInt(Math.floor(Date.now()/1000));
+      const expires = now + 900n < BigInt(auth.expiresAt) ? now + 900n : BigInt(auth.expiresAt);
+      const attestation: Attestation = {escrowChainId:input.escrowChainId,verifyingContract:input.escrowContract,demandId:input.demandId,builderWallet:input.builderWallet,serviceUrlHash:keccak256(stringToHex(input.serviceUrl)),evidenceHash:input.evidenceHash,paymentRequirementsHash:evaluation.paymentRequirementsHash,submissionNonce:input.submissionNonce,validationPolicyId:evaluation.validationPolicyId,issuedAt:now.toString(),expiresAt:expires.toString()};
+      if (!config.signerSocketPath || !config.signerAuthTokenPath) return respond("UNAVAILABLE","SIGNER_UNAVAILABLE");
+      const signature = await sign(config.signerSocketPath,config.signerAuthTokenPath,attestation,selected.verifier);
+      if (!authValid() || BigInt(Math.floor(Date.now()/1000)) >= expires) return respond("FAIL","INVALID_BUILDER_AUTHORIZATION");
+      return Response.json({status:"PASS",profileId:selected.policy.profile.id,selectedOffer:evaluation.selectedOffer,selectedOfferIndex:evaluation.selectedOfferIndex,requestHash:evaluation.requestHash,validationPolicyId:evaluation.validationPolicyId,paymentRequirementsHash:evaluation.paymentRequirementsHash,validatedAt:attestation.issuedAt,expiresAt:attestation.expiresAt,attestation,signature});
     } catch (error) {
       if (error instanceof ValidationError) return respond(error.status,error.code);
       if (error instanceof ValidationTransportError) return respond(error.code === "INVALID_TARGET" || error.code === "UNSAFE_ADDRESS" || error.code === "INVALID_RESPONSE" ? "FAIL" : "UNAVAILABLE",error.code);

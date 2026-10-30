@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import fixture from "./fixtures/validation.json";
 import { parseValidationConfig, resolvePolicy, validationPolicyId } from "./validation-config";
 
-const input = () => ({ maxInFlight: 2, managementAddresses: [], deployments: [{ escrowChainId: fixture.policy.escrowChainId, escrowContract: fixture.policy.escrowContract, escrowRpcUrl: "https://rpc.example/", demandPriceAsset: fixture.policy.demandPriceAsset, paymentProfiles: [{ ...structuredClone(fixture.policy.profile), paymentRpcUrl: "https://payment.example/" }] }] });
+const input = () => ({ maxInFlight: 2, managementAddresses: [], signerSocketPath:"/tmp/signer.sock", signerAuthTokenPath:"/tmp/token", deployments: [{ escrowChainId: fixture.policy.escrowChainId, escrowContract: fixture.policy.escrowContract, escrowRpcUrl: "https://rpc.example/", verifier:"0x1111111111111111111111111111111111111111", demandPriceAsset: fixture.policy.demandPriceAsset, paymentProfiles: [{ ...structuredClone(fixture.policy.profile), paymentRpcUrl: "https://payment.example/" }] }] });
 const parse = (value: unknown) => parseValidationConfig(new TextEncoder().encode(JSON.stringify(value)));
 test("explicit deployment resolves only its exact enabled profile and hashes public fields", () => {
   const config = parse(input());
@@ -10,7 +10,7 @@ test("explicit deployment resolves only its exact enabled profile and hashes pub
   expect(resolved).toBeDefined();
   if (!resolved) throw new Error("missing policy");
   expect<string>(validationPolicyId(resolved.policy)).toBe(fixture.expected.validationPolicyId);
-  const changed = input(); changed.maxInFlight = 7; changed.deployments[0].escrowRpcUrl = "https://other.example/"; changed.deployments[0].paymentProfiles[0].paymentRpcUrl = "https://other-payment.example/";
+  const changed = input(); changed.maxInFlight = 7; changed.signerSocketPath = "/tmp/other.sock"; changed.signerAuthTokenPath = "/tmp/other-token"; changed.deployments[0].verifier = "0x2222222222222222222222222222222222222222"; changed.deployments[0].escrowRpcUrl = "https://other.example/"; changed.deployments[0].paymentProfiles[0].paymentRpcUrl = "https://other-payment.example/";
   const other = resolvePolicy(parse(changed), fixture.policy.escrowChainId, fixture.policy.escrowContract, fixture.policy.profile.network);
   expect(other && validationPolicyId(other.policy)).toBe(validationPolicyId(resolved.policy));
   expect(resolvePolicy(config, "196", fixture.policy.escrowContract, fixture.policy.profile.network)).toBeUndefined();
@@ -77,4 +77,14 @@ test("requires bounded concurrency, exact keys and explicit valid defaults", () 
     raw.replace('"defaultPaymentFlow":"authorization"', '"defaultPaymentFlow":"upfront"'),
     raw.replace('"tokenDomain":null,', ''),
   ]) expect(() => parseValidationConfig(new TextEncoder().encode(invalid))).toThrow();
+});
+
+test("requires an exact lowercase nonzero verifier", () => {
+  const raw = JSON.stringify(input());
+  const verifier = "0x1111111111111111111111111111111111111111";
+  for (const value of ["0x0000000000000000000000000000000000000000","0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",`${verifier}\n`]) {
+    const config = input(); config.deployments[0].verifier = value;
+    expect(() => parse(config)).toThrow("INVALID_CONFIG");
+  }
+  expect(() => parseValidationConfig(Buffer.from(raw.replace(`\"verifier\":\"${verifier}\",`,"")))).toThrow("INVALID_CONFIG");
 });
