@@ -44,9 +44,11 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | WEB_BIND_IP, HTTP_PORT, HTTPS_PORT | Public, defaults 127.0.0.1, 80, 443 | Host ingress binding |
 | IMAGE_TAG | Public, default local | Set to an immutable release/commit identifier when updating |
 | APP_SUBNET, CADDY_INTERNAL_IP, API_INTERNAL_IP | Public, defaults 172.30.80.0/24, 172.30.80.2, 172.30.80.3 | Choose a nonconflicting subnet and unused addresses inside it, changing all three together |
-| CHAIN_ID | Public, default 1952 | Demand chain; supported values 1952 and 196 |
+| CHAIN_ID | Public, default 1952 | Demand chain; X Layer presets 1952/196, or explicit custom chain metadata |
 | XLAYER_RPC_URL | Required API runtime | HTTP(S) RPC; may contain a private provider credential; never reuse it as a public build input |
-| DEMAND_CONTRACT, PAYMENT_TOKEN | Required, public addresses | Nonzero valid EVM addresses on the intended market chain |
+| DEMAND_CONTRACT, PAYMENT_TOKEN | Required for market runtime, public addresses | Reviewed canonical contract and immutable token on the same chain; no experimental address fallback |
+| PAYMENT_TOKEN_SYMBOL, PAYMENT_TOKEN_DECIMALS | Public escrow metadata | USDC-first template; explicit decimals checked against token; independent of x402 billing |
+| CHAIN_NAME, CHAIN_EXPLORER_URL, CHAIN_NATIVE_NAME, CHAIN_NATIVE_SYMBOL, CHAIN_NATIVE_DECIMALS | Required for custom chains | Chain metadata bound to the deployment; use matching VITE_ inputs for browser builds |
 | DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Existing metadata; index rebuild reads current contract state |
 | X402_CHAIN_ID | Required API runtime | **Must be 196 in production containers**, independently of Testnet market 1952 |
 | X402_RPC_URL | API runtime, public default `https://rpc.xlayer.tech` | Bounded Mainnet receipt confirmation RPC; must return chain ID 196; a credential-bearing provider URL is private configuration; never use the market RPC |
@@ -56,7 +58,8 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | FRONTEND_ORIGIN | Required API runtime | Comma-separated exact browser origins including scheme/port |
 | PORT, HOST, NODE_ENV | Standalone Bun runtime | Compose fixes these to 8787, 0.0.0.0, production |
 | TRUSTED_PROXIES | Standalone runtime; empty by default | Explicit IP/CIDR allowlist; Compose trusts only Caddy's internal /32 |
-| VITE_CHAIN_ID, VITE_DEMAND_CONTRACT, VITE_PAYMENT_TOKEN | Public build inputs | Match the demand market, not the independent x402 rail |
+| VITE_CHAIN_ID, VITE_DEMAND_CONTRACT, VITE_PAYMENT_TOKEN, VITE_PAYMENT_TOKEN_SYMBOL, VITE_PAYMENT_TOKEN_DECIMALS | Public build inputs | Match the demand deployment; an unset canonical contract disables escrow actions |
+| VITE_VALIDATION_URL, VITE_VALIDATION_NETWORKS | Public build inputs | Public validator URL and approved comma-separated CAIP-2 networks; missing config disables builder submission |
 | VITE_XLAYER_RPC_URL | Required public build input | Browser-accessible RPC; no confidential provider credentials |
 | VITE_REOWN_PROJECT_ID | Required public build input | Your Reown project ID; allow your site origin in Reown |
 | VITE_MARKET_SYNC_INTERVAL_MS | Public build input, default 60000 | Existing browser synchronization setting |
@@ -65,7 +68,7 @@ VITE_* values are embedded in public JavaScript at build time: rebuild web after
 
 Docker host/daemon administrators can inspect runtime environment values. Docker is not a secret vault. Restrict file permissions, daemon/socket access, backups and log access. If credentials leak, revoke/rotate them through the provider, replace private configuration and recreate api; rotation is an operator action.
 
-The example uses Testnet demand state and Mainnet x402. It does not authorize payment. Testnet 1952 retains its existing challenge configuration, while durable paid acceptance is currently Mainnet-only; Compose preserves the production X402_CHAIN_ID=196 invariant.
+The template selects Testnet USDC and Mainnet x402 billing. The canonical AgentDemand address remains blank, so it is not an active market deployment. It does not authorize payment. Testnet 1952 retains its existing challenge configuration, while durable paid acceptance is currently Mainnet-only; Compose preserves the production X402_CHAIN_ID=196 invariant.
 
 Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`, unpaid requests retain the official 402 challenge, but submitted payment headers fail with `503 PAYMENT_STORAGE_UNAVAILABLE`; `/ready` also fails closed. Mainnet responses are released after the official facilitator reports strict success and `X402_RPC_URL` confirms a matching successful canonical L2 inclusion. This check does not wait for safe/finalized or L1 finality.
 
@@ -123,7 +126,7 @@ Validation, rate limiting and admission precede official x402. Rejected inputs r
 ## Health, smoke checks and logs
 
 - /live: cheap process liveness, no chain/payment call. Docker uses it to avoid restart loops on temporary RPC outages.
-- /health: preserves chain/contract verification and success fields, with short shared caching; checks chain ID, bytecode and latest block.
+- /health: preserves chain/contract verification and success fields, with short shared caching; checks chain ID, bytecode, immutable token, token decimals and latest block.
 - /ready: additionally checks configured durable storage and requires initialized payment middleware. It initiates no payment and does not promise future verify/settle success. Chain outages appear after the dependency cache expires.
 - The first data request warms the index under a single-flight promise. Readiness is dependency readiness, not proof a cold index fits its budget. Alert separately on INDEX_* failures.
 - Structured logs contain generated request IDs, registered method/route, status/duration and stable error codes. Application handlers omit raw bodies, payment headers, query strings and upstream exception text. The pinned official SDK lacks transport/log injection options: an async-local scope bounds its unchanged signed HTTP calls and replaces its warning/error diagnostics with a stable PAYMENT_SDK_DIAGNOSTIC record. Fetch and console calls outside that scope retain their original behavior.

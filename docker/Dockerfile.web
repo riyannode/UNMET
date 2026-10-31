@@ -5,13 +5,24 @@ COPY backend/package.json backend/package.json
 COPY frontend/package.json frontend/package.json
 RUN bun install --frozen-lockfile
 COPY frontend ./frontend
+COPY shared ./shared
+COPY docs/schemas/validation-response.json docs/schemas/validation-request.json ./docs/schemas/
 ARG VITE_CHAIN_ID=1952
 ARG VITE_XLAYER_RPC_URL
 ARG VITE_DEMAND_CONTRACT
 ARG VITE_PAYMENT_TOKEN
+ARG VITE_PAYMENT_TOKEN_SYMBOL
+ARG VITE_PAYMENT_TOKEN_DECIMALS
+ARG VITE_VALIDATION_URL
+ARG VITE_VALIDATION_NETWORKS
+ARG VITE_CHAIN_NAME
+ARG VITE_CHAIN_EXPLORER_URL
+ARG VITE_CHAIN_NATIVE_NAME
+ARG VITE_CHAIN_NATIVE_SYMBOL
+ARG VITE_CHAIN_NATIVE_DECIMALS
 ARG VITE_REOWN_PROJECT_ID
 ARG VITE_MARKET_SYNC_INTERVAL_MS=60000
-RUN test -n "$VITE_XLAYER_RPC_URL" && test -n "$VITE_DEMAND_CONTRACT" && test -n "$VITE_PAYMENT_TOKEN" && test -n "$VITE_REOWN_PROJECT_ID"
+RUN test -n "$VITE_XLAYER_RPC_URL" && test -n "$VITE_PAYMENT_TOKEN" && test -n "$VITE_PAYMENT_TOKEN_DECIMALS" && test -n "$VITE_REOWN_PROJECT_ID"
 RUN bun run --cwd frontend build
 
 FROM caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d AS runtime

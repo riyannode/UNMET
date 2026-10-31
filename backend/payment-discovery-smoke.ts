@@ -16,6 +16,7 @@ process.env.XLAYER_RPC_URL = "http://127.0.0.1:8545";
 process.env.CHAIN_ID = "1952";
 process.env.DEMAND_CONTRACT = "0x3333333333333333333333333333333333333333";
 process.env.PAYMENT_TOKEN = "0x4444444444444444444444444444444444444444";
+process.env.PAYMENT_TOKEN_DECIMALS = "6";
 process.env.X402_CHAIN_ID = "196";
 const storageDirectory = mkdtempSync(join(tmpdir(), "payment-discovery-smoke-"));
 const databasePath = join(storageDirectory, "payments.sqlite");

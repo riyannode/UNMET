@@ -75,7 +75,7 @@ describe("guided demand answers", () => {
       maxPrice: "0.02",
       expectedCalls: "1000",
     });
-    expect(parsePriceUsageAnswer("0.02 USD₮0 per call; expect 1,000 calls total")).toEqual({
+    expect(parsePriceUsageAnswer("0.02 USDC per call; expect 1,000 calls total")).toEqual({
       kind: "complete",
       maxPrice: "0.02",
       expectedCalls: "1000",
@@ -90,7 +90,7 @@ describe("guided demand answers", () => {
     expect(() => parseExpectedCallsAnswer("")).toThrow("positive whole number");
     expect(() => parseExpectedCallsAnswer("1.5")).toThrow("positive whole number");
     expect(() => parseExpectedCallsAnswer("0")).toThrow("positive whole number");
-    expect(formatPriceUsage("0.02", "1000")).toBe("0.02 USD₮0 per call; 1,000 calls total");
+    expect(formatPriceUsage("0.02", "1000")).toBe("0.02 USDC per call; 1,000 calls total");
   });
 
   test("asks for a missing maximum price when usage is explicit", () => {
@@ -104,11 +104,11 @@ describe("guided demand answers", () => {
   test("rejects unsupported or non-exact prices instead of rounding", () => {
     expect(() => parsePriceUsageAnswer("around twenty dollars")).toThrow("maximum price per call");
     expect(() => parsePriceUsageAnswer("0.0000001 per call; expect 3 calls")).toThrow("6 decimal places");
-    expect(() => parsePriceUsageAnswer("$1 per 3 calls; expect 3 calls")).toThrow("exact USD₮0 unit price");
+    expect(() => parsePriceUsageAnswer("$1 per 3 calls; expect 3 calls")).toThrow("exact USDC unit price");
   });
 
   test("validates positive escrow amounts and existing deadline bounds", () => {
-    expect(parseCommitmentAnswer("20 USD₮0")).toBe("20");
+    expect(parseCommitmentAnswer("20 USDC")).toBe("20");
     expect(() => parseCommitmentAnswer("0")).toThrow("greater than zero");
     expect(() => parseCommitmentAnswer("1.0000001")).toThrow("6 decimal places");
     expect(parseDeadlineAnswer("14 days")).toBe("14");
@@ -155,9 +155,9 @@ describe("guided demand answers", () => {
     ]);
     expect(rows[0]?.value).toBe("Vendor KYB API");
     expect(rows[0]?.detail).toBe("Canonical capability: vendor-kyb-api");
-    expect(rows[2]?.value).toBe("0.02 USD₮0 per call");
+    expect(rows[2]?.value).toBe("0.02 USDC per call");
     expect(rows[3]?.value).toBe("1,000 calls");
-    expect(rows[4]?.value).toBe("20 USD₮0");
+    expect(rows[4]?.value).toBe("20 USDC");
     expect(rows[5]?.detail).toContain("estimate");
   });
 });

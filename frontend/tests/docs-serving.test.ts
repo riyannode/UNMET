@@ -227,6 +227,16 @@ describe("Vite documentation MPA", () => {
   test("keeps consumer API constraints and future status visible", async () => {
     const api = await readFile(path.join(directory, "docs/api/intelligence/index.html"), "utf8");
     const schema = JSON.parse(await readFile(path.join(directory, "openapi.json"), "utf8"));
+    for (const name of ["DemandsResponse", "OpportunitiesResponse"]) {
+      const response = schema.components.schemas[name];
+      expect(response.required).toContain("escrowToken");
+      expect(response.properties.escrowToken.$ref).toBe("#/components/schemas/EscrowToken");
+    }
+    expect(schema.components.schemas.EscrowToken.required).toEqual(["address", "symbol", "decimals"]);
+    expect(schema.components.schemas.EscrowToken.properties.decimals).toMatchObject({ minimum: 0, maximum: 255 });
+    const bountyPattern = new RegExp(schema.components.schemas.OpportunityQuery.properties.minBounty.pattern);
+    expect(bountyPattern.test("1.12345678")).toBe(true);
+    expect(bountyPattern.test("1.")).toBe(false);
     for (const field of Object.keys(schema.components.schemas.OpportunityQuery.properties)) expect(api).toContain(field);
     for (const sort of schema.components.schemas.OpportunityQuery.properties.sort.enum) expect(api).toContain(sort);
     for (const value of ["32 KiB", "4,294,967,295", "1 to 50", "scoreBreakdown", "economicSignals", "reasoning"]) expect(api).toContain(value);

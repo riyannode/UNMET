@@ -1,22 +1,22 @@
 import { createAppKit } from "@reown/appkit/react";
 import { defineChain } from "@reown/appkit/networks";
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
-import { CHAIN_ID, RPC_URL, targetChain } from "./contract.ts";
+import { CHAIN_ID, RPC_URL, selectedDeployment, targetChain } from "./contract.ts";
 import { getThemeSnapshot } from "./theme.ts";
 
 const projectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 
 const xLayerNetwork = defineChain({
-  id: CHAIN_ID,
-  caipNetworkId: `eip155:${CHAIN_ID}`,
+  id: selectedDeployment?.chainId ?? CHAIN_ID,
+  caipNetworkId: `eip155:${selectedDeployment?.chainId ?? CHAIN_ID}`,
   chainNamespace: "eip155",
-  name: targetChain.name,
-  nativeCurrency: targetChain.nativeCurrency,
-  rpcUrls: { default: { http: [RPC_URL] } },
+  name: selectedDeployment?.chain.name ?? targetChain.name,
+  nativeCurrency: selectedDeployment?.chain.nativeCurrency ?? targetChain.nativeCurrency,
+  rpcUrls: { default: { http: [selectedDeployment?.rpcUrl ?? RPC_URL] } },
   blockExplorers: {
     default: {
       name: targetChain.blockExplorers.default.name,
-      url: targetChain.blockExplorers.default.url,
+      url: selectedDeployment?.chain.explorerUrl ?? targetChain.blockExplorers.default.url,
     },
   },
 });

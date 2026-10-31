@@ -123,7 +123,13 @@ export async function isSnapshotCanonical(url: string, snapshot: RpcBlock): Prom
   return BigInt(canonical.number) === BigInt(snapshot.number) && canonical.hash.toLowerCase() === snapshot.hash.toLowerCase();
 }
 
-export async function initializeValidationService(config: ValidationConfig, inspectOverride?: ReturnType<typeof createValidationTransport>) {
+export async function initializeValidationService(config: ValidationConfig, inspectOverride?: ReturnType<typeof createValidationTransport>, allowedOrigins: string[] = []) {
+  const origins = new Set(allowedOrigins.map((origin) => {
+    let url: URL;
+    try { url = new URL(origin); } catch { throw new Error("CONFIG_INVALID: VALIDATION_ALLOWED_ORIGINS"); }
+    if (!["http:", "https:"].includes(url.protocol) || url.origin !== origin) throw new Error("CONFIG_INVALID: VALIDATION_ALLOWED_ORIGINS");
+    return origin;
+  }));
   for (const deployment of config.deployments) for (const profile of deployment.paymentProfiles) {
     if (!profile.enabled) continue;
     await chain(profile.paymentRpcUrl, profile.network.slice(7));
@@ -136,7 +142,7 @@ export async function initializeValidationService(config: ValidationConfig, insp
   }
   const inspect = inspectOverride ?? createValidationTransport({managementAddresses:config.managementAddresses});
   let active = 0;
-  return async (request: Request): Promise<Response> => {
+  const handle = async (request: Request): Promise<Response> => {
     const respond = (status: "FAIL" | "UNAVAILABLE", code: string) => Response.json({
       status, code,
       message: status === "FAIL" ? "Validation failed" : "Validation service unavailable",
@@ -213,12 +219,24 @@ export async function initializeValidationService(config: ValidationConfig, insp
       return respond("UNAVAILABLE","INTERNAL_UNAVAILABLE");
     } finally { active--; }
   };
+  return async (request: Request): Promise<Response> => {
+    const origin = request.headers.get("origin");
+    const allowed = origin !== null && origins.has(origin);
+    if (request.method === "OPTIONS" && new URL(request.url).pathname === "/v1/x402/validate") {
+      if (!allowed || request.headers.get("access-control-request-method") !== "POST" ||
+          (request.headers.get("access-control-request-headers") || "").split(",").some((header) => header.trim() && header.trim().toLowerCase() !== "content-type")) return new Response(null, { status: 403 });
+      return new Response(null, { status: 204, headers: { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", vary: "Origin" } });
+    }
+    const response = await handle(request);
+    if (allowed) { response.headers.set("access-control-allow-origin", origin); response.headers.append("vary", "Origin"); }
+    return response;
+  };
 }
 
 if (import.meta.main) {
   const path = process.env.VALIDATION_CONFIG_PATH;
   if (!path) throw new Error("VALIDATION_CONFIG_PATH_REQUIRED");
   const config = parseValidationConfig(readFileSync(path));
-  const handler = await initializeValidationService(config);
+  const handler = await initializeValidationService(config, undefined, (process.env.VALIDATION_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean));
   Bun.serve({hostname:"127.0.0.1",port:3001,maxRequestBodySize:32769,idleTimeout:10,fetch:handler});
 }

@@ -1,5 +1,5 @@
 import { normalizeCapability } from "./capability";
-import { formatUsd0, parseUsd0 } from "./contract";
+import { ESCROW_DECIMALS, ESCROW_SYMBOL, formatTokenAmount, parseTokenAmount } from "./contract";
 
 export type CreateDemandAnswers = {
   capability: string;
@@ -78,13 +78,13 @@ export function parseSpecificationAnswer(value: string): string {
 
 export function parsePriceUsageAnswer(value: string): PricingAnswer {
   const text = value.trim();
-  if (!text) throw new Error("Enter the maximum USD₮0 price for one call and the total number of calls you expect");
+  if (!text) throw new Error(`Enter the maximum ${ESCROW_SYMBOL} price for one call and the total number of calls you expect`);
 
   const maxPrice = parsePricePerCall(text);
   const expectedCalls = parseExpectedCallsFromText(text);
 
   if (maxPrice === null && expectedCalls === null) {
-    throw new Error("Enter both values: a maximum price per call in USD₮0 and the total number of calls you expect");
+    throw new Error(`Enter both values: a maximum price per call in ${ESCROW_SYMBOL} and the total number of calls you expect`);
   }
   if (maxPrice === null) return { kind: "missing", field: "maxPrice", expectedCalls: expectedCalls! };
   if (expectedCalls === null) return { kind: "missing", field: "expectedCalls", maxPrice };
@@ -188,15 +188,15 @@ export function buildReviewRows(answers: CreateDemandAnswers, now = Date.now()):
   return [
     { label: "Service", value: answers.capabilityLabel || answers.capability, detail: `Canonical capability: ${answers.capability}` },
     { label: "Specification", value: answers.specification },
-    { label: "Max price", value: `${answers.maxPrice} USD₮0 per call` },
+    { label: "Max price", value: `${answers.maxPrice} ${ESCROW_SYMBOL} per call` },
     { label: "Expected usage", value: `${formatCount(BigInt(answers.expectedCalls))} calls` },
-    { label: "Initial escrow", value: `${answers.commitment} USD₮0` },
+    { label: "Initial escrow", value: `${answers.commitment} ${ESCROW_SYMBOL}` },
     { label: "Deadline", value: `${answers.deadlineDays} days`, detail: `Estimated target: ${estimate}. This is an estimate until included onchain` },
   ];
 }
 
 export function formatPriceUsage(maxPrice: string, expectedCalls: string): string {
-  return `${maxPrice} USD₮0 per call; ${formatCount(BigInt(expectedCalls))} calls total`;
+  return `${maxPrice} ${ESCROW_SYMBOL} per call; ${formatCount(BigInt(expectedCalls))} calls total`;
 }
 
 export function resolveUniqueCreatedDemandId(
@@ -218,8 +218,9 @@ export function resolveUniqueCreatedDemandId(
 }
 
 function parsePricePerCall(text: string): string | null {
-  const labeled = [...text.matchAll(/(?:max(?:imum)?\s+)?(?:unit\s+)?price(?:\s+per\s+call)?\s*[:=]\s*(?:\$|USD₮0\s*|USDT0\s*|USD\s*)?((?:[0-9]+(?:,[0-9]{3})*|[0-9]+)(?:\.[0-9]+)?)/gi)];
-  const pattern = new RegExp(`(?:\\$|USD₮0\\s*|USDT0\\s*|USD\\s*)?(${NUMBER})\\s*(?:USD₮0\\s*|USDT0\\s*|USD\\s*)?(?:per\\s*(${INTEGER})?\\s*(?:calls?|requests?)|/\\s*(${INTEGER})?\\s*(?:calls?|requests?))`, "gi");
+  const symbol = ESCROW_SYMBOL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const labeled = [...text.matchAll(new RegExp(`(?:max(?:imum)?\\s+)?(?:unit\\s+)?price(?:\\s+per\\s+call)?\\s*[:=]\\s*(?:\\$|${symbol}\\s*)?(${NUMBER})`, "gi"))];
+  const pattern = new RegExp(`(?:\\$|${symbol}\\s*)?(${NUMBER})\\s*(?:${symbol}\\s*)?(?:per\\s*(${INTEGER})?\\s*(?:calls?|requests?)|/\\s*(${INTEGER})?\\s*(?:calls?|requests?))`, "gi");
   const unitPrices = labeled.map((match) => ({ amount: match[1]!, divisor: "1" }));
   if (unitPrices.length === 0) {
     for (const match of text.matchAll(pattern)) {
@@ -235,7 +236,7 @@ function parsePricePerCall(text: string): string | null {
   const calls = parseInteger(divisor, "Price divisor");
   const unit = total / calls;
   if (unit <= 0n || total % calls !== 0n) {
-    throw new Error("Use an exact USD₮0 unit price that can be represented with 6 decimal places");
+    throw new Error(`Use an exact ${ESCROW_SYMBOL} unit price that can be represented with ${ESCROW_DECIMALS} decimal places`);
   }
   if (unit > UINT96_MAX) throw new Error("The maximum price is above the contract limit");
   return formatAmount(unit);
@@ -266,17 +267,16 @@ function parseExpectedCalls(value: string): string {
 }
 
 function parseAmount(value: string, field: string): bigint {
-  const text = value.trim()
-    .replace(/^(?:\$|USD₮0|USDT0|USD)\s*/i, "")
-    .replace(/\s*(?:USD₮0|USDT0|USD)$/i, "");
-  const invalid = "Enter a valid " + field.toLowerCase() + " amount with up to 6 decimal places";
+  const symbol = ESCROW_SYMBOL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const text = value.trim().replace(new RegExp(`^(?:\\$|${symbol})\\s*`, "i"), "").replace(new RegExp(`\\s*${symbol}$`, "i"), "");
+  const invalid = `Enter a valid ${field.toLowerCase()} amount with up to ${ESCROW_DECIMALS} decimal places`;
   if (!text) throw new Error("Enter a " + field.toLowerCase() + " greater than zero");
   if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(text)) throw new Error(invalid);
   const fraction = text.split(".")[1];
-  if (fraction && fraction.length > 6) throw new Error(field + " supports up to 6 decimal places");
+  if (fraction && fraction.length > ESCROW_DECIMALS) throw new Error(`${field} supports up to ${ESCROW_DECIMALS} decimal places`);
   let amount: bigint;
   try {
-    amount = parseUsd0(text.replaceAll(",", ""));
+    amount = parseTokenAmount(text.replaceAll(",", ""));
   } catch {
     throw new Error(invalid);
   }
@@ -285,7 +285,7 @@ function parseAmount(value: string, field: string): bigint {
   return amount;
 }
 function formatAmount(amount: bigint): string {
-  return formatUsd0(amount);
+  return formatTokenAmount(amount);
 }
 
 function parseInteger(value: string, label: string): bigint {

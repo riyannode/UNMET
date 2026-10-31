@@ -377,3 +377,16 @@ test("isolated import does not mutate globals or require payment credentials", (
   const result = Bun.spawnSync([process.execPath,"-e",`const f=globalThis.fetch, l=console.log, w=console.warn, e=console.error; await import(${JSON.stringify(new URL("./validation-service.ts",import.meta.url).href)}); if(f!==globalThis.fetch || l!==console.log || w!==console.warn || e!==console.error) process.exit(2)`],{env,stdout:"pipe",stderr:"pipe"});
   expect(result.exitCode).toBe(0);
 });
+
+
+test("validator CORS permits only configured origins and JSON POST preflights", async () => {
+  const handler = await initializeValidationService({ maxInFlight: 1, managementAddresses: [], deployments: [], signerSocketPath: "/tmp/unused", signerAuthTokenPath: "/tmp/unused" }, undefined, ["https://app.example"]);
+  const preflight = (origin: string, headers = "content-type") => handler(new Request("http://localhost/v1/x402/validate", { method: "OPTIONS", headers: { origin, "access-control-request-method": "POST", "access-control-request-headers": headers } }));
+  const allowed = await preflight("https://app.example");
+  expect(allowed.status).toBe(204);
+  expect(allowed.headers.get("access-control-allow-origin")).toBe("https://app.example");
+  expect((await preflight("https://other.example")).status).toBe(403);
+  expect((await preflight("https://app.example", "authorization")).status).toBe(403);
+  const result = await handler(new Request("http://localhost/v1/x402/validate", { method: "POST", headers: { origin: "https://app.example", "content-type": "application/json" }, body: "{}" }));
+  expect(result.headers.get("access-control-allow-origin")).toBe("https://app.example");
+});

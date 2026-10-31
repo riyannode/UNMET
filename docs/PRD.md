@@ -45,7 +45,7 @@ A funded demand signal is stronger than a poll, Discord request, failed search, 
 ## Users
 
 ### Requester/supporter agent
-Creates a missing capability or joins an existing one with test USD₮0 on X Layer Testnet (`1952`) and expected usage.
+Creates or supports a capability with the selected deployment's escrow token and expected usage. The current product is USDC-first on X Layer Testnet (`1952`); the canonical contract must be separately deployed before writes are available.
 
 ### Builder
 Finds funded gaps and produces a reusable service matching the requirement.
@@ -62,7 +62,7 @@ A public funded demand record contains:
 - expected calls
 - deadline
 - supporting wallet count
-- committed Testnet escrow bounty (USD₮0)
+- committed escrow bounty (configured USDC deployment)
 - candidate service/evidence when submitted
 - fixed review threshold
 - lifecycle state
@@ -71,16 +71,16 @@ The system must say “supporting wallets,” not “unique users.”
 
 ## Economics
 
-The repository CLI baseline configures a `2%` fee, `60%` quorum and 24-hour review period; these are source defaults, not a fresh deployed-value readback.
+The example below uses a `2%` fee and `60%` quorum. Deployment plans require explicit economic parameters; these values do not describe a deployed contract.
 
 Example:
 
 ```text
-100 USD₮0 in the review snapshot
-60 USD₮0 explicitly approved
-58.8 USD₮0 -> builder
- 1.2 USD₮0 -> UNMET treasury
-40 USD₮0 from non-approvers -> remains refundable
+100 USDC in the review snapshot
+60 USDC explicitly approved
+58.8 USDC -> builder
+ 1.2 USDC -> UNMET treasury
+40 USDC from non-approvers -> remains refundable
 ```
 
 These are illustrative Testnet values, not deployment readback.
@@ -97,7 +97,7 @@ Secondary revenue: paid `POST /v1/opportunities`, protected with official OKX x4
 
 No offchain escrow/demand database. Self-hosted `bun:sqlite` persists operational x402 idempotency and settlement records; it does not replace contract state. See [Payment recovery](PAYMENT_RECOVERY.md).
 
-Current economic state: configured onchain escrow. Canonical repository source: `AgentDemand.sol`; existing consumers await canonical contract integration (see [Architecture](ARCHITECTURE.md#canonical-attestation)).
+Current economic state: configured onchain escrow. Canonical repository source: `AgentDemand.sol`; frontend/backend consumers use the canonical attestation interface (see [Architecture](ARCHITECTURE.md#canonical-attestation)).
 History: contract events.  
 Backend: disposable derived index.  
 Frontend: display/session state only.
@@ -203,7 +203,7 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- Routes: / is the standalone landing page; /market, /market/:demandId, /create-demand, and /analytics share the application shell. /docs serves the Vite MPA public API document at frontend/docs/index.html.
+- Routes: / is the standalone landing page; /market, /market/:chainId/:contract/:demandId, /create-demand, and /analytics share the application shell. /docs serves the Vite MPA public API document at frontend/docs/index.html.
 - Global navigation: **Explore Market**, **Create Demand**, and **Analytics**; Demand Details keeps **Explore Market** active.
 - Selecting a market request from **Market Requests** or **Analytics** opens its dedicated Demand view; the back action returns to the originating view.
 - Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).

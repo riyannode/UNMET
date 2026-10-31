@@ -22,6 +22,9 @@ import type { PaymentRecord } from "./payment-store.ts";
 const payer: Address = "0x2222222222222222222222222222222222222222", recipient: Address = "0x1111111111111111111111111111111111111111";
 const asset: Address = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
 const hash: Hex = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const fixtureContract = "0x0000000000000000000000000000000000000001" as const;
+const fixtureToken = "0x4444444444444444444444444444444444444444" as const;
+const fixtureDeployment = { chainId: 1952, contract: fixtureContract, rpcUrl: "https://example.org", deployBlock: 0n, chain: { name: "Test", explorerUrl: "https://example.org", nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 } }, escrowToken: { address: fixtureToken, symbol: "USDC", decimals: 6 } };
 const marketNowMs = 1_700_000_000_000;
 const requirements: PaymentRequirements = {
   scheme: "exact", network: "eip155:196", asset, amount: "10000", payTo: recipient,
@@ -39,6 +42,7 @@ function payload(nonce = "a", accepted: PaymentRequirements = requirements): Pay
 function nonemptyMarket() {
   const state = createDemandIndexState();
   state.ready = true;
+  state.deploymentKey = `1952:${fixtureContract}`;
   state.lastIndexedBlock = 42n;
   for (const id of [1n, 2n]) state.entries.set(id.toString(), {
     demandId: id,
@@ -108,11 +112,11 @@ async function fixture(run: (ctx: {
     next(error);
   }));
   let marketReadCount = 0;
-  const client = { getBlock: async () => { marketReadCount++; return { number: 1n, hash }; },
-    readContract: async () => { marketReadCount++; return 1n; } } as unknown as PublicClient;
+  const client = { getChainId: async () => 1952, getBytecode: async () => "0x1234", getBlockNumber: async () => 1n, getBlock: async () => { marketReadCount++; return { number: 1n, hash }; },
+    readContract: async ({ functionName }: { functionName: string }) => { if (functionName === "token") return fixtureToken; if (functionName === "decimals") return 6; marketReadCount++; return 1n; } } as unknown as PublicClient;
   const app = createApp({ middleware }, {
     config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1000" }), client,
-    market: { ...loadConfig(), contract: "0x0000000000000000000000000000000000000001" }, indexState: options.indexState, now: options.now,
+    market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment }, indexState: options.indexState, now: options.now,
   });
   const server = app.listen(0, "127.0.0.1"), address = server.address();
   if (!address || typeof address === "string") throw new Error();
@@ -170,6 +174,7 @@ test("official unpaid challenge over nonempty market never reveals paid response
 test("confirmed paid responses include full intelligence for each supported asset", async () => {
   const indexState = createDemandIndexState();
   indexState.ready = true;
+  indexState.deploymentKey = `1952:${fixtureContract}`;
   indexState.lastIndexedBlock = 42n;
   for (const id of [1n, 2n, 3n]) {
     indexState.entries.set(id.toString(), {

@@ -1,20 +1,8 @@
 import { hashTypedData, keccak256, recoverAddress, stringToHex, type Address, type Hex } from "viem";
 import type { ParsedValidationRequest } from "./validation-evaluator";
 
-export const authorizationTypes = { BuilderValidationAuthorization: [
-  {name:"demandId",type:"uint256"},{name:"builderWallet",type:"address"},
-  {name:"serviceUrlHash",type:"bytes32"},{name:"evidenceHash",type:"bytes32"},
-  {name:"requestHash",type:"bytes32"},{name:"paymentNetworkHash",type:"bytes32"},
-  {name:"authorizedPayTo",type:"address"},{name:"submissionNonce",type:"uint256"},
-  {name:"issuedAt",type:"uint64"},{name:"expiresAt",type:"uint64"},
-] } as const;
-export const attestationTypes = { ValidationAttestation: [
-  {name:"escrowChainId",type:"uint256"},{name:"verifyingContract",type:"address"},
-  {name:"demandId",type:"uint256"},{name:"builderWallet",type:"address"},
-  {name:"serviceUrlHash",type:"bytes32"},{name:"evidenceHash",type:"bytes32"},
-  {name:"paymentRequirementsHash",type:"bytes32"},{name:"submissionNonce",type:"uint256"},
-  {name:"validationPolicyId",type:"bytes32"},{name:"issuedAt",type:"uint64"},{name:"expiresAt",type:"uint64"},
-] } as const;
+import { authorizationTypes, attestationTypes } from "../shared/validation-types.ts";
+export { authorizationTypes, attestationTypes } from "../shared/validation-types.ts";
 export type Attestation = { escrowChainId:string; verifyingContract:string; demandId:string; builderWallet:string; serviceUrlHash:string; evidenceHash:string; paymentRequirementsHash:string; submissionNonce:string; validationPolicyId:string; issuedAt:string; expiresAt:string };
 export const domain = (chain: string, contract: string) => ({name:"UNMET AgentDemand",version:"2",chainId:BigInt(chain),verifyingContract:contract as Address} as const);
 export function authorizationDigest(parsed: ParsedValidationRequest): Hex {

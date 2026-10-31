@@ -21,7 +21,7 @@ const rewriteDocumentPath = (development: boolean): Connect.NextHandleFunction =
     response.end(request.method === "HEAD" ? "" : "Documentation page not found");
     return;
   } else if (request.headers.accept?.includes("text/html")
-    && /^\/(?:market(?:\/[^/]+)?|create-demand|analytics)\/?$/.test(pathname)) {
+    && /^\/(?:market(?:\/[^/]+\/[^/]+\/[^/]+)?|create-demand|analytics)\/?$/.test(pathname)) {
     // /analytics would otherwise resolve analytics.ts before Vite's SPA fallback.
     request.url = "/index.html" + (queryIndex === -1 ? "" : url.slice(queryIndex));
   }

@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Link } from "react-router";
 import { ROUTES } from "./routing.ts";
+import { ESCROW_SYMBOL } from "./escrow-metadata.ts";
 import "./unmet-how-it-works.css";
 
 const steps = [
@@ -9,13 +10,13 @@ const steps = [
     number: "01",
     title: "Create a Funded Request",
     description:
-      "Describe the AI capability you need, set your requirements, and deposit USD₮0 to fund the request",
+      `Describe the AI capability you need, set your requirements, and deposit ${ESCROW_SYMBOL} to fund the request`,
   },
   {
     number: "02",
     title: "Back the Request",
     description:
-      "Other supporters add USD₮0 to the same request, increasing the total funding visible to builders",
+      `Other supporters add ${ESCROW_SYMBOL} to the same request, increasing the total funding visible to builders`,
   },
   {
     number: "03",

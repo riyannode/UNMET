@@ -53,7 +53,7 @@ Contract tests must cover at minimum:
 - pull refunds and double-refund prevention
 - token accounting invariant
 
-Canonical deployment tooling is disabled until G0.5. Future contract deployment and signed-payment procedures require separate explicit authorization. They are not contributor smoke checks. Use [CONTRIBUTING](../CONTRIBUTING.md) for local environment loading, offline checks and Docker validation; use [SELF_HOSTING](SELF_HOSTING.md) and [PAYMENT_RECOVERY](PAYMENT_RECOVERY.md) for current Compose operations.
+Deployment broadcasts remain disabled. Contract deployment and signed-payment procedures require separate explicit authorization. They are not contributor smoke checks. Use [CONTRIBUTING](../CONTRIBUTING.md) for local environment loading, offline checks and Docker validation; use [SELF_HOSTING](SELF_HOSTING.md) and [PAYMENT_RECOVERY](PAYMENT_RECOVERY.md) for current Compose operations.
 
 ## 4. X Layer Testnet
 
@@ -71,11 +71,11 @@ The currently documented buyer example expects test USD₮0, but the live Mock M
 
 ### 4.2 Canonical AgentDemand deployment is disabled
 
-Canonical AgentDemand deployment tooling is disabled and deferred to G0.5. No current repository command may deploy canonical AgentDemand. Any future deployment still requires separate owner authorization.
+No current repository command deploys canonical AgentDemand. Any future deployment still requires separate owner authorization.
 
-`backend/admin.ts deploy-testnet` and `backend/admin.ts deploy-mainnet` terminate locally with `DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5`. `ALLOW_MAINNET_DEPLOY=1` does not enable deployment. The obsolete six-argument deployment flow has been removed; no replacement procedure is provided here.
+`backend/admin.ts deploy-testnet` and `backend/admin.ts deploy-mainnet` terminate locally with `DEPLOYMENT_TOOLING_UNAVAILABLE: AgentDemand deployment broadcast requires separate owner authorization`. `ALLOW_MAINNET_DEPLOY=1` does not enable deployment. The obsolete six-argument deployment flow has been removed.
 
-Read-only inspection of an already configured deployment remains available.
+The offline `plan` command validates the canonical eight constructor arguments without a key, network call or transaction. Configure `PAYMENT_TOKEN`, `DEMAND_TREASURY`, `DEMAND_FEE_BPS`, `DEMAND_QUORUM_BPS`, `DEMAND_MIN_COMMITMENT` (atomic units), `DEMAND_REVIEW_PERIOD` (seconds), `DEMAND_VERIFIER`, and `DEMAND_VERIFIER_ADMIN`, then run `bun run backend/admin.ts plan`. The read-only `inspect` command checks the configured chain, contract code, immutable token and decimals, plus every planned constructor parameter. Configure `DEMAND_CONTRACT`, `PAYMENT_TOKEN_DECIMALS`, and the chain RPC before inspection.
 
 Inspect:
 
@@ -153,7 +153,7 @@ Second request must produce the official x402 HTTP 402 challenge. A paid accepta
 
 There is no demo-payment bypass. If facilitator credentials are unavailable, payment verification is **incomplete**, not passed.
 
-Network separation: `CHAIN_ID=1952` and `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c` keep the UNMET demand market on X Layer Testnet. Only `POST /v1/opportunities` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The application advertises three ordered native EIP-3009 exact Mainnet offers: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`). Each costs `10000` atomic units (6 decimals) and uses `OKX_PAY_TO`. Nonproduction `X402_CHAIN_ID=1952` may be used to inspect its existing Testnet challenge, but durable paid acceptance is Mainnet-only. Never change `CHAIN_ID` to move the billing rail.
+Network separation: `CHAIN_ID=1952` selects X Layer Testnet by default; the demand market remains unavailable until a reviewed canonical contract, token address and decimals are supplied. Only `POST /v1/opportunities` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The application advertises three ordered native EIP-3009 exact Mainnet offers: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`). Each costs `10000` atomic units (6 decimals) and uses `OKX_PAY_TO`. Nonproduction `X402_CHAIN_ID=1952` may be used to inspect its existing Testnet challenge, but durable paid acceptance is Mainnet-only. Never change `CHAIN_ID` to move the billing rail.
 
 Do not sign or replay the current production mainnet challenge as part of smoke verification. Unpaid `402` verification does not spend funds. A paid mainnet replay needs separate authorization and a receipt-based check.
 
@@ -194,7 +194,7 @@ For payment incidents, follow [Payment recovery](PAYMENT_RECOVERY.md). Preserve 
 Mainnet is chain `196`; its USD₮0 address is:
 `0x779ded0c9e1022225f8e0630b35a9b54be713736`.
 
-Production x402 billing is configured for this network, but that does **not** move the demand market or authorize a mainnet contract deployment, and does not imply a current public deployment or OKX.AI listing approval. Keep core `CHAIN_ID=1952`, `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, the existing contract, and frontend chain on Testnet. A future demand-market migration requires its own explicit scope, authorization, and full verification. Canonical deployment tooling remains disabled until G0.5; no current repository command may deploy canonical AgentDemand on Mainnet. The disabled `deploy-mainnet` command still rejects when `ALLOW_MAINNET_DEPLOY=1`.
+Production x402 billing is configured for this network, but that does **not** move the demand market or authorize a mainnet contract deployment, and does not imply a current public deployment or OKX.AI listing approval. Keep the default market chain on Testnet until a separately authorized deployment is configured. A future demand-market migration requires its own explicit scope, authorization, and full verification. Deployment broadcasts remain disabled; no current repository command may deploy canonical AgentDemand on Mainnet. The disabled `deploy-mainnet` command still rejects when `ALLOW_MAINNET_DEPLOY=1`.
 
 ## 10. Incident behavior
 
@@ -212,3 +212,5 @@ Facilitator unavailable:
 
 Frontend unavailable:
 - contract remains usable directly; no funds depend on frontend availability
+
+For browser access to the separately hosted validator, configure its `VALIDATION_ALLOWED_ORIGINS` as a comma-separated list of exact application origins. It permits only JSON POST preflights for those origins. This does not expose the loopback listener directly; a separately configured TLS reverse proxy is required.

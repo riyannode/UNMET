@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { encodeEventTopics, type Address, type PublicClient } from "viem";
+import { encodeEventTopics, toFunctionSelector, toEventSelector, type Address, type PublicClient } from "viem";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-core/server";
 import { paymentMiddleware } from "@okxweb3/x402-express";
@@ -15,6 +15,7 @@ const demandContract = "0x7c51457235cFFBae862493D788137BFf1EF07e2E" as Address;
 const hashA = `0x${"a".repeat(64)}` as `0x${string}`;
 const hashB = `0x${"b".repeat(64)}` as `0x${string}`;
 const marketToken: Address = "0x4444444444444444444444444444444444444444";
+const marketDeployment = { chainId: 1952, contract: demandContract, rpcUrl: "https://testrpc.xlayer.tech/terigon", deployBlock: 0n, chain: { name: "X Layer Testnet", explorerUrl: "https://example.org", nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 } }, escrowToken: { address: marketToken, symbol: "USDC", decimals: 6 } };
 const fixedNow = 1_700_000_000_000;
 
 function syntheticEntry(id: bigint, overrides: Partial<DemandTuple> & Partial<Pick<IndexEntry, "approvalWeight" | "approvalRequired" | "quorumReached" | "rejectionWeight" | "rejectionThreshold" | "candidateRejected">> = {}): IndexEntry {
@@ -34,13 +35,14 @@ function syntheticEntry(id: bigint, overrides: Partial<DemandTuple> & Partial<Pi
 async function routeFixture(entries: IndexEntry[], run: (url: string, marketCalls: () => number) => Promise<void>) {
   const state = createDemandIndexState();
   state.ready = true;
+  state.deploymentKey = `1952:${demandContract.toLowerCase()}`;
   state.lastIndexedBlock = 42n;
   for (const entry of entries) state.entries.set(entry.demandId.toString(), entry);
   let marketCalls = 0;
   const client = fakeClient({ getBlock: () => { marketCalls++; return { number: 42n, hash: hashA }; }, readContract: () => { marketCalls++; return 0n; } });
   const server = createApp({ middleware: (_req, _res, next) => next() }, {
     config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_OPPORTUNITIES: "1000" }),
-    market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken }, client,
+    market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment }, client,
     indexState: state, now: () => fixedNow,
   }).listen(0, "127.0.0.1");
   const address = server.address();
@@ -92,9 +94,12 @@ function fakeClient(overrides: {
   readContract?: (functionName: string) => unknown | Promise<unknown>;
 } = {}): PublicClient {
   return {
+    getChainId: async () => 1952,
+    getBytecode: async () => "0x1234",
+    getBlockNumber: async () => 42n,
     getLogs: async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => await overrides.getLogs?.(fromBlock, toBlock) ?? [],
     getBlock: async (args?: { blockNumber?: bigint }) => await overrides.getBlock?.(args?.blockNumber) ?? { number: 0n, hash: hashA },
-    readContract: async ({ functionName }: { functionName: string }) => await overrides.readContract?.(functionName),
+    readContract: async ({ functionName }: { functionName: string }) => functionName === "token" ? marketToken : functionName === "decimals" ? 6 : await overrides.readContract?.(functionName),
   } as unknown as PublicClient;
 }
 
@@ -162,7 +167,7 @@ describe("bounded demand log indexing", () => {
       readContract: (functionName) => functionName === "nextDemandId" ? 1n : undefined,
     });
 
-    await refreshIndex(client, testContract, state);
+    await refreshIndex(client, { ...marketDeployment, contract: testContract }, state);
 
     expect(requests).toEqual([[101n, 200n], [201n, 251n]]);
     expect(state.lastIndexedBlock).toBe(251n);
@@ -205,7 +210,7 @@ describe("bounded demand log indexing", () => {
       },
     });
 
-    await refreshIndex(client, testContract, state);
+    await refreshIndex(client, { ...marketDeployment, contract: testContract }, state);
 
     expect(logCalls).toBe(0);
     expect(state.entries.has("99")).toBe(false);
@@ -248,6 +253,7 @@ describe("free and paid discovery responses", () => {
   test("API discovery links preserve synthetic x402 challenge and settlement headers", async () => {
     const indexState = createDemandIndexState();
     indexState.ready = true;
+    indexState.deploymentKey = `1952:${demandContract.toLowerCase()}`;
     indexState.entries.set("1", syntheticEntry(1n));
     indexState.lastIndexedBlock = 42n;
     const app = createApp({ middleware: (req, res, next) => {
@@ -260,7 +266,7 @@ describe("free and paid discovery responses", () => {
       next();
     } }, {
       config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_OPPORTUNITIES: "1000" }),
-      market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken },
+      market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment },
       client: fakeClient(), indexState, now: () => fixedNow,
     });
     const server = app.listen(0, "127.0.0.1");
@@ -270,6 +276,10 @@ describe("free and paid discovery responses", () => {
       const base = `http://127.0.0.1:${address.port}`;
       const get = await fetch(base + "/v1/demands");
       expect(get.status).toBe(200);
+      const freeResult = await get.json();
+      expect(freeResult.chainId).toBe(1952);
+      expect(freeResult.contract).toBe(demandContract);
+      expect(freeResult.escrowToken).toEqual(marketDeployment.escrowToken);
       expect(get.headers.get("link")).toContain("rel=\"api-catalog\"");
       const head = await fetch(base + "/v1/demands", { method: "HEAD" });
       expect(head.status).toBe(200);
@@ -294,6 +304,9 @@ describe("free and paid discovery responses", () => {
       expect(settled.headers.get("payment-response")).toBe("e30=");
       const result = await settled.json();
       expect(result.opportunities).toHaveLength(1);
+      expect(result.chainId).toBe(1952);
+      expect(result.contract).toBe(demandContract);
+      expect(result.escrowToken).toEqual(marketDeployment.escrowToken);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -585,6 +598,7 @@ describe("independent market and x402 networks", () => {
       XLAYER_RPC_URL: "https://testrpc.xlayer.tech/terigon",
       DEMAND_CONTRACT: demandContract,
       PAYMENT_TOKEN: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
+      PAYMENT_TOKEN_DECIMALS: "6",
       X402_CHAIN_ID: "196",
       OPPORTUNITY_PRICE: "0.01",
       NODE_ENV: "test",
@@ -604,13 +618,14 @@ describe("independent market and x402 networks", () => {
       XLAYER_RPC_URL: "https://testrpc.xlayer.tech/terigon",
       DEMAND_CONTRACT: demandContract,
       PAYMENT_TOKEN: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
+      PAYMENT_TOKEN_DECIMALS: "6",
       X402_CHAIN_ID: "1952",
       NODE_ENV: "test",
     }, () => {
       for (const x402ChainId of ["1952", "196"]) {
         process.env.X402_CHAIN_ID = x402ChainId;
         const market = loadConfig();
-        const client = getPublicClient();
+        const client = getPublicClient(market.deployment!);
         expect(market.chainId).toBe(1952);
         expect(market.contract).toBe(demandContract);
         expect(client.chain?.id).toBe(1952);
@@ -885,4 +900,35 @@ describe("opportunity request validation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.minBounty).toBe(123_456_789n);
   });
+});
+
+
+test("index checkpoint cannot cross contract or chain", async () => {
+  const state = createDemandIndexState();
+  state.deploymentKey = `1952:${testContract.toLowerCase()}`;
+  state.ready = true;
+  await expect(refreshIndex(fakeClient(), marketDeployment, state)).rejects.toThrow("INDEX_DEPLOYMENT_MISMATCH");
+  await expect(refreshIndex(fakeClient(), { ...marketDeployment, contract: testContract, chainId: 196 }, state)).rejects.toThrow("INDEX_DEPLOYMENT_MISMATCH");
+});
+
+test("market amount filters and output use configured decimals", () => {
+  const parsed = validateOpportunitiesInput({ minBounty: "1.23" }, 2);
+  expect(parsed.ok && parsed.value.minBounty).toBe(123n);
+  expect(validateOpportunitiesInput({ minBounty: "1.234" }, 2).ok).toBe(false);
+  const rows = filterAndSort([syntheticEntry(1n, { committed: 123n, maxUnitPrice: 5n })], { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 1 }, BigInt(fixedNow / 1000), 2);
+  expect(rows[0]?.currentEscrow).toBe("1.23");
+  expect(rows[0]?.maxUnitPrice).toBe("0.05");
+});
+
+
+test("canonical ABI encodes attested submission and complete submission event", () => {
+  const submit = AGENT_DEMAND_ABI.filter((item) => item.type === "function" && item.name === "submitService");
+  expect(submit).toHaveLength(1);
+  const signature = "submitService(uint256,string,bytes32,(uint256,address,uint256,address,bytes32,bytes32,bytes32,uint256,bytes32,uint64,uint64),bytes)";
+  expect(toFunctionSelector(submit[0]!)).toBe(toFunctionSelector(signature));
+  expect(toFunctionSelector(submit[0]!)).not.toBe(toFunctionSelector("submitService(uint256,string,bytes32)"));
+  const event = AGENT_DEMAND_ABI.find((item) => item.type === "event" && item.name === "ServiceSubmitted")!;
+  expect(toEventSelector(event)).toBe(toEventSelector("ServiceSubmitted(uint256,uint256,address,string,bytes32,uint64,uint128,uint128,bytes32,bytes32)"));
+  expect(event.inputs.map((input) => input.name)).toEqual(["demandId", "submissionNonce", "builder", "serviceUrl", "evidenceHash", "reviewEndsAt", "reviewCommitted", "approvalRequired", "paymentRequirementsHash", "validationPolicyId"]);
+  expect(event.inputs.map((input) => input.indexed)).toEqual([true, true, true, false, false, false, false, false, false, false]);
 });

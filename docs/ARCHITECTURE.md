@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-    U[Browser / AI Agent] -->|wallet / contract calls via RPC| X[Configured experimental escrow: X Layer Testnet]
+    U[Browser / AI Agent] -->|wallet / contract calls via RPC| X[Selected canonical AgentDemand deployment]
     X --- E[Demand, escrow, voting, settlement, refund]
     U -->|HTTP: UI and API| C[Caddy]
     C -->|static files / SPA fallback| F[React / Vite build]
@@ -15,25 +15,33 @@ flowchart TD
     B -->|official verify / settle / status| O[Official OKX x402: Mainnet billing rail]
 ```
 
-The browser's demand actions use `frontend/contract.ts` directly, not the Bun API. `frontend/main.tsx` lazy-loads app routes; `/` is the landing page, `/docs` serves the Vite MPA public API document at `frontend/docs/index.html`, and `/market`, `/market/:demandId`, `/create-demand`, `/analytics` are app routes.
+The browser's demand actions use `frontend/contract.ts` directly, not the Bun API. `frontend/main.tsx` lazy-loads app routes; `/` is the landing page, `/docs` serves the Vite MPA public API document at `frontend/docs/index.html`, and `/market`, `/market/:chainId/:contract/:demandId`, `/create-demand`, `/analytics` are app routes.
 
 Docker starts `backend/start.ts` through `docker/Dockerfile.api`; Caddy serves the web image and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready`. One **Bun API replica** owns a local payment volume. Indexes, quotas and admission limits are process-local. SQLite and OKX do not share an atomic transaction; no distributed exactly-once guarantee is made. See [Self-hosting](SELF_HOSTING.md) and [Payment recovery](PAYMENT_RECOVERY.md).
 
-The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id).
+The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id). Repository G0.5 changes do not update that running release.
 
 ## Local G0.2 validation source
 
 The repository also contains a separate Bun validation runtime, described in [API](API.md#standalone-g02-validation-runtime). Its dependency path is `validation-service` → `validation-config`, `validation-evaluator`, `validation-codec` and `validation-transport`. It uses a local read-only ABI for chain reads and does not import the existing payment runtime, SQLite storage or API entrypoint. It is not wired into the production Compose deployment.
 
-The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, checks the block again after evaluation, and verifies enabled token decimals at startup. It verifies builder authorization before unpaid target inspection. A separate authenticated Unix-socket signer owns the verifier key, accepts only the attestation type and allowlisted deployment/policy, and returns a signature the validator independently recovers before PASS. Isolation protects the key but does not establish the truth of a compromised validator's observations. No deployment or production readiness follows from local tests; they do not establish VPS firewall, namespace, mount, secret or egress isolation. Onchain consumption and replay prevention are implemented in the local G0.4 AgentDemand source; frontend/backend integration remains G0.5.
+The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, checks the block again after evaluation, and verifies enabled token decimals at startup. It verifies builder authorization before unpaid target inspection. A separate authenticated Unix-socket signer owns the verifier key, accepts only the attestation type and allowlisted deployment/policy, and returns a signature the validator independently recovers before PASS. Isolation protects the key but does not establish the truth of a compromised validator's observations. No deployment or production readiness follows from local tests; they do not establish VPS firewall, namespace, mount, secret or egress isolation. Onchain consumption and replay prevention are implemented in the G0.4 AgentDemand source. G0.5 consumers use the same attestation schema; the browser signs builder authorization before requesting validation and separately signs the onchain submission after PASS.
 
 ## Independent network contexts
 
-The demand market is configured by `CHAIN_ID` and remains on X Layer Testnet (`1952`): contract reads, indexing, frontend writes, escrow, and health/readback reporting use this network. `PAYMENT_TOKEN` is the Testnet escrow token.
+The demand market selects one deployment: chain, contract, RPC, deployment block, chain metadata and escrow-token address/symbol/decimals. The USDC-first template retains X Layer Testnet (`1952`), with no canonical AgentDemand address configured. Activation verifies RPC chain, contract bytecode, immutable `token()` and token decimals. Custom chain metadata supports future deployments without changing wallet identity. One contract holds one immutable exact-transfer ERC-20; token symbols do not prove compatibility.
 
 Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`) and advertises three fixed native EIP-3009 assets. `X402_RPC_URL` independently confirms Mainnet settlement receipts; it is never sourced from the market Testnet RPC. This payment setting is never used by `backend/contract.ts` or demand-market clients.
 
-`backend/AgentDemand.sol` is the canonical escrow source. AgentDemand is the only supported escrow protocol; no dual-version runtime is planned. G0.4 replaces Solidity source/tests without deploying or migrating funds. Existing frontend/backend ABI consumers and indexer behavior remain experimental until canonical AgentDemand G0.5 integration. `backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` with `DEPLOYMENT_TOOLING_UNAVAILABLE` before deployment work. The obsolete six-argument flow is removed, so the canonical artifact cannot enter it. Read-only `inspect` is unchanged; canonical deployment-tool integration remains G0.5 and requires separate owner authorization. Live addresses and onchain state are unchanged. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
+`backend/AgentDemand.sol` is the canonical escrow source. AgentDemand is the only supported escrow protocol; no dual-version runtime is planned. G0.4 replaces Solidity source/tests without deploying or migrating funds. Frontend and backend consume the reviewed canonical ABI in `shared/abi.ts`, including the five-argument attestation submit and digest-bearing events. `backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` with `DEPLOYMENT_TOOLING_UNAVAILABLE` before deployment work. The obsolete six-argument flow is removed, so the canonical artifact cannot enter it. Offline `plan` validates all eight constructor arguments; read-only `inspect` verifies configured deployment parameters. Actual deployment requires separate owner authorization. Live addresses and onchain state are unchanged. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
+
+## Deployment and demand identity
+
+Deployment identity is `(chainId, normalized contract)`; demand identity adds `demandId`. Routes carry all three values and reject unknown deployments. Backend index state and frontend market cursors bind their checkpoints to one deployment, so demand IDs remain local within that state. Rankings never combine different deployments or assets.
+
+Pending v2 records use `chainId:contract:wallet:actionId`; approval intents separately bind the ERC-20 destination and escrow spender. Legacy records lacking contract identity remain preserved and unavailable for automatic recovery. Wallet/provider/chain checks and exact transaction intent matching remain required.
+
+The browser hashes ordered query pairs and GET/POST metadata with JCS plus SHA-256, signs the G0.3 EIP-712 authorization, and calls the explicitly configured validator endpoint. PASS bindings, current-verifier signature, expiry and nonce are checked before a separately user-signed submit. Receipt success and canonical state readback precede submission success. Validation failures never trigger automatic submission or validation retries.
 
 ## Free discovery and paid intelligence
 
@@ -203,3 +211,7 @@ UNMET models funded market demand:
 These differences explain why `AgentDemand` uses a demand-level escrow and commitment ledger as its core. They do not imply that ERC-8183 cannot be extended or composed for a particular application.
 
 One possible future composition would match a funded UNMET demand to a provider, then use an ERC-8183-compatible job escrow downstream for that provider's execution. `AgentDemand` could remain the demand-aggregation and commitment-consensus layer. UNMET does not implement this integration today.
+
+## USDC template provenance
+
+The [Circle address list](https://developers.circle.com/stablecoins/usdc-contract-addresses) and [X Layer native-USDC announcement](https://www.circle.com/blog/now-available-native-usdc-cctp-on-x-layer) identify Testnet USDC as `0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3`. On 2026-10-31, read-only calls to `https://testrpc.xlayer.tech/terigon` reported chain ID `1952`; at block `44951534`, the token had 1,798 bytes of code, `decimals() = 6` and `symbol() = USDC`. This establishes the template token address/metadata, not a canonical AgentDemand deployment, exact-transfer acceptance test, paid settlement or production readiness. The runtime repeats the configured token/decimal binding checks when a deployment is used.

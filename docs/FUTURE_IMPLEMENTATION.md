@@ -1553,9 +1553,9 @@ There is one canonical escrow implementation and test suite. Git history preserv
 
 G0.4 implements the non-upgradeable attestation-gated escrow and contract tests. It does not deploy the canonical contract, change live addresses, migrate funds or modify existing onchain contracts and balances.
 
-G0.5 covers canonical AgentDemand frontend/backend, indexer and deployment-tool integration: ABI consumers, validation/submission flow, event indexing and multi-deployment identity. Existing TypeScript consumers still use the experimental ABI until that gate; they must not be pointed at the canonical contract before integration is complete.
+G0.5 covers canonical AgentDemand frontend/backend, indexer and deployment-tool integration: ABI consumers, validation/submission flow, event indexing and multi-deployment identity. The G0.5 source uses a shared canonical ABI, deployment-scoped identity and attestation submission. The configuration remains unavailable for escrow writes until a separately approved canonical contract address is supplied.
 
-`backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` locally with `DEPLOYMENT_TOOLING_UNAVAILABLE`, before key, RPC, artifact or transaction work. The obsolete six-argument deployment flow has been removed; read-only `inspect` is unchanged. No current repository command may deploy canonical AgentDemand. Canonical deployment tooling and configuration require G0.5 integration and separate deployment approval.
+`backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` locally with `DEPLOYMENT_TOOLING_UNAVAILABLE`, before key, RPC, artifact or transaction work. The obsolete six-argument deployment flow has been removed. G0.5 adds offline eight-argument planning and read-only parameter verification; broadcast commands remain disabled. No current repository command may deploy canonical AgentDemand.
 
 Historical deployment records remain evidence of earlier experiments. They do not establish support for the experimental predecessor or authorize any blockchain action.
 
@@ -2345,7 +2345,7 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
 | G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
 
-The local G0.3 source implements builder authorization and a separate authenticated attestation signer. G0.4 implements onchain attestation consumption and monotonic nonce replay prevention in the canonical AgentDemand escrow. Consumer integration remains G0.5; local signer and contract tests do not establish deployment isolation.
+The local G0.3 source implements builder authorization and a separate authenticated attestation signer. G0.4 implements onchain attestation consumption and monotonic nonce replay prevention in the canonical AgentDemand escrow. G0.5 integrates these canonical consumers; local signer, consumer and contract tests do not establish target-host isolation or G0.6 readiness.
 
 Do not deploy before validation and explicit approval.
 

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import type { Address, Hash, Hex } from "viem";
-import { captureWalletSession, createDemand, setReownWalletProvider, submitService, supportDemand, verifyTransaction } from "../contract";
+import { encodeFunctionData, type Address, type Hash, type Hex } from "viem";
+import { approveService, captureWalletSession, createDemand, ERC20_ABI, setReownWalletProvider, supportDemand, verifyTransaction } from "../contract";
 import { errorMessage } from "../errors";
 import {
   isTransactionIntentMatch,
@@ -11,13 +11,11 @@ import {
   findPendingTransaction,
   readPendingTransactions,
   readLegacyPendingCreate,
-  recoverLegacyPendingCreate,
   removePendingTransaction,
   storePendingTransaction,
   PENDING_TRANSACTION_PREFIX,
   LEGACY_PENDING_CREATE_KEY,
   type LegacyPendingCreate,
-  type ObservedTransaction,
   type PendingTransactionRecord,
   type TransactionStorageLike,
   type TransactionIntent,
@@ -44,10 +42,17 @@ const rpcServer = Bun.serve({
   async fetch(request) {
     const rpc = await request.json() as { id: number; method: string; params?: unknown[] };
     let result: unknown = null;
-    if (rpc.method === "eth_call") {
+    if (rpc.method === "eth_chainId") result = "0x7a0";
+    else if (rpc.method === "eth_getCode") result = "0x01";
+    else if (rpc.method === "eth_call") {
+      const call = rpc.params?.[0] as { data: string };
+      if (call.data.startsWith("0xfc0c546a")) result = `0x${"0".repeat(24)}${"4".repeat(40)}`;
+      else if (call.data.startsWith("0x313ce567")) result = `0x${"0".repeat(63)}6`;
+      else {
       allowanceRequested?.();
       if (allowanceGate) await allowanceGate.promise;
       result = `0x${allowanceValue.toString(16).padStart(64, "0")}`;
+      }
     } else if (rpc.method === "eth_getTransactionReceipt") {
       receiptReads += 1;
       receiptRequested?.();
@@ -398,7 +403,7 @@ describe("transaction lifecycle", () => {
         return null;
       },
     });
-    await expect(verifyTransaction("demand", originalHash, intent, wallet, 1952)).rejects.toThrow("WALLET_CHANGED");
+    await expect(verifyTransaction("demand", originalHash, intent, wallet, 1952, "0x3333333333333333333333333333333333333333")).rejects.toThrow("WALLET_CHANGED");
     expect(requested).toEqual(["eth_accounts"]);
     expect(requested).not.toContain("eth_sendTransaction");
 
@@ -411,7 +416,7 @@ describe("transaction lifecycle", () => {
         return null;
       },
     });
-    await expect(verifyTransaction("demand", originalHash, intent, wallet, 1952)).rejects.toThrow("CHAIN_WRONG_NETWORK");
+    await expect(verifyTransaction("demand", originalHash, intent, wallet, 1952, "0x3333333333333333333333333333333333333333")).rejects.toThrow("CHAIN_WRONG_NETWORK");
     expect(requested).toEqual(["eth_accounts", "eth_chainId"]);
     expect(requested).not.toContain("eth_sendTransaction");
   });
@@ -637,7 +642,7 @@ describe("transaction lifecycle", () => {
     const providerA = testProvider(() => [wallet], () => "0x7a0", signingRequests);
     setReownWalletProvider(providerA);
     const session = captureWalletSession(wallet);
-    const result = await submitService(1n, "https://service.example/api", "evidence", ({ state, hash }) => {
+    const result = await approveService(1n, ({ state, hash }) => {
       updates.push({ state, hash });
       if (state === "broadcast") setReownWalletProvider(providerB);
     }, session ?? undefined);
@@ -661,7 +666,7 @@ describe("transaction lifecycle", () => {
       return "0x7a0";
     }, signingRequests);
     setReownWalletProvider(provider);
-    const pending = submitService(1n, "https://service.example/api", "evidence");
+    const pending = approveService(1n);
     await chainStarted.promise;
     setReownWalletProvider(testProvider(() => [otherWallet]));
     chainRead.resolve("0x7a0");
@@ -705,7 +710,7 @@ describe("transaction lifecycle", () => {
       },
     };
     setReownWalletProvider(provider, wallet);
-    const pending = submitService(1n, "https://service.example/api", "evidence");
+    const pending = approveService(1n);
     await fallbackStarted.promise;
     setReownWalletProvider(testProvider(), otherWallet);
     fallbackGate.resolve();
@@ -729,6 +734,7 @@ describe("pending transaction storage", () => {
   const pending: PendingTransactionRecord = {
     wallet,
     chainId: 1952,
+    contract: "0x3333333333333333333333333333333333333333",
     actionId: "support:1",
     actionLabel: "Support Demand",
     stage: "approval",
@@ -746,11 +752,15 @@ describe("pending transaction storage", () => {
     expect(restored.records).toHaveLength(1);
     expect(restored.records[0]).toMatchObject({ chainId: 1952, actionId: "support:1", state: "unknown", hash: originalHash });
     expect(restored.records[0]?.wallet.toLowerCase()).toBe(wallet.toLowerCase());
-    expect(findPendingTransaction(restored.records, wallet, 1952, "support:1")?.hash).toBe(originalHash);
-    expect(findPendingTransaction(restored.records, otherWallet, 1952, "support:1")).toBeNull();
-    expect(findPendingTransaction(restored.records, wallet, 196, "support:1")).toBeNull();
-    expect(findPendingTransaction(restored.records, wallet, 1952, "refund:1")).toBeNull();
-    expect(findPendingTransaction(restored.records, wallet, 1952, "support:2")).toBeNull();
+    expect(findPendingTransaction(restored.records, wallet, 1952, pending.contract, "support:1")?.hash).toBe(originalHash);
+    expect(findPendingTransaction(restored.records, otherWallet, 1952, pending.contract, "support:1")).toBeNull();
+    expect(findPendingTransaction(restored.records, wallet, 196, pending.contract, "support:1")).toBeNull();
+    expect(findPendingTransaction(restored.records, wallet, 1952, "0x5555555555555555555555555555555555555555", "support:1")).toBeNull();
+    expect(findPendingTransaction(restored.records, wallet, 1952, pending.contract, "refund:1")).toBeNull();
+    expect(findPendingTransaction(restored.records, wallet, 1952, pending.contract, "support:2")).toBeNull();
+    const otherContract = { ...pending, contract: "0x5555555555555555555555555555555555555555" as const };
+    expect(storePendingTransaction(storage, otherContract)).toBe(true);
+    expect(readPendingTransactions(storage).records).toHaveLength(2);
   });
 
   test("removes a resolved record so the same action can be submitted again", () => {
@@ -760,7 +770,14 @@ describe("pending transaction storage", () => {
     expect(removePendingTransaction(storage, pending)).toBe(true);
     const restored = readPendingTransactions(storage);
     expect(restored.records).toEqual([]);
-    expect(findPendingTransaction(restored.records, wallet, 1952, "support:1")).toBeNull();
+    expect(findPendingTransaction(restored.records, wallet, 1952, pending.contract, "support:1")).toBeNull();
+  });
+
+  test("rejects recovery of approval to a different escrow spender", async () => {
+    setReownWalletProvider(testProvider(), wallet);
+    const badIntent = { to: "0x4444444444444444444444444444444444444444" as Address, data: encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: ["0x5555555555555555555555555555555555555555", 1n] }), value: 0n };
+    await expect(verifyTransaction("approval", originalHash, badIntent, wallet, 1952, pending.contract)).rejects.toThrow("TRANSACTION_INTENT_MISMATCH");
+    expect(receiptReads).toBe(0);
   });
 
   test("preserves malformed records in storage and reports them without crashing", () => {
@@ -775,11 +792,22 @@ describe("pending transaction storage", () => {
     expect(result.records).toEqual([]);
   });
 
+  test("preserves ambiguous v1 records without assigning a contract", () => {
+    const storage = new MemoryTransactionStorage();
+    const key = `unmet.pending-transaction.v1:1952:${wallet}:support:1`;
+    const raw = JSON.stringify({ version: 1, wallet, chainId: 1952, actionId: "support:1" });
+    storage.setItem(key, raw);
+    const result = readPendingTransactions(storage);
+    expect(result.invalidRecords).toBe(1);
+    expect(result.records).toEqual([]);
+    expect(storage.getItem(key)).toBe(raw);
+  });
+
   test("reports unavailable storage without throwing", () => {
     expect(readPendingTransactions(null)).toEqual({ available: false, invalidRecords: 0, records: [] });
   });
 
-  test("recovers a legacy create record only after the transaction sender and intent match", () => {
+  test("preserves a legacy create record without guessing its deployment", () => {
     const storage = new MemoryTransactionStorage();
     const legacy: LegacyPendingCreate = { stage: "demand", hash: originalHash, intent };
     storage.setItem(LEGACY_PENDING_CREATE_KEY, JSON.stringify({
@@ -793,17 +821,7 @@ describe("pending transaction storage", () => {
     expect(read.record).toEqual(legacy);
     expect(storage.getItem(LEGACY_PENDING_CREATE_KEY)).not.toBeNull();
 
-    const observed: ObservedTransaction = { hash: originalHash, from: wallet, ...intent };
-    expect(recoverLegacyPendingCreate(legacy, observed, wallet, 1952)).toMatchObject({
-      wallet,
-      chainId: 1952,
-      actionId: "create-demand",
-      stage: "demand",
-      state: "unknown",
-      hash: originalHash,
-    });
-    expect(recoverLegacyPendingCreate(legacy, observed, otherWallet, 1952)).toBeNull();
-    expect(recoverLegacyPendingCreate(legacy, { ...observed, data: otherData }, wallet, 1952)).toBeNull();
+    expect(readPendingTransactions(storage).records).toEqual([]);
   });
 });
 
