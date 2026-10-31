@@ -56,13 +56,13 @@ UNMET/
 
 Keep root manifests, lockfile, Compose, environment template and ignore files at root. Workspace manifests/configuration, Vite HTML entrypoints and the browser race fixture stay in their functional locations.
 
-Foundry runs from `backend/`, where source and tests are siblings. Its dependencies are ignored under `backend/lib/`; `admin.ts` resolves build artifacts under `backend/out/`. Preserve those paths. Asset attribution stays at `frontend/public/avatars/ATTRIBUTION.md` beside its SVGs; `.hallmark` records are historical evidence.
+Foundry runs from `backend/`, where source and tests are siblings. Its dependencies are ignored under `backend/lib/`; build artifacts are written under `backend/out/`. Preserve those paths. Asset attribution stays at `frontend/public/avatars/ATTRIBUTION.md` beside its SVGs; `.hallmark` records are historical evidence.
 
 ## System architecture
 
 - `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
 - The app shell owns wallet/session orchestration. Reown AppKit is configured in `frontend/reown.ts`; `frontend/contract.ts` uses viem for direct RPC reads, approvals and contract writes. Ordinary demand actions do not pass through the Bun API.
-- `backend/AgentDemand.sol` is authoritative for demand state, escrow balances, voting, settlement and refunds. Frontend and backend ABIs are hand-maintained consumers of that contract.
+- `backend/AgentDemand.sol` is the canonical escrow source. Frontend/backend ABIs and deployment tooling still use the experimental interface pending canonical AgentDemand G0.5 integration; inspect [Architecture](docs/ARCHITECTURE.md#canonical-attestation) before changing those consumers.
 - `backend/server.ts` exports the Express app and implements API routes, health/readiness, demand indexing and ranking. `backend/start.ts` is the standalone Bun/container entrypoint.
 - The backend index is disposable, process-local derived chain state. Reads use pinned blocks; canonical hashes, bounded log windows and atomic checkpoints protect refreshes and reorg recovery.
 - Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.

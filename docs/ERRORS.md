@@ -30,6 +30,12 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `INVALID_STATUS` | unsupported status filter | see API.md |
 | `NOT_FOUND` | route does not exist | use documented route |
 
+## Contract CLI
+
+| Code | Context | Recovery |
+| --- | --- | --- |
+| `DEPLOYMENT_TOOLING_UNAVAILABLE` | `deploy-testnet` and `deploy-mainnet` exit locally before deployment work | Canonical AgentDemand deployment tooling is deferred to G0.5 and requires separate owner authorization; read-only `inspect` remains available. |
+
 ## Self-hosted API operations
 
 | Code | HTTP / context | Recovery |
@@ -148,6 +154,8 @@ Wallet transaction recovery also distinguishes `broadcast`, `confirmed`, `revert
 | `QuorumNotReached` | finalize attempted below fixed threshold |
 | `NothingToRefund` | caller has no currently refundable commitment |
 | `InvalidEvidence` | zero evidence hash |
+| `InvalidAttestation` | attestation binding, time interval or canonical current-verifier signature is invalid; nonce is not consumed |
+| `Unauthorized` | caller is not the immutable verifier administrator |
 | `UnsupportedToken` | transfer received amount differs from requested amount |
 
 Reaching the rejection threshold is a successful vote, not a revert: the contract marks the candidate rejected and allows `reopen` while the demand deadline is still active. `SubmissionRejected` is the event emitted when a candidate is cleared during reopen.

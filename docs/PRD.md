@@ -97,7 +97,7 @@ Secondary revenue: paid `POST /v1/opportunities`, protected with official OKX x4
 
 No offchain escrow/demand database. Self-hosted `bun:sqlite` persists operational x402 idempotency and settlement records; it does not replace contract state. See [Payment recovery](PAYMENT_RECOVERY.md).
 
-Current economic state: `AgentDemand.sol`.  
+Current economic state: configured onchain escrow. Canonical repository source: `AgentDemand.sol`; existing consumers await canonical contract integration (see [Architecture](ARCHITECTURE.md#canonical-attestation)).
 History: contract events.  
 Backend: disposable derived index.  
 Frontend: display/session state only.
@@ -106,7 +106,7 @@ If any derived layer disagrees with chain state, chain state wins.
 
 ## Contract requirements
 
-File/name: `backend/AgentDemand.sol` / `AgentDemand`.
+Canonical file/name: `backend/AgentDemand.sol` / `AgentDemand`. The earlier implementation was experimental; historical deployment evidence does not establish a deployment of the canonical contract.
 
 Non-upgradeable. Immutable token, treasury, fee, quorum, min commitment and review period for MVP.
 Stored lifecycle states are `Open`, `Submitted`, `Fulfilled`, and `Closed`. Candidate rejection is tracked as review progress and a derived `REJECTED` status; it is not a separate stored state.

@@ -4,7 +4,7 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 
 ## Demand funding and intelligence
 
-- **Demand funding:** wallet transactions create/support demands, vote, finalize or refund through `AgentDemand.sol` on **X Layer Testnet (1952)**.
+- **Demand funding:** wallet transactions create/support demands, vote, finalize or refund through the configured escrow on **X Layer Testnet (1952)**.
 - **Free discovery:** `GET /v1/demands` returns public market facts and its existing legacy demand score, ordered by current escrow.
 - **Paid demand intelligence:** `POST /v1/opportunities` adds scoped ranks, score contributions, escrow-per-expected-call and review signals, and deterministic reasons to investigate or exercise caution. Official OKX x402 bills each query **$0.01** separately on **X Layer Mainnet (196)** in production. Buying intelligence does not fund escrow or move the demand market to Mainnet. Demand commitments finance service creation, but do not prepay API calls or grant usage credits. After fulfillment, API usage is paid directly to the provider through its x402 endpoint; demand contributors receive no usage entitlement. See the [API contract](docs/API.md).
 
@@ -12,11 +12,13 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 
 | Part | Responsibility |
 | --- | --- |
-| [AgentDemand.sol](backend/AgentDemand.sol) | Canonical demand, escrow, voting, settlement and refunds |
+| [AgentDemand.sol](backend/AgentDemand.sol) | Canonical escrow source with attestation-gated submission, voting, settlement and refunds |
 | React/Vite frontend | Reown wallet UI, viem contract reads/writes, routed demand views |
 | Bun/Express backend | Bounded, reorg-aware in-memory chain index and intelligence ranking |
 | Native `bun:sqlite` | Self-hosted x402 operation/idempotency and settlement records; **not the escrow database** |
 | Caddy + Docker Compose | Static frontend, reverse proxy and persistent payment volume |
+
+AgentDemand is the canonical escrow source. G0.4 does not deploy it or change live addresses. Existing frontend/backend and deployment tooling await canonical AgentDemand G0.5 integration; see [Architecture](docs/ARCHITECTURE.md#canonical-attestation).
 
 The chain index can be rebuilt. Payment records must survive restarts. The supported hosted path uses one Bun API replica with persistent SQLite behind Caddy. See [Architecture](docs/ARCHITECTURE.md). The active public site is [unmetxyz.my.id](https://unmetxyz.my.id). Deployment details and current operations live in [Self-hosting](docs/SELF_HOSTING.md) and [Runbook](docs/RUNBOOK.md).
 
