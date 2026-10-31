@@ -21,6 +21,7 @@ import {
   selectedDemandHref as demandHref,
   MARKET_SYNC_INTERVAL_MS,
   approveService,
+  cancelSettlement,
   captureWalletSession,
   createDemand,
   getPublic,
@@ -129,7 +130,7 @@ type VerifyPendingHandler = {
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
-const MARKET_STATUSES = ["OPEN", "SUBMITTED", "READY", "EXPIRED", "REJECTED", "FULFILLED", "CLOSED"] as const;
+const MARKET_STATUSES = ["OPEN", "SUBMITTED", "READY", "EXPIRED", "REJECTED", "FULFILLED", "CLOSED", "CANCELLED"] as const;
 const MARKET_SORTS = [
   { value: "most-funded", label: "Most Funded" },
   { value: "least-funded", label: "Least Funded" },
@@ -204,6 +205,7 @@ function pendingActionLabel(label: string): string {
     case "approve": return "Approve Service";
     case "reject": return "Reject Service";
     case "finalize": return "Finalize";
+    case "cancel": return "Cancel settlement";
     case "reopen": return "Reopen Demand";
     case "refund": return "Refund";
     default: return label;
@@ -809,7 +811,7 @@ export default function App() {
     try {
       const onUpdate = createTransactionUpdateHandler(displayLabel, record.actionId, record.verification, record);
       if (record.stage === "approval") {
-        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, record.contract, onUpdate, originatingSession);
+        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, record.contract, onUpdate, originatingSession, record.actionId);
         if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) {
           const action = record.actionId === CREATE_DEMAND_ACTION_ID ? "demand" : "support";
           setStatus(`${displayLabel} token approval confirmed. No ${action} was submitted`);
@@ -818,7 +820,7 @@ export default function App() {
       }
 
       const readback = await afterConfirmedTransaction(
-        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, record.contract, onUpdate, originatingSession),
+        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, record.contract, onUpdate, originatingSession, record.actionId),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
@@ -1262,7 +1264,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
     ? CircleCheck
     : state === "OPEN" || state === "SUBMITTED"
       ? Clock3
-      : state === "EXPIRED" || state === "REJECTED" || state === "CLOSED"
+      : state === "EXPIRED" || state === "REJECTED" || state === "CLOSED" || state === "CANCELLED"
         ? CircleX
         : CircleHelp;
 
@@ -1347,7 +1349,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
   );
 }
 
-function DemandDetail({
+export function DemandDetail({
   demand, support, supportState, account, busy, close, closeLabel, run, blockedActionIds,
 }: {
   demand: DemandView;
@@ -1391,7 +1393,8 @@ function DemandDetail({
   const hasProposal = demand.serviceUrl.length > 0;
   const percent = demand.approvalRequired === 0n ? 0 : Math.min(100, Number((demand.approvalWeight * 10_000n) / demand.approvalRequired) / 100);
   const rejectionPercent = demand.rejectionThreshold === 0n ? 0 : Math.min(100, Number((demand.rejectionWeight * 10_000n) / demand.rejectionThreshold) / 100);
-  const actionBlocked = (action: string) => blockedActionIds.includes(`${action}:${demand.demandId.toString()}`);
+  const actionBlocked = (action: string) => blockedActionIds.includes(`${action}:${demand.demandId.toString()}`) || blockedActionIds.some((id) => id.startsWith(`${action}:${demand.demandId}:`));
+  const settlementExpired = now >= demand.reviewEndsAt + 7n * 86400n;
 
   return (
     <section ref={panelRef} className="panel demand-page" aria-labelledby="demand-detail-heading">
@@ -1516,6 +1519,9 @@ function DemandDetail({
                     <div><dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl}</dd></div>
                     <div><dt>Evidence</dt><dd>{demand.evidenceHash}</dd></div>
                   </dl>
+                  {demand.status === 4 && supportState === "ready" && support.approved && support.refundable && support.commitment > 0n && (
+                    <span className="status-line">Settlement cancelled · remaining commitment refundable</span>
+                  )}
                 </CardContent>
               ) : state === "OPEN" ? (
                 <CardContent>
@@ -1556,6 +1562,7 @@ function DemandDetail({
                 </CardHeader>
                 <CardContent>
                   <dl className="demand-detail-facts">
+                    <div><dt>Proposal nonce</dt><dd>{demand.submissionNonce.toString()}</dd></div>
                     <div><dt>Review snapshot</dt><dd>{formatTokenAmount(demand.reviewCommitted)} <span>{ESCROW_SYMBOL}</span></dd></div>
                     <div><dt>Review end</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd></div>
                     <div><dt>Approval progress</dt><dd>
@@ -1571,8 +1578,8 @@ function DemandDetail({
                   <div className="demand-detail-actions">
                     {!reviewExpired && supportState === "ready" && support.commitment > 0n && !support.approved && !support.rejected && (
                       <>
-                        <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}`, (onUpdate, session) => approveService(demand.demandId, onUpdate, session))}>Approve Proposal</Button>
-                        <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}`, (onUpdate, session) => rejectService(demand.demandId, onUpdate, session))}>Reject Proposal</Button>
+                        <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("approve")} onClick={() => void run("approve", `approve:${demand.demandId}:${demand.submissionNonce}`, (onUpdate, session) => approveService(demand.demandId, demand.submissionNonce, onUpdate, session))}>Approve Proposal</Button>
+                        <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("reject")} onClick={() => void run("reject", `reject:${demand.demandId}:${demand.submissionNonce}`, (onUpdate, session) => rejectService(demand.demandId, demand.submissionNonce, onUpdate, session))}>Reject Proposal</Button>
                       </>
                     )}
                     {supportState === "ready" && support.approved && <span className="status-line ok">Approved · commitment eligible for settlement</span>}
@@ -1587,8 +1594,11 @@ function DemandDetail({
                   <CardTitle className="demand-detail-section-title">Settlement</CardTitle>
                 </CardHeader>
                 <CardContent className="demand-detail-actions">
-                  {demand.status === 1 && demand.quorumReached && (
+                  {demand.status === 1 && demand.quorumReached && !settlementExpired && (
                     <Button type="button" className="demand-detail-action" disabled={busy || actionBlocked("finalize")} onClick={() => void run("finalize", `finalize:${demand.demandId}`, (onUpdate, session) => finalizeDemand(demand.demandId, onUpdate, session))}>Finalize Payout</Button>
+                  )}
+                  {demand.status === 1 && demand.quorumReached && settlementExpired && (
+                    <Button type="button" variant="outline" className="demand-detail-action" disabled={busy || !account || actionBlocked("cancel")} onClick={() => void run("cancel", `cancel:${demand.demandId}`, (onUpdate, session) => cancelSettlement(demand.demandId, onUpdate, session))}>Cancel Settlement</Button>
                   )}
                   {canReopen && (
                     <Button type="button" variant="outline" className="demand-detail-action" disabled={busy || !account || actionBlocked("reopen")} onClick={() => void run("reopen", `reopen:${demand.demandId}`, (onUpdate, session) => reopenDemand(demand.demandId, onUpdate, session))}>Reopen Demand</Button>

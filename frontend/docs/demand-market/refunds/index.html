@@ -33,13 +33,13 @@
             <h1>Refunds</h1>
             <p class="docs-description">Withdraw your own remaining commitment when the contract makes it eligible.</p>
 <h2 id="eligibility">Refund eligibility</h2>
-<div class="docs-table"><table><thead><tr><th scope="col">Demand condition</th><th scope="col">Can you refund?</th></tr></thead><tbody><tr><td>Open, deadline still active</td><td>No.</td></tr><tr><td>Deadline passed without a proposal</td><td>Yes, for your remaining commitment.</td></tr><tr><td>Submitted, below quorum</td><td>After the demand deadline, once review ends or rejection makes quorum impossible.</td></tr><tr><td>Submitted, quorum reached</td><td>No. Anyone can finalize; approval is not a failed review.</td></tr><tr><td>Fulfilled</td><td>Yes if you did not approve the settled proposal and still have a commitment.</td></tr></tbody></table></div>
+<div class="docs-table"><table><thead><tr><th scope="col">Demand condition</th><th scope="col">Can you refund?</th></tr></thead><tbody><tr><td>Open, deadline still active</td><td>No.</td></tr><tr><td>Deadline passed without a proposal</td><td>Yes, for your remaining commitment.</td></tr><tr><td>Submitted, below quorum</td><td>After the demand deadline, once review ends or rejection makes quorum impossible.</td></tr><tr><td>Submitted, quorum reached</td><td>No. Before seven days after review end anyone can finalize; at or after that boundary anyone can cancel settlement.</td></tr><tr><td>Cancelled</td><td>Yes, each supporter may refund their remaining commitment.</td></tr><tr><td>Fulfilled</td><td>Yes if you did not approve the settled proposal and still have a commitment.</td></tr></tbody></table></div>
 <h2 id="withdraw">Withdraw a refund</h2>
 <p>Connect the wallet that funded the demand, open <strong>Escrow &amp; Support</strong>, and use <strong>Refund</strong> when eligible. Each supporter withdraws their own funds; there is no automatic bulk refund. Gas is required for the transaction.</p>
 <p>Wait for a successful receipt and updated commitment. An RPC failure after broadcasting is not permission to withdraw again blindly.</p>
 <h2 id="after-refund">After a refund</h2>
 <p>Your remaining commitment and expected calls for that position are cleared. Current escrow falls, but aggregate supporting-wallet and expected-call figures remain historical demand signals.</p>
-<p>A non-fulfilled demand becomes <code>CLOSED</code> when its last refundable balance is withdrawn. A fulfilled demand stays <code>FULFILLED</code>, including after its final non-approver refund.</p>
+<p>An expired, unfulfilled demand becomes <code>CLOSED</code> when its last refundable balance is withdrawn. A cancelled demand stays <code>CANCELLED</code> after its last refund. A fulfilled demand stays <code>FULFILLED</code>, including after its final non-approver refund.</p>
 <p>Before the deadline, an unsuccessful proposal may instead be <a href="/docs/demand-market/review/#rejection-and-reopening">reopened</a> under its current review conditions.</p>
           </article>
           <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>

@@ -30,6 +30,7 @@ export function nextMarketStatusChangeAt<T extends DeadlineStatusDemand>(board: 
   for (const demand of board) {
     let transition: bigint | null = null;
     if (demand.status === 0) transition = demand.deadline;
+    else if (demand.status === 1 && demand.quorumReached) transition = demand.reviewEndsAt + 7n * 86400n;
     else if (demand.status === 1 && !demand.quorumReached) {
       transition = demand.candidateRejected || demand.deadline >= demand.reviewEndsAt
         ? demand.deadline

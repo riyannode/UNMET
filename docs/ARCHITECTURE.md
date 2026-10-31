@@ -82,7 +82,8 @@ OPEN
  | submit
  v
 SUBMITTED
- | quorum reached -> finalize ----------------> FULFILLED
+ | quorum reached -> finalize before grace ends -> FULFILLED
+ | quorum reached -> cancel at grace end ------> CANCELLED
  |
  | rejection threshold reached, or review ends below quorum
  | while demand deadline is active
@@ -92,18 +93,19 @@ reopen -> SubmissionRejected -> OPEN
 OPEN after deadline --------------------------> supporter refunds
 SUBMITTED after deadline + review end
   and below quorum ---------------------------> supporter refunds
-last refundable balance withdrawn from a non-fulfilled demand -> CLOSED
+last refundable balance withdrawn from an expired unfulfilled demand -> CLOSED
 ```
 
 Important invariants:
 - New support is disabled during review, so the approval denominator cannot move.
 - `approvalRequired` is a ceil-rounded snapshot created at submission.
 - Refunds cannot lower the threshold for an existing submission.
-- A submission that reached quorum is not refundable before settlement; after fulfillment, eligible non-approver commitments remain refundable.
-- `FULFILLED` remains the lifecycle state after eligible non-approver refunds, including the final such refund; `CLOSED` applies when a non-fulfilled demand has no remaining refundable balance.
+- A submission that reached quorum settles before seven days after review end; at or after that boundary anyone may cancel settlement and every remaining supporter may refund. After fulfillment, eligible non-approver commitments remain refundable.
+- `FULFILLED` remains the lifecycle state after eligible non-approver refunds, including the final such refund; `CLOSED` applies when an expired unfulfilled demand has no remaining refundable balance.
 - Approvals are scoped to `submissionNonce`; old votes never carry into a new candidate.
 - Approvers may not also reject the same submission. Rejection weight is measured against the review snapshot; reaching `reviewCommitted - approvalRequired + 1` makes quorum impossible and permits immediate reopen before the demand deadline.
 - Reopening emits `SubmissionRejected` and clears candidate-specific vote progress. The demand returns to `Open` while its deadline remains active.
+- Cancelled remains terminal after its final refund; cancellation clears only its own active key and does not transfer funds. Votes specify the intended submission nonce.
 - Refunds are pull-based; there is no unbounded payout loop.
 - Expired demand can be replaced by a new exact demand even before every old supporter refunds. An old refund cannot clear the replacement's active key.
 - Contract computes the exact duplicate key itself from the validated capability slug + specification.

@@ -5,7 +5,7 @@ import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-core/server";
 import { paymentMiddleware } from "@okxweb3/x402-express";
 import express from "express";
-import { getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI, formatUnits6, type DemandTuple } from "./contract.ts";
+import { statusLabel, getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI, formatUnits6, type DemandTuple } from "./contract.ts";
 import { app, changedDemandIds, createApp, createDemandIndexState, createPaymentMiddleware, filterAndSort, opportunityPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput, type IndexEntry } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
 import { assertPublishedPaymentDiscovery, paymentDiscovery, validatePaymentDiscovery } from "./payment-discovery.ts";
@@ -87,6 +87,15 @@ function closedLog(demandId: bigint) {
     transactionIndex: 0,
   };
 }
+
+test("cancellation status and event are indexed", async () => {
+  expect(statusLabel(4)).toBe("CANCELLED");
+  expect(validateOpportunitiesInput({ status: "CaNcElLeD" }).ok).toBe(true);
+  const log = { ...closedLog(7n), topics: encodeEventTopics({ abi: AGENT_DEMAND_ABI, eventName: "SettlementCancelled", args: { demandId: 7n } }) };
+  expect(await changedDemandIds(fakeClient({ getLogs: () => [log] }), testContract, 1n, 1n)).toEqual(new Set([7n]));
+  const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
+  expect(new RegExp(spec.components.schemas.OpportunityQuery.properties.status.pattern).test("CaNcElLeD")).toBe(true);
+});
 
 function fakeClient(overrides: {
   getLogs?: (fromBlock: bigint, toBlock: bigint) => unknown[] | Promise<unknown[]>;
@@ -835,11 +844,13 @@ describe("effective opportunity statuses", () => {
       make(5n, 1, { data: { ...make(5n, 1).data, deadline: now - 1n, reviewEndsAt: now - 1n } }),
       make(6n, 2),
       make(7n, 3),
+      make(8n, 4),
     ];
     const rows = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 }, now);
     expect(Object.fromEntries(rows.map((row) => [row.demandId, row.status]))).toEqual({
-      "1": "EXPIRED", "2": "READY", "3": "REJECTED", "4": "SUBMITTED", "5": "EXPIRED", "6": "FULFILLED", "7": "CLOSED",
+      "1": "EXPIRED", "2": "READY", "3": "REJECTED", "4": "SUBMITTED", "5": "EXPIRED", "6": "FULFILLED", "7": "CLOSED", "8": "CANCELLED",
     });
+    expect(filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50, status: "cancelled" }, now).map((row) => row.demandId)).toEqual(["8"]);
   });
 
   test("orders extended ISO years by deadline and keeps out-of-range dates last", () => {

@@ -17,7 +17,8 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         Open,
         Submitted,
         Fulfilled,
-        Closed
+        Closed,
+        Cancelled
     }
 
     struct Demand {
@@ -27,7 +28,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         uint128 committed;
         uint128 reviewCommitted;
         uint128 approvalRequired;
-        uint64 expectedCalls;
+        uint256 expectedCalls;
         uint64 deadline;
         uint64 reviewEndsAt;
         uint32 supporterCount;
@@ -69,13 +70,14 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
     uint16 public immutable quorumBps;
     uint96 public immutable minCommitment;
     uint32 public immutable reviewPeriod;
+    uint256 public constant SETTLEMENT_GRACE = 7 days;
     uint256 public nextDemandId = 1;
     uint256 public totalEscrowed;
 
     mapping(uint256 => mapping(uint256 => SubmissionDigests)) public submissionDigests;
     mapping(uint256 => Demand) private demands;
     mapping(uint256 => mapping(address => uint96)) public commitmentOf;
-    mapping(uint256 => mapping(address => uint64)) public expectedCallsOf;
+    mapping(uint256 => mapping(address => uint256)) public expectedCallsOf;
     mapping(uint256 => uint256) public submissionNonce;
     mapping(uint256 => uint256) public approvalWeight;
     mapping(uint256 => uint256) public rejectionWeight;
@@ -147,6 +149,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         uint128 remainingRefundable
     );
     event Refunded(uint256 indexed demandId, address indexed supporter, uint96 amount);
+    event SettlementCancelled(uint256 indexed demandId);
     event DemandClosed(uint256 indexed demandId, bytes32 indexed demandKey);
 
     error ZeroAddress();
@@ -173,6 +176,9 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
     error UnsupportedToken();
     error InvalidAttestation();
     error Unauthorized();
+    error SubmissionNonceMismatch();
+    error SettlementGraceExpired();
+    error SettlementGraceActive();
 
     constructor(
         address token_,
@@ -318,7 +324,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         );
     }
 
-    function approveService(uint256 demandId) external nonReentrant {
+    function approveService(uint256 demandId, uint256 expectedSubmissionNonce) external nonReentrant {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Submitted) revert InvalidStatus();
         if (block.timestamp >= d.reviewEndsAt) revert ReviewEnded();
@@ -327,6 +333,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         if (weight == 0) revert NotSupporter();
 
         uint256 nonce = submissionNonce[demandId];
+        if (nonce != expectedSubmissionNonce) revert SubmissionNonceMismatch();
         if (hasApproved[demandId][nonce][msg.sender]) revert AlreadyApproved();
         if (hasRejected[demandId][nonce][msg.sender]) revert ConflictingVote();
 
@@ -336,7 +343,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         emit ServiceApproved(demandId, nonce, msg.sender, weight, approvalWeight[demandId]);
     }
 
-    function rejectService(uint256 demandId) external nonReentrant {
+    function rejectService(uint256 demandId, uint256 expectedSubmissionNonce) external nonReentrant {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Submitted) revert InvalidStatus();
         if (block.timestamp >= d.reviewEndsAt) revert ReviewEnded();
@@ -345,6 +352,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         if (weight == 0) revert NotSupporter();
 
         uint256 nonce = submissionNonce[demandId];
+        if (nonce != expectedSubmissionNonce) revert SubmissionNonceMismatch();
         if (hasRejected[demandId][nonce][msg.sender]) revert AlreadyRejected();
         if (hasApproved[demandId][nonce][msg.sender]) revert ConflictingVote();
 
@@ -358,6 +366,8 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         Demand storage d = _requireDemand(demandId);
         if (d.status != Status.Submitted) revert InvalidStatus();
         if (d.approvalRequired == 0 || approvalWeight[demandId] < d.approvalRequired) revert QuorumNotReached();
+
+        if (block.timestamp >= uint256(d.reviewEndsAt) + SETTLEMENT_GRACE) revert SettlementGraceExpired();
 
         uint128 approvedAmount = uint128(approvalWeight[demandId]);
         if (approvedAmount == 0 || approvedAmount > d.committed) revert InvalidAmount();
@@ -374,6 +384,16 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
 
         if (fee != 0) _pushExact(treasury, fee);
         _pushExact(d.builder, payout);
+    }
+
+    function cancelSettlement(uint256 demandId) external nonReentrant {
+        Demand storage d = _requireDemand(demandId);
+        if (d.status != Status.Submitted) revert InvalidStatus();
+        if (d.approvalRequired == 0 || approvalWeight[demandId] < d.approvalRequired) revert QuorumNotReached();
+        if (block.timestamp < uint256(d.reviewEndsAt) + SETTLEMENT_GRACE) revert SettlementGraceActive();
+        d.status = Status.Cancelled;
+        _clearActiveKeyIfCurrent(demandId);
+        emit SettlementCancelled(demandId);
     }
 
     function reopen(uint256 demandId) external nonReentrant {
@@ -411,7 +431,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         // They do not shrink when a supporter later exits an expired/rejected demand.
         totalEscrowed -= amount;
 
-        if (d.committed == 0 && d.status != Status.Fulfilled) {
+        if (d.committed == 0 && d.status != Status.Fulfilled && d.status != Status.Cancelled) {
             d.status = Status.Closed;
             _clearActiveKeyIfCurrent(demandId);
             emit DemandClosed(demandId, demandKeyOf[demandId]);
@@ -431,7 +451,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         view
         returns (
             uint96 commitment,
-            uint64 expectedCalls,
+            uint256 expectedCalls,
             bool approvedCurrentSubmission,
             bool rejectedCurrentSubmission
         )
@@ -505,7 +525,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
 
     function _replaceable(uint256 demandId) private view returns (bool) {
         Demand storage d = demands[demandId];
-        if (d.status == Status.Fulfilled || d.status == Status.Closed) return true;
+        if (d.status == Status.Fulfilled || d.status == Status.Closed || d.status == Status.Cancelled) return true;
         if (block.timestamp < d.deadline) return false;
         if (d.status == Status.Open) return true;
         if (d.status == Status.Submitted) {
@@ -519,6 +539,7 @@ contract AgentDemand is ReentrancyGuard, EIP712 {
         Demand storage d = demands[demandId];
         if (commitmentOf[demandId][supporter] == 0) return false;
         if (d.status == Status.Closed) return false;
+        if (d.status == Status.Cancelled) return true;
         uint256 nonce = submissionNonce[demandId];
         if (d.status == Status.Fulfilled) {
             return !hasApproved[demandId][nonce][supporter];

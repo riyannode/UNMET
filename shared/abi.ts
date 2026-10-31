@@ -47,6 +47,19 @@ export const AGENT_DEMAND_ABI = [
   },
   {
     "type": "function",
+    "name": "SETTLEMENT_GRACE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "activeDemandByKey",
     "inputs": [
       {
@@ -115,6 +128,24 @@ export const AGENT_DEMAND_ABI = [
   {
     "type": "function",
     "name": "approveService",
+    "inputs": [
+      {
+        "name": "demandId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expectedSubmissionNonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cancelSettlement",
     "inputs": [
       {
         "name": "demandId",
@@ -297,8 +328,8 @@ export const AGENT_DEMAND_ABI = [
     "outputs": [
       {
         "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -377,8 +408,8 @@ export const AGENT_DEMAND_ABI = [
           },
           {
             "name": "expectedCalls",
-            "type": "uint64",
-            "internalType": "uint64"
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
             "name": "deadline",
@@ -448,8 +479,8 @@ export const AGENT_DEMAND_ABI = [
       },
       {
         "name": "expectedCalls",
-        "type": "uint64",
-        "internalType": "uint64"
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "approvedCurrentSubmission",
@@ -604,6 +635,11 @@ export const AGENT_DEMAND_ABI = [
     "inputs": [
       {
         "name": "demandId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expectedSubmissionNonce",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1264,6 +1300,19 @@ export const AGENT_DEMAND_ABI = [
   },
   {
     "type": "event",
+    "name": "SettlementCancelled",
+    "inputs": [
+      {
+        "name": "demandId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "SubmissionRejected",
     "inputs": [
       {
@@ -1452,6 +1501,16 @@ export const AGENT_DEMAND_ABI = [
   },
   {
     "type": "error",
+    "name": "SettlementGraceActive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SettlementGraceExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "StringTooLong",
     "inputs": [
       {
@@ -1460,6 +1519,11 @@ export const AGENT_DEMAND_ABI = [
         "internalType": "string"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "SubmissionNonceMismatch",
+    "inputs": []
   },
   {
     "type": "error",

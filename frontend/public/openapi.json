@@ -88,7 +88,7 @@
         "properties": {
           "minBounty": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$", "default": "0", "description": "Minimum committed amount, decimal units with at most the selected escrow token decimals." },
           "minSupporters": { "type": "integer", "minimum": 0, "maximum": 4294967295, "default": 1 },
-          "status": { "type": "string", "pattern": "^(?:[oO][pP][eE][nN]|[sS][uU][bB][mM][iI][tT][tT][eE][dD]|[rR][eE][aA][dD][yY]|[rR][eE][jJ][eE][cC][tT][eE][dD]|[eE][xX][pP][iI][rR][eE][dD]|[fF][uU][lL][fF][iI][lL][lL][eE][dD]|[cC][lL][oO][sS][eE][dD])$", "default": "open", "description": "Status comparison is case-insensitive. Omit the property to use the default status filter." },
+          "status": { "type": "string", "pattern": "^(?:[oO][pP][eE][nN]|[sS][uU][bB][mM][iI][tT][tT][eE][dD]|[rR][eE][aA][dD][yY]|[rR][eE][jJ][eE][cC][tT][eE][dD]|[eE][xX][pP][iI][rR][eE][dD]|[fF][uU][lL][fF][iI][lL][lL][eE][dD]|[cC][lL][oO][sS][eE][dD]|[cC][aA][nN][cC][eE][lL][lL][eE][dD])$", "default": "open", "description": "Status comparison is case-insensitive. Omit the property to use the default status filter." },
           "sort": { "type": "string", "enum": ["bounty", "supporters", "calls", "deadline", "score"], "default": "bounty" },
           "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
         }

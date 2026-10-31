@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { encodeAbiParameters, encodeEventTopics, type Address, type Hash, type PublicClient } from "viem";
 import { afterConfirmedTransaction, deriveMarketRequests, nextMarketStatusChangeAt, readSupportForIdentity, settleBoardRead, settleSupportRead, supportIdentity } from "../app-state";
 import { deriveGlobalAnalytics } from "../analytics.ts";
-import { DEMAND_ABI, demandIdsFromLogs, effectiveStatus, parseMarketSyncInterval, synchronizeMarketBoard, type DemandView, type MarketSyncCursor } from "../contract";
+import { DEMAND_ABI, demandIdsFromLogs, effectiveStatus, parseMarketSyncInterval, readDemandWithClient, synchronizeMarketBoard, type DemandView, type MarketSyncCursor } from "../contract";
 
 const SYNC_CONTRACT = "0x00000000000000000000000000000000000000aa" as Address;
 const SYNC_DEPLOYMENT = { chainId: 1952, contract: SYNC_CONTRACT, rpcUrl: "https://example.test", deployBlock: 0n, chain: { name: "Test", explorerUrl: "https://example.test", nativeCurrency: { name: "Test", symbol: "T", decimals: 18 } }, escrowToken: { address: SYNC_CONTRACT, symbol: "USDC", decimals: 6 } };
@@ -87,6 +87,25 @@ describe("global analytics snapshot", () => {
   });
 });
 
+describe("demand snapshot", () => {
+  test("pins proposal, nonce and progress reads to one block", async () => {
+    const reads: Array<{ functionName: string; blockNumber?: bigint }> = [];
+    const client = {
+      getBlockNumber: async () => 42n,
+      readContract: async ({ functionName, blockNumber }: { functionName: string; blockNumber?: bigint }) => {
+        reads.push({ functionName, blockNumber });
+        if (functionName === "getDemand") return syncDemand(1n, 10n);
+        if (functionName === "submissionNonce") return 2n;
+        return [0n, 0n, false] as const;
+      },
+    };
+    const result = await readDemandWithClient(client as never, 1n, undefined, SYNC_CONTRACT);
+    expect(result.submissionNonce).toBe(2n);
+    expect(reads.map(({ functionName }) => functionName).sort()).toEqual(["approvalProgress", "getDemand", "rejectionProgress", "submissionNonce"]);
+    expect(reads.every(({ blockNumber }) => blockNumber === 42n)).toBe(true);
+  });
+});
+
 describe("incremental Market synchronization", () => {
   test("decodes supported contract events and deduplicates demand IDs", () => {
     const logs = [
@@ -105,6 +124,7 @@ describe("incremental Market synchronization", () => {
       "ServiceApproved",
       "ServiceRejected",
       "ServiceSubmitted",
+      "SettlementCancelled",
       "SubmissionRejected",
       "VerifierRotated",
     ]);
@@ -136,6 +156,7 @@ describe("incremental Market synchronization", () => {
           getDemandReads.push({ id, blockNumber });
           return syncDemand(id, id === 1n ? 9_000_000n : 2_000_000n);
         }
+        if (functionName === "submissionNonce") return 1n;
         if (functionName === "approvalProgress") return [0n, 0n, false] as const;
         if (functionName === "rejectionProgress") return [0n, 0n, false] as const;
         throw new Error(`Unexpected contract read ${functionName}`);
@@ -146,7 +167,7 @@ describe("incremental Market synchronization", () => {
 
     expect(logRanges).toEqual([{ fromBlock: 11n, toBlock: 15n }]);
     expect(getDemandReads).toEqual([{ id: 1n, blockNumber: 15n }, { id: 2n, blockNumber: 15n }]);
-    expect(contractReadCount).toBe(6);
+    expect(contractReadCount).toBe(8);
     expect(result.demands.map(({ demandId, committed }) => [demandId, committed])).toEqual([
       [1n, 9_000_000n],
       [2n, 2_000_000n],
@@ -202,6 +223,7 @@ describe("incremental Market synchronization", () => {
         if (functionName === "nextDemandId") return 2n;
         const id = args?.[0] as bigint;
         if (functionName === "getDemand") return syncDemand(id, 4_000_000n);
+        if (functionName === "submissionNonce") return 1n;
         if (functionName === "approvalProgress") return [0n, 0n, false] as const;
         if (functionName === "rejectionProgress") return [0n, 0n, false] as const;
         throw new Error(`Unexpected contract read ${functionName}`);
@@ -243,7 +265,7 @@ describe("deadline-derived Market status", () => {
     expect(nextMarketStatusChangeAt([
       { status: 0, deadline: 99n, reviewEndsAt: 100n, quorumReached: false, candidateRejected: false },
       { status: 1, deadline: 180n, reviewEndsAt: 190n, quorumReached: true, candidateRejected: false },
-    ], now)).toBeNull();
+    ], now)).toBe(190n + 7n * 86400n);
   });
 });
 

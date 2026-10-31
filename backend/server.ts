@@ -328,7 +328,7 @@ function raw(entry: IndexEntry): ScoreInput {
 
 function effectiveStatus(entry: IndexEntry, nowUnix: bigint): string {
   const base = statusLabel(Number(entry.data.status));
-  if (base === "FULFILLED" || base === "CLOSED") return base;
+  if (base === "FULFILLED" || base === "CLOSED" || base === "CANCELLED") return base;
   if (base === "SUBMITTED" && entry.quorumReached) return "READY";
   if (nowUnix >= entry.data.deadline) {
     if (base === "OPEN") return "EXPIRED";
@@ -368,7 +368,7 @@ function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint, decima
 }
 
 const SORTS = new Set(["bounty", "supporters", "calls", "deadline", "score"]);
-const STATUSES = new Set(["open", "submitted", "ready", "rejected", "expired", "fulfilled", "closed"]);
+const STATUSES = new Set(["open", "submitted", "ready", "rejected", "expired", "fulfilled", "closed", "cancelled"]);
 
 export function validateOpportunitiesInput(body: unknown, decimals = 6): { ok: true; value: QueryInput } | { ok: false; code: string; message: string } {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -404,7 +404,7 @@ export function validateOpportunitiesInput(body: unknown, decimals = 6): { ok: t
   let status: string | undefined = "open";
   if (input.status !== undefined) {
     if (typeof input.status !== "string" || !STATUSES.has(input.status.toLowerCase())) {
-      return { ok: false, code: "INVALID_STATUS", message: "status must be open|submitted|ready|rejected|expired|fulfilled|closed" };
+      return { ok: false, code: "INVALID_STATUS", message: "status must be open|submitted|ready|rejected|expired|fulfilled|closed|cancelled" };
     }
     status = input.status.toLowerCase();
   }
@@ -486,9 +486,9 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
     if (entry.data.supporterCount === 0) cautions.push("No supporters are recorded.");
     if (entry.data.expectedCalls === 0n) cautions.push("No expected calls are recorded.");
     if (remaining <= 86400n) cautions.push("The demand deadline is within one day or has passed.");
-    if (base.status === "READY") cautions.push("The review quorum is reached; finalization is still required.");
+    if (base.status === "READY") cautions.push(nowUnix >= entry.data.reviewEndsAt + 604800n ? "Settlement can be cancelled; supporters can then refund." : "The review quorum is reached; finalization is still required.");
     if (base.status === "FULFILLED") cautions.push("Residual escrow may be refundable to non-approvers.");
-    if (base.status === "CLOSED" || base.status === "EXPIRED" || base.status === "REJECTED") cautions.push(`Current status is ${base.status}; new proposals are unavailable.`);
+    if (base.status === "CLOSED" || base.status === "CANCELLED" || base.status === "EXPIRED" || base.status === "REJECTED") cautions.push(`Current status is ${base.status}; new proposals are unavailable.`);
     if (Number(entry.data.status) === 1 && base.status === "SUBMITTED") cautions.push("A builder candidate is under commitment-weighted review; approval does not imply all escrow settles to the builder.");
     if (allEconomicFactorsTied) cautions.push("All peer economic factors are tied; economic percentiles do not distinguish these demands.");
     if (allRoundedScoresTied) cautions.push("Rounded scores are tied; numeric demand ID descending breaks rank ties.");
