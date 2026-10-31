@@ -7,10 +7,10 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-/// @title AgentDemandV2
+/// @title AgentDemand
 /// @notice Funded onchain demand order book for AI-agent capabilities.
 /// @dev Non-upgradeable. Exact-string duplicate prevention only; semantic clustering is offchain.
-contract AgentDemandV2 is ReentrancyGuard, EIP712 {
+contract AgentDemand is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
 
     enum Status {

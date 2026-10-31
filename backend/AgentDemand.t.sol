@@ -3,7 +3,7 @@ pragma solidity 0.8.37;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {AgentDemandV2} from "./AgentDemandV2.sol";
+import {AgentDemand} from "./AgentDemand.sol";
 
 contract MockUSD is ERC20 {
     constructor() ERC20("Mock USD", "mUSD") {}
@@ -17,9 +17,9 @@ contract MockUSD is ERC20 {
     }
 }
 
-contract HashHarness is AgentDemandV2 {
+contract HashHarness is AgentDemand {
     constructor(address token, address treasury, address verifier, address admin)
-        AgentDemandV2(token, treasury, 200, 6000, 10_000, 1 days, verifier, admin)
+        AgentDemand(token, treasury, 200, 6000, 10_000, 1 days, verifier, admin)
     {}
 
     function hashes(ValidationAttestation calldata a) external view returns (bytes32, bytes32, bytes32, bytes32) {
@@ -61,9 +61,9 @@ contract CallbackUSD is MockUSD {
     }
 }
 
-contract AgentDemandV2Test is Test {
+contract AgentDemandTest is Test {
     MockUSD internal token;
-    AgentDemandV2 internal demand;
+    AgentDemand internal demand;
 
     address internal treasury = makeAddr("treasury");
     address internal alice = makeAddr("alice");
@@ -85,9 +85,8 @@ contract AgentDemandV2Test is Test {
 
     function setUp() public {
         token = new MockUSD();
-        demand = new AgentDemandV2(
-            address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin
-        );
+        demand =
+            new AgentDemand(address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
         address[4] memory wallets = [alice, bob, carol, builder];
         for (uint256 i; i < wallets.length; ++i) {
             token.mint(wallets[i], 2_000_000);
@@ -112,9 +111,9 @@ contract AgentDemandV2Test is Test {
     function _attestation(address who, uint256 id, string memory url, bytes32 evidence)
         internal
         view
-        returns (AgentDemandV2.ValidationAttestation memory a)
+        returns (AgentDemand.ValidationAttestation memory a)
     {
-        a = AgentDemandV2.ValidationAttestation(
+        a = AgentDemand.ValidationAttestation(
             block.chainid,
             address(demand),
             id,
@@ -129,7 +128,7 @@ contract AgentDemandV2Test is Test {
         );
     }
 
-    function _digest(address escrow, AgentDemandV2.ValidationAttestation memory a) internal view returns (bytes32) {
+    function _digest(address escrow, AgentDemand.ValidationAttestation memory a) internal view returns (bytes32) {
         bytes32 typeHash = keccak256(
             "ValidationAttestation(uint256 escrowChainId,address verifyingContract,uint256 demandId,address builderWallet,bytes32 serviceUrlHash,bytes32 evidenceHash,bytes32 paymentRequirementsHash,uint256 submissionNonce,bytes32 validationPolicyId,uint64 issuedAt,uint64 expiresAt)"
         );
@@ -145,44 +144,42 @@ contract AgentDemandV2Test is Test {
         return keccak256(abi.encodePacked("\x19\x01", domain, keccak256(abi.encode(typeHash, a))));
     }
 
-    function _sign(AgentDemandV2.ValidationAttestation memory a, uint256 key) internal view returns (bytes memory) {
+    function _sign(AgentDemand.ValidationAttestation memory a, uint256 key) internal view returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, _digest(address(demand), a));
         return abi.encodePacked(r, s, v);
     }
 
     function _submit(address who, uint256 id, string memory url, bytes32 evidence) internal {
-        AgentDemandV2.ValidationAttestation memory a = _attestation(who, id, url, evidence);
+        AgentDemand.ValidationAttestation memory a = _attestation(who, id, url, evidence);
         bytes memory sig = _sign(a, VERIFIER_KEY);
         vm.prank(who);
         demand.submitService(id, url, evidence, a, sig);
     }
 
     function test_ConstructorValidation() public {
-        vm.expectRevert(AgentDemandV2.ZeroAddress.selector);
-        new AgentDemandV2(address(0), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
-        vm.expectRevert(AgentDemandV2.ZeroAddress.selector);
-        new AgentDemandV2(address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, address(0), verifierAdmin);
-        vm.expectRevert(AgentDemandV2.ZeroAddress.selector);
-        new AgentDemandV2(address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, address(0));
-        vm.expectRevert(AgentDemandV2.InvalidFee.selector);
-        new AgentDemandV2(address(token), treasury, 1001, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
-        vm.expectRevert(AgentDemandV2.InvalidQuorum.selector);
-        new AgentDemandV2(address(token), treasury, FEE_BPS, 5000, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
-        vm.expectRevert(AgentDemandV2.InvalidAmount.selector);
-        new AgentDemandV2(address(token), treasury, FEE_BPS, QUORUM_BPS, 0, REVIEW, verifier, verifierAdmin);
-        vm.expectRevert(AgentDemandV2.InvalidDeadline.selector);
-        new AgentDemandV2(
-            address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, 30 minutes, verifier, verifierAdmin
-        );
+        vm.expectRevert(AgentDemand.ZeroAddress.selector);
+        new AgentDemand(address(0), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        vm.expectRevert(AgentDemand.ZeroAddress.selector);
+        new AgentDemand(address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, address(0), verifierAdmin);
+        vm.expectRevert(AgentDemand.ZeroAddress.selector);
+        new AgentDemand(address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, address(0));
+        vm.expectRevert(AgentDemand.InvalidFee.selector);
+        new AgentDemand(address(token), treasury, 1001, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        vm.expectRevert(AgentDemand.InvalidQuorum.selector);
+        new AgentDemand(address(token), treasury, FEE_BPS, 5000, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        vm.expectRevert(AgentDemand.InvalidAmount.selector);
+        new AgentDemand(address(token), treasury, FEE_BPS, QUORUM_BPS, 0, REVIEW, verifier, verifierAdmin);
+        vm.expectRevert(AgentDemand.InvalidDeadline.selector);
+        new AgentDemand(address(token), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, 30 minutes, verifier, verifierAdmin);
     }
 
     function test_CreateValidDemandAndCanonicalKey() public {
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.Demand memory d = demand.getDemand(id);
+        AgentDemand.Demand memory d = demand.getDemand(id);
         assertEq(d.creator, alice);
         assertEq(d.committed, 50_000);
         assertEq(d.supporterCount, 1);
-        assertEq(uint8(d.status), uint8(AgentDemandV2.Status.Open));
+        assertEq(uint8(d.status), uint8(AgentDemand.Status.Open));
         assertEq(d.expectedCalls, 25_000);
         assertEq(token.balanceOf(address(demand)), 50_000);
         assertEq(demand.totalEscrowed(), 50_000);
@@ -191,15 +188,15 @@ contract AgentDemandV2Test is Test {
 
     function test_InvalidCreateFields() public {
         vm.startPrank(alice);
-        vm.expectRevert(AgentDemandV2.InvalidCapability.selector);
+        vm.expectRevert(AgentDemand.InvalidCapability.selector);
         demand.createDemand("Vendor-KYB", SPEC, 1, 1, _deadline(), MIN_COMMIT);
-        vm.expectRevert(AgentDemandV2.InvalidAmount.selector);
+        vm.expectRevert(AgentDemand.InvalidAmount.selector);
         demand.createDemand("cap", "spec", 0, 1, _deadline(), MIN_COMMIT);
-        vm.expectRevert(AgentDemandV2.InvalidExpectedCalls.selector);
+        vm.expectRevert(AgentDemand.InvalidExpectedCalls.selector);
         demand.createDemand("cap", "spec", 1, 0, _deadline(), MIN_COMMIT);
-        vm.expectRevert(AgentDemandV2.InvalidDeadline.selector);
+        vm.expectRevert(AgentDemand.InvalidDeadline.selector);
         demand.createDemand("cap", "spec", 1, 1, uint64(block.timestamp + 30 minutes), MIN_COMMIT);
-        vm.expectRevert(AgentDemandV2.InvalidAmount.selector);
+        vm.expectRevert(AgentDemand.InvalidAmount.selector);
         demand.createDemand("cap", "spec", 1, 1, _deadline(), MIN_COMMIT - 1);
         vm.stopPrank();
     }
@@ -207,7 +204,7 @@ contract AgentDemandV2Test is Test {
     function test_DuplicateActiveDemandReverts() public {
         _create(alice, 50_000);
         vm.prank(bob);
-        vm.expectRevert(AgentDemandV2.DuplicateDemand.selector);
+        vm.expectRevert(AgentDemand.DuplicateDemand.selector);
         demand.createDemand(CAP, SPEC, 20_000, 25_000, _deadline(), 50_000);
     }
 
@@ -228,7 +225,7 @@ contract AgentDemandV2Test is Test {
         demand.supportDemand(id, 30_000, 1_000);
         vm.prank(carol);
         demand.supportDemand(id, 20_000, 500);
-        AgentDemandV2.Demand memory d = demand.getDemand(id);
+        AgentDemand.Demand memory d = demand.getDemand(id);
         assertEq(d.committed, 100_000);
         assertEq(d.supporterCount, 3);
         assertEq(d.expectedCalls, 26_500);
@@ -241,7 +238,7 @@ contract AgentDemandV2Test is Test {
     function test_QuorumUsesCeilingAndSnapshot() public {
         uint256 id = _create(alice, 10_001);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
-        AgentDemandV2.Demand memory d = demand.getDemand(id);
+        AgentDemand.Demand memory d = demand.getDemand(id);
         assertEq(d.reviewCommitted, 10_001);
         assertEq(d.approvalRequired, 6_001);
     }
@@ -250,7 +247,7 @@ contract AgentDemandV2Test is Test {
         uint256 id = _create(alice, 50_000);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(bob);
-        vm.expectRevert(AgentDemandV2.InvalidStatus.selector);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
         demand.supportDemand(id, 30_000, 1);
     }
 
@@ -260,7 +257,7 @@ contract AgentDemandV2Test is Test {
         vm.prank(alice);
         demand.rejectService(id);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.ConflictingVote.selector);
+        vm.expectRevert(AgentDemand.ConflictingVote.selector);
         demand.approveService(id);
     }
 
@@ -281,7 +278,7 @@ contract AgentDemandV2Test is Test {
         assertTrue(rejected);
 
         demand.reopen(id);
-        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemandV2.Status.Open));
+        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Open));
         assertEq(demand.rejectionWeight(id), 0);
     }
 
@@ -300,7 +297,7 @@ contract AgentDemandV2Test is Test {
         (, uint256 required, bool reached) = demand.approvalProgress(id);
         assertEq(required, 60_000);
         assertFalse(reached);
-        vm.expectRevert(AgentDemandV2.QuorumNotReached.selector);
+        vm.expectRevert(AgentDemand.QuorumNotReached.selector);
         demand.finalize(id);
     }
 
@@ -323,8 +320,8 @@ contract AgentDemandV2Test is Test {
         // Only Alice + Bob's 80k is settled. Carol's 20k remains refundable.
         assertEq(token.balanceOf(builder) - builderBefore, 78_400);
         assertEq(token.balanceOf(treasury) - treasuryBefore, 1_600);
-        AgentDemandV2.Demand memory d = demand.getDemand(id);
-        assertEq(uint8(d.status), uint8(AgentDemandV2.Status.Fulfilled));
+        AgentDemand.Demand memory d = demand.getDemand(id);
+        assertEq(uint8(d.status), uint8(AgentDemand.Status.Fulfilled));
         assertEq(d.committed, 20_000);
         assertEq(demand.totalEscrowed(), 20_000);
         assertEq(token.balanceOf(address(demand)), 20_000);
@@ -335,7 +332,7 @@ contract AgentDemandV2Test is Test {
         demand.refund(id);
         assertEq(demand.totalEscrowed(), 0);
         assertEq(token.balanceOf(address(demand)), 0);
-        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemandV2.Status.Fulfilled));
+        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Fulfilled));
     }
 
     function test_BuilderCannotSeizeNonApproverFundsByBuyingQuorum() public {
@@ -395,7 +392,7 @@ contract AgentDemandV2Test is Test {
         vm.warp(block.timestamp + 8 days);
         vm.prank(alice);
         demand.refund(id);
-        AgentDemandV2.Demand memory d = demand.getDemand(id);
+        AgentDemand.Demand memory d = demand.getDemand(id);
         assertEq(d.committed, 30_000);
         assertEq(d.expectedCalls, 26_000);
         assertEq(d.supporterCount, 2);
@@ -406,7 +403,7 @@ contract AgentDemandV2Test is Test {
         assertEq(d.committed, 0);
         assertEq(d.expectedCalls, 26_000);
         assertEq(d.supporterCount, 2);
-        assertEq(uint8(d.status), uint8(AgentDemandV2.Status.Closed));
+        assertEq(uint8(d.status), uint8(AgentDemand.Status.Closed));
         assertEq(demand.activeDemandByKey(_key()), 0);
         assertEq(demand.totalEscrowed(), 0);
     }
@@ -423,20 +420,20 @@ contract AgentDemandV2Test is Test {
         demand.refund(id);
         vm.prank(bob);
         demand.refund(id);
-        vm.expectRevert(AgentDemandV2.InvalidStatus.selector);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
         demand.finalize(id);
     }
 
     function test_EarlyAndDoubleRefundBlocked() public {
         uint256 id = _create(alice, 50_000);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.NothingToRefund.selector);
+        vm.expectRevert(AgentDemand.NothingToRefund.selector);
         demand.refund(id);
         vm.warp(block.timestamp + 8 days);
         vm.prank(alice);
         demand.refund(id);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.NothingToRefund.selector);
+        vm.expectRevert(AgentDemand.NothingToRefund.selector);
         demand.refund(id);
     }
 
@@ -461,7 +458,7 @@ contract AgentDemandV2Test is Test {
         HashHarness harness = new HashHarness(address(token), treasury, verifier, verifierAdmin);
         address fixture = 0x1111111111111111111111111111111111111111;
         vm.etch(fixture, address(harness).code);
-        AgentDemandV2.ValidationAttestation memory a = AgentDemandV2.ValidationAttestation({
+        AgentDemand.ValidationAttestation memory a = AgentDemand.ValidationAttestation({
             escrowChainId: 1952,
             verifyingContract: fixture,
             demandId: 9007199254740993,
@@ -481,16 +478,16 @@ contract AgentDemandV2Test is Test {
         assertEq(digest, 0x2917ee6a3d428ef2088a6f96d9873f46dbba4cf3da8c9cd75a3b0dd2ec284301);
     }
 
-    function _expectInvalid(uint256 id, AgentDemandV2.ValidationAttestation memory a, bytes memory sig) internal {
+    function _expectInvalid(uint256 id, AgentDemand.ValidationAttestation memory a, bytes memory sig) internal {
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), a, sig);
         assertEq(demand.submissionNonce(id), 0);
     }
 
     function test_AttestationBindingsAndSignature() public {
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory base =
+        AgentDemand.ValidationAttestation memory base =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         bytes memory sig = _sign(base, VERIFIER_KEY);
         _expectInvalid(id, base, "");
@@ -510,7 +507,7 @@ contract AgentDemandV2Test is Test {
         uint256 highS = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 - uint256(lowS);
         _expectInvalid(id, base, abi.encodePacked(r, bytes32(highS), v == 27 ? uint8(28) : uint8(27)));
         for (uint256 i; i < 11; ++i) {
-            AgentDemandV2.ValidationAttestation memory a =
+            AgentDemand.ValidationAttestation memory a =
                 _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
             if (i == 0) a.escrowChainId++;
             if (i == 1) a.verifyingContract = alice;
@@ -532,7 +529,7 @@ contract AgentDemandV2Test is Test {
         assertEq(payment, keccak256("payment"));
         assertEq(policy, keccak256("policy"));
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidStatus.selector);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), base, sig);
         (bool ok,) = address(demand)
             .call(abi.encodeWithSignature("submitService(uint256,string,bytes32)", id, "url", keccak256("ev")));
@@ -542,7 +539,7 @@ contract AgentDemandV2Test is Test {
     function test_TimeBoundaries() public {
         vm.warp(10000);
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory a =
+        AgentDemand.ValidationAttestation memory a =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         a.issuedAt = 10061;
         a.expiresAt = 10961;
@@ -570,7 +567,7 @@ contract AgentDemandV2Test is Test {
 
     function test_ReopenReplayDigestsAndRotation() public {
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory old =
+        AgentDemand.ValidationAttestation memory old =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         bytes memory oldSig = _sign(old, VERIFIER_KEY);
         vm.prank(builder);
@@ -580,7 +577,7 @@ contract AgentDemandV2Test is Test {
         uint64 deadline = demand.getDemand(id).deadline;
         vm.prank(verifierAdmin);
         demand.setVerifier(vm.addr(0x5678));
-        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemandV2.Status.Submitted));
+        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Submitted));
         demand.reopen(id);
         assertEq(demand.getDemand(id).deadline, deadline);
         assertEq(demand.submissionNonce(id), 1);
@@ -588,12 +585,12 @@ contract AgentDemandV2Test is Test {
         assertEq(payment, keccak256("payment"));
         assertEq(policy, keccak256("policy"));
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), old, oldSig);
-        AgentDemandV2.ValidationAttestation memory next =
+        AgentDemand.ValidationAttestation memory next =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), next, _sign(next, VERIFIER_KEY));
         bytes memory sig = _sign(next, 0x5678);
         vm.prank(builder);
@@ -604,26 +601,26 @@ contract AgentDemandV2Test is Test {
         vm.prank(alice);
         demand.approveService(id);
         demand.finalize(id);
-        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemandV2.Status.Fulfilled));
+        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Fulfilled));
     }
 
     function test_AuthorityAndLateSubmission() public {
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.Unauthorized.selector);
+        vm.expectRevert(AgentDemand.Unauthorized.selector);
         demand.setVerifier(alice);
         vm.prank(verifierAdmin);
-        vm.expectRevert(AgentDemandV2.ZeroAddress.selector);
+        vm.expectRevert(AgentDemand.ZeroAddress.selector);
         demand.setVerifier(address(0));
         uint256 id = _create(alice, 50_000);
         vm.prank(verifierAdmin);
-        vm.expectRevert(AgentDemandV2.InvalidStatus.selector);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
         demand.finalize(id);
         vm.warp(block.timestamp + 8 days);
-        AgentDemandV2.ValidationAttestation memory a =
+        AgentDemand.ValidationAttestation memory a =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         bytes memory sig = _sign(a, VERIFIER_KEY);
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.DeadlinePassed.selector);
+        vm.expectRevert(AgentDemand.DeadlinePassed.selector);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), a, sig);
         vm.prank(alice);
         demand.refund(id);
@@ -631,14 +628,14 @@ contract AgentDemandV2Test is Test {
 
     function test_CallbackAndExactTransferRollback() public {
         CallbackUSD bad = new CallbackUSD();
-        AgentDemandV2 target =
-            new AgentDemandV2(address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        AgentDemand target =
+            new AgentDemand(address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
         bad.mint(alice, 100_000);
         vm.prank(alice);
         bad.approve(address(target), type(uint256).max);
         bad.configure(address(target), abi.encodeCall(target.reopen, (1)), true);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.UnsupportedToken.selector);
+        vm.expectRevert(AgentDemand.UnsupportedToken.selector);
         target.createDemand(CAP, SPEC, 20_000, 1, _deadline(), 50_000);
         assertEq(target.nextDemandId(), 1);
         assertEq(target.totalEscrowed(), 0);
@@ -669,14 +666,14 @@ contract AgentDemandV2Test is Test {
 
     function test_OutgoingTransferRollbackAndReentrancy() public {
         CallbackUSD bad = new CallbackUSD();
-        AgentDemandV2 target =
-            new AgentDemandV2(address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        AgentDemand target =
+            new AgentDemand(address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
         bad.mint(alice, 50_000);
         vm.prank(alice);
         bad.approve(address(target), type(uint256).max);
         vm.prank(alice);
         target.createDemand(CAP, SPEC, 20_000, 1, _deadline(), 50_000);
-        AgentDemandV2.ValidationAttestation memory a = AgentDemandV2.ValidationAttestation(
+        AgentDemand.ValidationAttestation memory a = AgentDemand.ValidationAttestation(
             block.chainid,
             address(target),
             1,
@@ -695,11 +692,11 @@ contract AgentDemandV2Test is Test {
         vm.prank(alice);
         target.approveService(1);
         bad.configure(address(target), abi.encodeCall(target.finalize, (1)), true);
-        vm.expectRevert(AgentDemandV2.UnsupportedToken.selector);
+        vm.expectRevert(AgentDemand.UnsupportedToken.selector);
         target.finalize(1);
         assertEq(target.totalEscrowed(), 50_000);
         assertEq(bad.balanceOf(address(target)), 50_000);
-        assertEq(uint8(target.getDemand(1).status), uint8(AgentDemandV2.Status.Submitted));
+        assertEq(uint8(target.getDemand(1).status), uint8(AgentDemand.Status.Submitted));
         bad.configure(address(target), abi.encodeCall(target.finalize, (1)), false);
         target.finalize(1);
         assertTrue(bad.attempted());
@@ -707,7 +704,7 @@ contract AgentDemandV2Test is Test {
         assertEq(bad.callbackError(), bytes4(keccak256("ReentrancyGuardReentrantCall()")));
         assertEq(target.totalEscrowed(), 0);
         assertEq(bad.balanceOf(address(target)), 0);
-        vm.expectRevert(AgentDemandV2.InvalidStatus.selector);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
         target.finalize(1);
     }
 
@@ -749,7 +746,7 @@ contract AgentDemandV2Test is Test {
     function test_SignedBindingViolationsAndExactUrlBytes() public {
         uint256 id = _create(alice, 50_000);
         for (uint256 i; i < 7; ++i) {
-            AgentDemandV2.ValidationAttestation memory a =
+            AgentDemand.ValidationAttestation memory a =
                 _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
             if (i == 0) a.escrowChainId++;
             if (i == 1) a.verifyingContract = alice;
@@ -760,21 +757,21 @@ contract AgentDemandV2Test is Test {
             if (i == 6) a.submissionNonce++;
             _expectInvalid(id, a, _sign(a, VERIFIER_KEY));
         }
-        AgentDemandV2.ValidationAttestation memory good =
+        AgentDemand.ValidationAttestation memory good =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         bytes memory sig = _sign(good, VERIFIER_KEY);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), good, sig);
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "https://svc.example/kyb/", keccak256("ev"), good, sig);
         assertEq(demand.submissionNonce(id), 0);
     }
 
     function test_ReplaySameVerifierAndHistoricalDigests() public {
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory first = _attestation(builder, id, "url", keccak256("ev"));
+        AgentDemand.ValidationAttestation memory first = _attestation(builder, id, "url", keccak256("ev"));
         bytes memory sig = _sign(first, VERIFIER_KEY);
         vm.prank(builder);
         demand.submitService(id, "url", keccak256("ev"), first, sig);
@@ -782,11 +779,11 @@ contract AgentDemandV2Test is Test {
         demand.rejectService(id);
         demand.reopen(id);
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "url", keccak256("ev"), first, sig);
         assertEq(demand.submissionNonce(id), 1);
         assertTrue(demand.hasRejected(id, 1, alice));
-        AgentDemandV2.ValidationAttestation memory second = _attestation(builder, id, "url", keccak256("ev"));
+        AgentDemand.ValidationAttestation memory second = _attestation(builder, id, "url", keccak256("ev"));
         second.paymentRequirementsHash = keccak256("payment2");
         second.validationPolicyId = keccak256("policy2");
         bytes memory secondSig = _sign(second, VERIFIER_KEY);
@@ -822,7 +819,7 @@ contract AgentDemandV2Test is Test {
         demand.supportDemand(id, 40_000, 1);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(verifierAdmin);
-        vm.expectRevert(AgentDemandV2.QuorumNotReached.selector);
+        vm.expectRevert(AgentDemand.QuorumNotReached.selector);
         demand.finalize(id);
         vm.prank(alice);
         demand.approveService(id);
@@ -832,10 +829,10 @@ contract AgentDemandV2Test is Test {
         demand.finalize(id);
         assertEq(token.balanceOf(builder) - beforeBuilder, 58_800);
         assertEq(token.balanceOf(treasury) - beforeTreasury, 1_200);
-        vm.expectRevert(AgentDemandV2.InvalidStatus.selector);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
         demand.finalize(id);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.NothingToRefund.selector);
+        vm.expectRevert(AgentDemand.NothingToRefund.selector);
         demand.refund(id);
         vm.prank(bob);
         demand.refund(id);
@@ -849,12 +846,12 @@ contract AgentDemandV2Test is Test {
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
         demand.approveService(id);
-        AgentDemandV2.Demand memory beforeRotation = demand.getDemand(id);
+        AgentDemand.Demand memory beforeRotation = demand.getDemand(id);
         vm.expectEmit(true, true, false, true, address(demand));
         emit VerifierRotated(verifier, carol);
         vm.prank(verifierAdmin);
         demand.setVerifier(carol);
-        AgentDemandV2.Demand memory afterRotation = demand.getDemand(id);
+        AgentDemand.Demand memory afterRotation = demand.getDemand(id);
         assertEq(afterRotation.builder, beforeRotation.builder);
         assertEq(afterRotation.serviceUrl, beforeRotation.serviceUrl);
         assertEq(afterRotation.evidenceHash, beforeRotation.evidenceHash);
@@ -902,7 +899,7 @@ contract AgentDemandV2Test is Test {
         assertEq(salt, bytes32(0));
         assertEq(extensions.length, 0);
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory a = _attestation(builder, id, "url", keccak256("ev"));
+        AgentDemand.ValidationAttestation memory a = _attestation(builder, id, "url", keccak256("ev"));
         bytes memory sig = _sign(a, VERIFIER_KEY);
         vm.expectEmit(true, true, true, true, address(demand));
         emit ServiceSubmitted(
@@ -923,12 +920,12 @@ contract AgentDemandV2Test is Test {
 
     function test_ChainChangeInvalidatesOldDomainSignature() public {
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory a = _attestation(builder, id, "url", keccak256("ev"));
+        AgentDemand.ValidationAttestation memory a = _attestation(builder, id, "url", keccak256("ev"));
         a.escrowChainId = block.chainid + 1;
         bytes memory oldSig = _sign(a, VERIFIER_KEY);
         vm.chainId(block.chainid + 1);
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.InvalidAttestation.selector);
+        vm.expectRevert(AgentDemand.InvalidAttestation.selector);
         demand.submitService(id, "url", keccak256("ev"), a, oldSig);
         bytes memory sig = _sign(a, VERIFIER_KEY);
         vm.prank(builder);
@@ -937,7 +934,7 @@ contract AgentDemandV2Test is Test {
 
     function test_CanonicalSignatureVariants() public {
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory a =
+        AgentDemand.ValidationAttestation memory a =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         bytes memory sig = _sign(a, VERIFIER_KEY);
         bytes32 r;
@@ -963,7 +960,7 @@ contract AgentDemandV2Test is Test {
     function testFuzz_AttestationTime(uint16 offset, uint16 lifetime) public {
         vm.warp(100000);
         uint256 id = _create(alice, 50_000);
-        AgentDemandV2.ValidationAttestation memory a =
+        AgentDemand.ValidationAttestation memory a =
             _attestation(builder, id, "https://svc.example/kyb", keccak256("ev"));
         a.issuedAt = uint64(block.timestamp + bound(offset, 0, 80));
         a.expiresAt = uint64(uint256(a.issuedAt) + bound(lifetime, 0, 920));
@@ -983,17 +980,17 @@ contract AgentDemandV2Test is Test {
         uint256 id = _create(alice, 50_000);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(verifier);
-        vm.expectRevert(AgentDemandV2.NotSupporter.selector);
+        vm.expectRevert(AgentDemand.NotSupporter.selector);
         demand.approveService(id);
         vm.prank(verifierAdmin);
-        vm.expectRevert(AgentDemandV2.NotSupporter.selector);
+        vm.expectRevert(AgentDemand.NotSupporter.selector);
         demand.approveService(id);
         vm.prank(verifierAdmin);
-        vm.expectRevert(AgentDemandV2.QuorumNotReached.selector);
+        vm.expectRevert(AgentDemand.QuorumNotReached.selector);
         demand.finalize(id);
         vm.warp(block.timestamp + 8 days);
         vm.prank(verifierAdmin);
-        vm.expectRevert(AgentDemandV2.NothingToRefund.selector);
+        vm.expectRevert(AgentDemand.NothingToRefund.selector);
         demand.refund(id);
         vm.prank(verifier);
         (bool ok,) = address(demand).call(abi.encodeWithSignature("withdraw()"));
@@ -1016,14 +1013,14 @@ contract AgentDemandV2Test is Test {
         assertEq(demand.getDemand(id).committed, 60_000);
         assertEq(demand.expectedCallsOf(id, alice), 3);
         vm.warp(block.timestamp + 1 hours - 1);
-        AgentDemandV2.ValidationAttestation memory a = _attestation(builder, id, "url", keccak256("ev"));
+        AgentDemand.ValidationAttestation memory a = _attestation(builder, id, "url", keccak256("ev"));
         bytes memory sig = _sign(a, VERIFIER_KEY);
         vm.warp(block.timestamp + 1);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.DeadlinePassed.selector);
+        vm.expectRevert(AgentDemand.DeadlinePassed.selector);
         demand.supportDemand(id, 10_000, 1);
         vm.prank(builder);
-        vm.expectRevert(AgentDemandV2.DeadlinePassed.selector);
+        vm.expectRevert(AgentDemand.DeadlinePassed.selector);
         demand.submitService(id, "url", keccak256("ev"), a, sig);
         vm.prank(alice);
         demand.refund(id);
@@ -1036,7 +1033,7 @@ contract AgentDemandV2Test is Test {
         vm.prank(alice);
         demand.rejectService(id);
         vm.warp(block.timestamp + 1 hours);
-        vm.expectRevert(AgentDemandV2.DeadlinePassed.selector);
+        vm.expectRevert(AgentDemand.DeadlinePassed.selector);
         demand.reopen(id);
     }
 
@@ -1053,7 +1050,7 @@ contract AgentDemandV2Test is Test {
         demand.approveService(id);
         assertEq(demand.approvalWeight(id), 59_999);
         assertEq(demand.getDemand(id).approvalRequired, 60_000);
-        vm.expectRevert(AgentDemandV2.QuorumNotReached.selector);
+        vm.expectRevert(AgentDemand.QuorumNotReached.selector);
         demand.finalize(id);
     }
 
@@ -1065,15 +1062,15 @@ contract AgentDemandV2Test is Test {
         vm.prank(alice);
         demand.approveService(id);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.AlreadyApproved.selector);
+        vm.expectRevert(AgentDemand.AlreadyApproved.selector);
         demand.approveService(id);
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.ConflictingVote.selector);
+        vm.expectRevert(AgentDemand.ConflictingVote.selector);
         demand.rejectService(id);
         vm.prank(bob);
         demand.rejectService(id);
         vm.prank(bob);
-        vm.expectRevert(AgentDemandV2.AlreadyRejected.selector);
+        vm.expectRevert(AgentDemand.AlreadyRejected.selector);
         demand.rejectService(id);
         assertEq(demand.approvalWeight(id), 50_000);
         assertEq(demand.rejectionWeight(id), 50_000);
@@ -1084,11 +1081,11 @@ contract AgentDemandV2Test is Test {
         uint256 id = demand.createDemand(CAP, SPEC, 20_000, 1, uint64(block.timestamp + 1 hours), 50_000);
         vm.warp(block.timestamp + 59 minutes);
         _submit(builder, id, "url", keccak256("ev"));
-        AgentDemandV2.Demand memory d = demand.getDemand(id);
+        AgentDemand.Demand memory d = demand.getDemand(id);
         vm.warp(d.deadline);
         assertFalse(demand.isRefundable(id, alice));
         vm.prank(alice);
-        vm.expectRevert(AgentDemandV2.NothingToRefund.selector);
+        vm.expectRevert(AgentDemand.NothingToRefund.selector);
         demand.refund(id);
         vm.warp(d.reviewEndsAt);
         assertTrue(demand.isRefundable(id, alice));

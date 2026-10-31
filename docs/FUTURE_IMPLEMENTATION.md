@@ -8,7 +8,7 @@ Repository: https://github.com/riyannode/UNMET
 
 Status: PROPOSED — except the local G0.3 and G0.4 source noted below
 
-Implementation note: the repository contains a local G0.3 validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. It is not deployed or production-ready. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls. G0.4 adds the canonical non-upgradeable `AgentDemandV2.sol`, onchain attestation consumption, verifier rotation and escrow regression coverage. V2 consumer integration remains G0.5; no deployment is included.
+Implementation note: the repository contains a local G0.3 validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. It is not deployed or production-ready. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls. G0.4 adds the canonical non-upgradeable `AgentDemand.sol`, onchain attestation consumption, verifier rotation and escrow regression coverage. Canonical contract integration remains G0.5; no deployment is included.
 
 ## 0. DOCUMENT PURPOSE
 
@@ -221,7 +221,7 @@ Initial payment scheme: exact
 
 Validation runtime: isolated VPS-hosted Bun validation service
 
-Escrow: AgentDemandV2
+Escrow: AgentDemand
 
 The initial payment profile is X Layer-specific.
 
@@ -401,7 +401,7 @@ Required components:
 1. UNMET Frontend
 2. x402 validation service
 3. Verifier Signing Authority
-4. AgentDemandV2
+4. AgentDemand
 5. Existing Bun Backend and Indexer
 
 No BuilderRegistry is required.
@@ -421,9 +421,9 @@ Run validator and signer under separate unprivileged identities and isolated nam
 
 The runtime must resolve every A and AAAA result, reject non-public, mapped or otherwise special-use addresses, and bind each connection to a checked address. It must reject a mixed public/private answer rather than falling back to any unsafe address, preserve the original DNS hostname for TLS SNI and certificate verification, and revalidate every new connection. DNS resolution alone followed by an independent hostname connection is insufficient. Deny all redirects and proxies and enforce network egress restrictions outside the process as a second boundary. DNS, timeout, connect and TLS failures fail closed. An outbound request must never read a business response body: inspect the bounded 402 header then destroy the response. Admission and concurrency limits must be finite and configured before accepting work. The 10-second deadline applies across resolution, connect, TLS and response headers.
 
-The same reviewed V2 source supports escrow Testnet 1952 and Mainnet 196 through explicit deployment configuration; no chain-specific business logic or source edits. Constructor immutables and runtime bytecode may differ. Each deployment selects its RPC, chain ID, contract, verifier, pinned price denomination and payment profiles. Domain separation uses the selected escrow chain and contract, and V2 checks block.chainid and address(this). The payment network is independent of escrow chain. Mainnet activation requires separate security review, end-to-end verification and owner approval; this plan is neither an audit nor an activation.
+The same reviewed AgentDemand source supports escrow Testnet 1952 and Mainnet 196 through explicit deployment configuration; no chain-specific business logic or source edits. Constructor immutables and runtime bytecode may differ. Each deployment selects its RPC, chain ID, contract, verifier, pinned price denomination and payment profiles. Domain separation uses the selected escrow chain and contract, and AgentDemand checks block.chainid and address(this). The payment network is independent of escrow chain. Mainnet activation requires separate security review, end-to-end verification and owner approval; this plan is neither an audit nor an activation.
 
-Consumer identity is (escrowChainId, escrowContract, demandId). The existing frontend and backend contract modules use one global deployment. Future work must select a deployment explicitly in RPC clients, frontend routes and wallet actions, transaction lifecycle and recovery keys, app action IDs, backend index/checkpoint keys and API responses, and validation profile/denomination lookup. Pending records must retain their originating deployment and never be replayed into another. Future consumers target V2 only; the experimental V1 implementation is retained in Git history, without a dual-version runtime. This is a future interface map, not a claim that these consumers already support multiple deployments.
+Consumer identity is (escrowChainId, escrowContract, demandId). The existing frontend and backend contract modules use one global deployment. Future work must select a deployment explicitly in RPC clients, frontend routes and wallet actions, transaction lifecycle and recovery keys, app action IDs, backend index/checkpoint keys and API responses, and validation profile/denomination lookup. Pending records must retain their originating deployment and never be replayed into another. Future consumers target canonical AgentDemand; the experimental predecessor is retained in Git history, without a dual-version runtime. This is a future interface map, not a claim that these consumers already support multiple deployments.
 
 The unmounted G0.1 transport primitive accepts DNS-name service URLs only (no IP-literal targets), and uses native DNS, TLS and HTTPS over one checked literal peer, and destroys the response immediately after bounded headers. Its resolver and trust roots are trusted service configuration, not caller input. The caller must supply already validated, canonical POST bytes; full request size, duplicate-key, JCS and semantic enforcement belong to G0.2. The per-request DNS resolver is canceled on timeout and late results cannot open a socket. G0.2 must impose finite admission and bound resolver work even when an injected resolver cannot be canceled.
 
@@ -433,12 +433,12 @@ Local adversarial tests use real Bun TLS/HTTPS sockets on public-shaped IPv4 and
 
 | Existing consumer | Future deployment-identity impact |
 | --- | --- |
-| frontend/contract.ts: CHAIN_ID, DEMAND_CONTRACT, getPublic, submitService and wallet actions | Select explicit chain, contract, RPC and V2 interface per originating deployment; target V2 only. |
+| frontend/contract.ts: CHAIN_ID, DEMAND_CONTRACT, getPublic, submitService and wallet actions | Select explicit chain, contract, RPC and canonical AgentDemand interface per originating deployment. |
 | frontend/main.tsx, frontend/routing.ts: demandHref, parseDemandId; frontend/App.tsx | Carry deployment through routes, views and submission/action identity. |
 | frontend/transaction-lifecycle.ts: pending storage and action keys | Include chain and contract in keys and recovery records; preserve originating deployment. |
 | frontend/Analytics.tsx, frontend/CreateDemandChat.tsx and model | Bind analytics, creation and display to selected deployment. |
 | backend/contract.ts: loadConfig, getPublicClient, AGENT_DEMAND_ABI; backend/server.ts index | Select RPC/contract explicitly; scope index and checkpoint keys by deployment. |
-| backend/config.ts, backend/admin.ts | Resolve explicit deployment identity for configuration and administration; target V2 only. |
+| backend/config.ts, backend/admin.ts | Resolve explicit deployment identity for configuration and administration for canonical AgentDemand. |
 | Existing billing and payment modules | Demand Intelligence x402 billing remains independent of escrow deployment selection. |
 
 ### Security acceptance matrix
@@ -450,13 +450,13 @@ Local adversarial tests use real Bun TLS/HTTPS sockets on public-shaped IPv4 and
 | G0.3 | Reject unauthorized signer callers, wrong typed data, deployment, policy, time or expiry; exercise signer failure without issuing PASS. | Local authorization tests do not prove VPS key isolation or custody. |
 | G0.6 | Independently verify namespace identities, mount and secret separation, host egress rules, fixed control paths and denied host/metadata/management access on the target VPS; repeat transport and signer negative cases there. | Requires future deployment approval and target-host evidence. |
 
-### Proposed V2 submission interface
+### Canonical submission interface
 
-V2 exposes only `submitService(uint256 demandId, string serviceUrl, bytes32 evidenceHash, ValidationAttestation attestation, bytes verifierSignature)`; it must not expose the old unguarded three-argument overload. The attestation fields and their order are those of Section 4.10. Validate all bindings, expiry and current verifier before consuming the next nonce and recording the submission atomically. Preserve the existing submission fields and event semantics and add `paymentRequirementsHash` and `validationPolicyId` to V2's `ServiceSubmitted` event and persistent per-submission record keyed by demandId and nonce. Expose `submissionDigests(uint256 demandId,uint256 nonce) returns (bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`, `submissionNonce(uint256)`, `verifier()`, `verifierAdmin()`, and `setVerifier(address)` with `VerifierRotated(address indexed previousVerifier,address indexed newVerifier)`. The V2 event is `ServiceSubmitted(uint256 indexed demandId,uint256 indexed submissionNonce,address indexed builder,string serviceUrl,bytes32 evidenceHash,uint64 reviewEndsAt,uint128 reviewCommitted,uint128 approvalRequired,bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`. No signer, handler or contract is implemented by G0.1.
+AgentDemand exposes only `submitService(uint256 demandId, string serviceUrl, bytes32 evidenceHash, ValidationAttestation attestation, bytes verifierSignature)`; it must not expose the old unguarded three-argument overload. The attestation fields and their order are those of Section 4.10. Validate all bindings, expiry and current verifier before consuming the next nonce and recording the submission atomically. Preserve the existing submission fields and event semantics and add `paymentRequirementsHash` and `validationPolicyId` to AgentDemand's `ServiceSubmitted` event and persistent per-submission record keyed by demandId and nonce. Expose `submissionDigests(uint256 demandId,uint256 nonce) returns (bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`, `submissionNonce(uint256)`, `verifier()`, `verifierAdmin()`, and `setVerifier(address)` with `VerifierRotated(address indexed previousVerifier,address indexed newVerifier)`. The canonical event is `ServiceSubmitted(uint256 indexed demandId,uint256 indexed submissionNonce,address indexed builder,string serviceUrl,bytes32 evidenceHash,uint64 reviewEndsAt,uint128 reviewCommitted,uint128 approvalRequired,bytes32 paymentRequirementsHash,bytes32 validationPolicyId)`. No signer, handler or contract is implemented by G0.1.
 
 ### 4.2 Non-Upgradeable Escrow
 
-AgentDemandV2 must be non-upgradeable.
+AgentDemand must be non-upgradeable.
 
 Do not introduce:
 
@@ -530,11 +530,11 @@ Step 8: If validation fails, the validation service returns a structured error.
 
 Step 9: If validation succeeds, the validation service issues a short-lived signed attestation.
 
-Step 10: The frontend prepares the AgentDemandV2 submission transaction.
+Step 10: The frontend prepares the AgentDemand submission transaction.
 
 Step 11: The builder independently reviews and signs the transaction.
 
-Step 12: AgentDemandV2 verifies the attestation.
+Step 12: AgentDemand verifies the attestation.
 
 Step 13: A valid submission starts supporter review.
 
@@ -867,7 +867,7 @@ Encode the digest with EIP-712 hashStruct and domain separation, not personal_si
 
 serviceUrlHash is keccak256 of the exact UTF-8 serialized serviceUrl accepted in Section 4.8. The builder must submit that same string without later normalization. evidenceHash is the exact nonzero bytes32 submitted onchain; the frontend preserves the existing rule of hashing UTF-8 evidence references with keccak256 when the input is not already bytes32.
 
-AgentDemandV2 must match the domain and signed escrowChainId/verifyingContract fields to block.chainid and address(this), builderWallet to msg.sender, demandId to the target demand, URL/evidence hashes to the submitted arguments, and submissionNonce to the current nonce plus one. Accepting the submission consumes that nonce atomically. Reopen never makes a consumed nonce reusable.
+AgentDemand must match the domain and signed escrowChainId/verifyingContract fields to block.chainid and address(this), builderWallet to msg.sender, demandId to the target demand, URL/evidence hashes to the submitted arguments, and submissionNonce to the current nonce plus one. Accepting the submission consumes that nonce atomically. Reopen never makes a consumed nonce reusable.
 
 ### Public Validation Policy Encoding
 
@@ -1147,7 +1147,7 @@ The maximum lifetime is 15 minutes (900 seconds), with at most 60 seconds of fut
 
 For the builder authorization, the validation service enforces issuedAt <= now + 60, issuedAt < expiresAt, expiresAt - issuedAt <= 900, and now < expiresAt. It issues attestations with issuedAt equal to its current time and expiresAt no later than min(issuedAt + 900, builderAuthorization.expiresAt).
 
-For attestations, AgentDemandV2 enforces the same inequalities using block.timestamp as now. Exactly 60 seconds of future skew is allowed; 61 is rejected. An attestation expires at expiresAt, including equality. Perform checked comparisons before subtraction. Lifetime runs from issuedAt; future skew does not authorize a longer signed interval.
+For attestations, AgentDemand enforces the same inequalities using block.timestamp as now. Exactly 60 seconds of future skew is allowed; 61 is rejected. An attestation expires at expiresAt, including equality. Perform checked comparisons before subtraction. Lifetime runs from issuedAt; future skew does not authorize a longer signed interval.
 
 Expired attestations require a fresh endpoint validation.
 
@@ -1178,7 +1178,7 @@ Do not commit signing credentials.
 
 Do not expose credentials in frontend bundles.
 
-AgentDemandV2 has one current verifier and an immutable verifierAdmin, both nonzero constructor parameters. Deployment approval must identify those addresses and the custody of their credentials; do not infer either role from the treasury or a builder.
+AgentDemand has one current verifier and an immutable verifierAdmin, both nonzero constructor parameters. Deployment approval must identify those addresses and the custody of their credentials; do not infer either role from the treasury or a builder.
 
 Only verifierAdmin may call setVerifier(address newVerifier). Reject the zero address and emit VerifierRotated(previousVerifier, newVerifier). Only the current verifier's attestations are accepted; rotation takes effect immediately, without an old-key grace period. Already accepted submissions, votes, settlement, and refunds remain valid and unchanged.
 
@@ -1543,25 +1543,25 @@ Required:
 Existing valid tests must not be deleted or weakened.
 
 
-## 6. CANONICAL V2 ESCROW
+## 6. CANONICAL AGENTDEMAND ESCROW
 
-AgentDemand V1 was an experimental development implementation. AgentDemandV2 is the only canonical escrow protocol. This owner decision supersedes earlier requirements for permanent V1/V2 coexistence.
+The earlier AgentDemand implementation was an experimental development predecessor and has been replaced. The current AgentDemand source is the canonical attestation-gated escrow.
 
-The V1 Solidity source and tests are replaced by V2. Git history preserves the experiment. No V1 compatibility router, deployment-version selector, legacy frontend/indexer or migration framework is planned.
+There is one canonical escrow implementation and test suite. Git history preserves the experiment. No dual-version compatibility router, deployment-version selector, legacy frontend/indexer or migration framework is planned.
 
 ### Gate boundaries
 
-G0.4 implements the non-upgradeable attestation-gated escrow and contract tests. It does not deploy V2, change live addresses, migrate funds or modify existing onchain contracts and balances.
+G0.4 implements the non-upgradeable attestation-gated escrow and contract tests. It does not deploy the canonical contract, change live addresses, migrate funds or modify existing onchain contracts and balances.
 
-G0.5 targets V2 only: frontend/backend ABI consumers, validation/submission flow, event indexing and deployment tooling. Existing TypeScript consumers still use the experimental ABI until that gate; they must not be pointed at V2 before integration is complete.
+G0.5 covers canonical AgentDemand frontend/backend, indexer and deployment-tool integration: ABI consumers, validation/submission flow, event indexing and multi-deployment identity. Existing TypeScript consumers still use the experimental ABI until that gate; they must not be pointed at the canonical contract before integration is complete.
 
-`backend/admin.ts` still expects `out/AgentDemand.sol/AgentDemand.json` and the six-argument experimental constructor. That lazy deployment path is not a build dependency and is unavailable from a fresh G0.4 build. Do not substitute V2 bytecode with that constructor. V2 deployment tooling and configuration require G0.5 integration and separate deployment approval.
+`backend/admin.ts` still targets the removed experimental contract/artifact and encodes its six-argument constructor. Its lazy artifact read is not a build dependency. A canonical build now emits `out/AgentDemand.sol/AgentDemand.json` at the same pathname, but requires eight constructor arguments. That command must not be used for canonical AgentDemand; do not substitute canonical bytecode into the experimental deployment flow. Canonical deployment tooling and configuration require G0.5 integration and separate deployment approval.
 
-Historical deployment records remain evidence of earlier experiments. They do not establish a supported V1 product or authorize any blockchain action.
+Historical deployment records remain evidence of earlier experiments. They do not establish support for the experimental predecessor or authorize any blockchain action.
 
 ### Canonical Demand Identity
 
-Use `(escrowChainId, escrowContract, demandId)` for V2 consumers. Demand IDs are not globally unique across Testnet/Mainnet or separate deployments. Pending records retain their originating deployment.
+Use `(escrowChainId, escrowContract, demandId)` for canonical contract consumers. Demand IDs are not globally unique across Testnet/Mainnet or separate deployments. Pending records retain their originating deployment.
 
 ### Future Contract Versions
 
@@ -1966,7 +1966,7 @@ Initial OKX.AI distribution does not assume a public programmatic listing API. P
 
 Gate 0 compatibility does not imply OKX registration approval or successful paid execution. Registration, publication, and paid acceptance require their own approval and evidence; Gate 0 does not perform them.
 
-The Service Registry preserves canonical demand-to-service references and authenticated provider metadata. Direct x402 consumption remains supported, and other compatible marketplaces or discovery protocols may be added through separately reviewed integrations. A distribution channel does not require AgentDemandV2 to fetch its APIs or change its payment policy.
+The Service Registry preserves canonical demand-to-service references and authenticated provider metadata. Direct x402 consumption remains supported, and other compatible marketplaces or discovery protocols may be added through separately reviewed integrations. A distribution channel does not require AgentDemand to fetch its APIs or change its payment policy.
 
 External listing is not fulfillment evidence. Listing failure, delisting, and marketplace outages cannot modify historical provenance or block demand creation, funding, supporter voting, finalize(), reopen(), or refund(). UNMET does not add marketplace checkout, service-payment custody, or a generalized payment router for this integration. Future API consumption remains a separate direct x402 payment to the provider's authorized receiver.
 
@@ -2317,7 +2317,7 @@ Unavailable external state must not be reported as successful validation.
 Deliver:
 
 - code impact map
-- non-upgradeable AgentDemandV2
+- non-upgradeable AgentDemand
 - configuration-driven x402 validation service
 - initial OKX/X Layer payment profile
 - safe endpoint validation
@@ -2326,7 +2326,7 @@ Deliver:
 - verifier authority model
 - frontend submission integration
 - preserved voting and refunds
-- V2-only consumer integration
+- canonical AgentDemand consumer integration
 - contract and validation service regression tests
 
 Execution is serial: one gate, branch and Draft PR at a time, with owner review before the next gate. Merge, deployment, paid tests and Mainnet activation require separate authorization.
@@ -2336,8 +2336,8 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G0.1 | Architecture, policy schemas, threat model, vectors and impact map; owner approval | Review schemas, vectors and transport evidence in Sections 3-6. |
 | G0.2 | Configuration-driven x402 validation service; G0.1 | Unpaid bounded challenge inspection and adversarial transport tests. |
 | G0.3 | Builder authorization, EIP-712 and verifier security; G0.1-G0.2 | Authorization, replay, signer policy and isolation tests. |
-| G0.4 | Canonical non-upgradeable AgentDemandV2; G0.1 and G0.3 | Attestation, nonce/replay, verifier authority and escrow regression tests. |
-| G0.5 | V2-only frontend/backend, indexer and deployment-tool integration; G0.2-G0.4 | V2 ABI, attestation submission, deployment-bound consumers and recovery tests. |
+| G0.4 | Canonical non-upgradeable AgentDemand; G0.1 and G0.3 | Attestation, nonce/replay, verifier authority and escrow regression tests. |
+| G0.5 | Canonical AgentDemand frontend/backend, indexer and deployment-tool integration; G0.2-G0.4 | Canonical ABI, attestation submission, multi-deployment identity and recovery tests. |
 | G0.6 | Full Gate 0 E2E, adversarial and release readiness; all prior G0 gates | Independent target-host, signer and end-to-end evidence. |
 | G1 | Machine-readable RFQ; G0.6 | Section 7 acceptance. |
 | G2 | Fulfilled service registry; G1 and canonical fulfillment | Section 8 acceptance. |
@@ -2345,7 +2345,7 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
 | G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
 
-The local G0.3 source implements builder authorization and a separate authenticated attestation signer. G0.4 implements onchain attestation consumption and monotonic nonce replay prevention in the canonical V2 escrow. Consumer integration remains G0.5; local signer and contract tests do not establish deployment isolation.
+The local G0.3 source implements builder authorization and a separate authenticated attestation signer. G0.4 implements onchain attestation consumption and monotonic nonce replay prevention in the canonical AgentDemand escrow. Consumer integration remains G0.5; local signer and contract tests do not establish deployment isolation.
 
 Do not deploy before validation and explicit approval.
 
@@ -2595,7 +2595,7 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 6. Only successful validation produces
    a signed attestation.
 
-7. AgentDemandV2 verifies attestations onchain.
+7. AgentDemand verifies attestations onchain.
 
 8. Direct contract calls cannot bypass
    attestation enforcement.
@@ -2616,7 +2616,7 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 15. Finalize and refund do not depend
     on the validation service.
 
-16. Frontend and backend consumers target canonical V2 only.
+16. Frontend and backend consumers target canonical AgentDemand.
 
 17. Validation is not mislabeled
     as independent service verification.
@@ -2792,7 +2792,7 @@ Documentation ownership is explicit:
 
 2. Keep future features separate from the current product. [PRD.md](PRD.md) owns current Post-Hackathon requirements and may link here for navigation only; do not duplicate proposed plans. [STATUS.md](STATUS.md) and dated records own implementation and acceptance evidence.
 
-3. Do not claim AgentDemandV2 is deployed
+3. Do not claim AgentDemand is deployed
    before verified deployment evidence.
 
 4. Do not claim the validation service is operational

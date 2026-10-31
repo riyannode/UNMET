@@ -79,7 +79,7 @@ UNMET_TREASURY=0x...
 DEPLOYER_PRIVATE_KEY=0x...
 ```
 
-Historical experimental deployment procedure: the commands below use the removed V1 artifact and six-argument constructor. They are unavailable from a fresh G0.4 build and do not deploy V2. V2-only deployment tooling is deferred to G0.5 and requires separate deployment approval. Do not substitute V2 bytecode into this procedure.
+Historical experimental deployment procedure: the deploy command below targets the removed experimental contract/artifact and encodes its six-argument constructor. The canonical build now emits `out/AgentDemand.sol/AgentDemand.json` at the same pathname, but requires eight constructor arguments. This command must not be used for canonical AgentDemand. Canonical deployment tooling is deferred to G0.5 and requires separate deployment approval. Do not substitute canonical bytecode into this experimental deployment flow.
 
 Deploy:
 
