@@ -23,7 +23,7 @@ describe("validation evaluator", () => {
     expect<string>(parse().requestHash).toBe(fixture.expected.requestHash);
     expect<string>(run([offer]).paymentRequirementsHash).toBe(fixture.expected.paymentRequirementsHash);
     expect<string>(run([offer]).validationPolicyId).toBe(fixture.expected.validationPolicyId);
-    const omitted = { ...offer, extra: { assetTransferMethod: "eip3009", name: "USD₮0", version: "1" } };
+    const omitted = { ...offer, extra: { assetTransferMethod: "eip3009", name: "USDC", version: "2" } };
     expect<string>(run([omitted]).paymentRequirementsHash).toBe(fixture.expected.paymentRequirementsHash);
   });
   test("all offers validated before first eligible is chosen", () => {
@@ -71,6 +71,16 @@ describe("validation evaluator", () => {
       expect(() => run([irrelevant])).toThrow("NO_ELIGIBLE_OFFER");
     }
   });
+  test("Mainnet USDC denomination rejects stablecoin and network equivalence", () => {
+    expect(policy.demandPriceAsset).toEqual({ network: "eip155:196", asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", decimals: 6 });
+    for (const asset of ["0x779ded0c9e1022225f8e0630b35a9b54be713736", "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", "0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3"]) {
+      expect(() => run([{ ...offer, asset }])).toThrow("UNSUPPORTED_PRICE_COMPARISON");
+      expect(run([{ ...offer, asset }, offer]).selectedOfferIndex).toBe(1);
+    }
+    expect(() => run([{ ...offer, network: "eip155:1952" }])).toThrow("UNSUPPORTED_PRICE_COMPARISON");
+    expect(run([offer], fixture.payment.resource, policy, 10000n).eligible).toBe(true);
+    expect(() => run([offer], fixture.payment.resource, policy, 9999n)).toThrow("NO_ELIGIBLE_OFFER");
+  });
   test("resource binds origin, path, query and preserves metadata", () => {
     expect(run([offer], { url: "/weather", description: "Weather" }).paymentRequirementsHash).not.toBe(fixture.expected.paymentRequirementsHash);
     for (const url of ["", "  ", "https://other.example/weather", "/other", "/weather?a=1", "https://user@example.com/weather", "https://@example.com/weather", "//@example.com/weather", "/weather#x"]) expect(() => run([offer], { url })).toThrow();
@@ -99,7 +109,7 @@ describe("validation evaluator", () => {
     expect(evaluateChallenge(parse(), { status: 402, paymentRequired: wire }, policy, 10000n, 6).eligible).toBe(true);
   });
   test("method defaults and explicit permit2 require reviewed configuration", () => {
-    const noMethod = { ...offer, extra: { name: "USD₮0", version: "1", paymentFlow: "authorization" } };
+    const noMethod = { ...offer, extra: { name: "USDC", version: "2", paymentFlow: "authorization" } };
     expect(() => run([noMethod])).toThrow();
     const defaultPolicy = structuredClone(policy);
     defaultPolicy.profile.assets[0].defaultTransferMethod = "eip3009";
@@ -151,7 +161,7 @@ describe("validation evaluator", () => {
     expect(() => run([offer], fixture.payment.resource, disabledAsset)).toThrow();
     const noFlow = structuredClone(policy);
     noFlow.profile.assets[0].transferMethods[0].defaultPaymentFlow = null;
-    expect(() => run([{ ...offer, extra: { assetTransferMethod: "eip3009", name: "USD₮0", version: "1" } }], fixture.payment.resource, noFlow)).toThrow();
+    expect(() => run([{ ...offer, extra: { assetTransferMethod: "eip3009", name: "USDC", version: "2" } }], fixture.payment.resource, noFlow)).toThrow();
     for (const flow of ["escrow", "unknown"]) expect(() => run([{ ...offer, extra: { ...offer.extra, paymentFlow: flow } }])).toThrow();
   });
   test("complete raw request byte limit and challenge metadata types", () => {

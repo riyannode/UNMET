@@ -29,6 +29,7 @@ import { demandHref } from "./routing";
 import { deploymentKey, formatEscrowAmount, parseEscrowAmount, validateDeployment, verifyDeployment, type EscrowDeployment } from "../shared/deployment";
 import { authorization, validatePass, validateRequest, validationNetworks, type RequestMetadata } from "./validation";
 import { ESCROW_DECIMALS, ESCROW_SYMBOL } from "./escrow-metadata";
+import { parseServicePrice } from "../shared/service-price";
 export { ESCROW_DECIMALS, ESCROW_SYMBOL } from "./escrow-metadata";
 
 export const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || "1952");
@@ -580,7 +581,7 @@ export async function createDemand(input: {
   const specification = input.specification.trim();
   if (!specification || new TextEncoder().encode(specification).length > 2048) throw new Error("DEMAND_INVALID_SPEC");
   const commitment = parseTokenAmount(input.commitment);
-  const maxPrice = parseTokenAmount(input.maxPrice);
+  const maxPrice = parseServicePrice(input.maxPrice);
   if (commitment <= 0n || commitment > (1n << 96n) - 1n || maxPrice <= 0n || maxPrice > (1n << 96n) - 1n) throw new Error("DEMAND_INVALID_AMOUNT");
   const calls = parsePositiveUint(input.expectedCalls, 64, "DEMAND_INVALID_CALLS");
   const deadline = BigInt(Math.floor(Date.now() / 1000) + durationSeconds);

@@ -1,9 +1,28 @@
 import { expect, test } from "bun:test";
 import fixture from "./fixtures/validation.json";
+import gate0Policy from "../docs/gate0-testnet-policy.json";
+import { SERVICE_PRICE_ASSET } from "../shared/service-price";
 import { parseValidationConfig, resolvePolicy, validationPolicyId } from "./validation-config";
 
 const input = () => ({ maxInFlight: 2, managementAddresses: [], signerSocketPath:"/tmp/signer.sock", signerAuthTokenPath:"/tmp/token", deployments: [{ escrowChainId: fixture.policy.escrowChainId, escrowContract: fixture.policy.escrowContract, escrowRpcUrl: "https://rpc.example/", verifier:"0x1111111111111111111111111111111111111111", demandPriceAsset: fixture.policy.demandPriceAsset, paymentProfiles: [{ ...structuredClone(fixture.policy.profile), paymentRpcUrl: "https://payment.example/" }] }] });
 const parse = (value: unknown) => parseValidationConfig(new TextEncoder().encode(JSON.stringify(value)));
+test("published Gate-0 deployment resolves the reviewed Mainnet USDC policy", () => {
+  const config = parse({
+    ...input(),
+    deployments: [{
+      escrowChainId: gate0Policy.escrowChainId,
+      escrowContract: gate0Policy.escrowContract,
+      escrowRpcUrl: "https://rpc.example/",
+      verifier: "0x00000a43df0bf634a1a917e61192344961152f4e",
+      demandPriceAsset: gate0Policy.demandPriceAsset,
+      paymentProfiles: [{ ...gate0Policy.profile, paymentRpcUrl: "https://payment.example/" }],
+    }],
+  });
+  const resolved = resolvePolicy(config, gate0Policy.escrowChainId, gate0Policy.escrowContract, "eip155:196");
+  expect<unknown>(resolved?.policy).toEqual(gate0Policy);
+  expect(gate0Policy.demandPriceAsset).toEqual(SERVICE_PRICE_ASSET);
+  expect(resolved && validationPolicyId(resolved.policy)).toBe("0x7e74b01782c3851842b7520000058814e32eb3bfce82872e09b08e2f6faa6fd4");
+});
 test("explicit deployment resolves only its exact enabled profile and hashes public fields", () => {
   const config = parse(input());
   const resolved = resolvePolicy(config, fixture.policy.escrowChainId, fixture.policy.escrowContract, fixture.policy.profile.network);

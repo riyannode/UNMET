@@ -478,17 +478,17 @@ contract AgentDemandTest is Test {
             builderWallet: 0x2222222222222222222222222222222222222222,
             serviceUrlHash: 0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81,
             evidenceHash: 0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48,
-            paymentRequirementsHash: 0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49,
+            paymentRequirementsHash: 0x35d0ef922c10706fc672cca52efad2beba01abde0a0666c26194e39436ab6429,
             submissionNonce: 1,
-            validationPolicyId: 0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691,
+            validationPolicyId: 0xd4912a160c0e5d590126a59f5a80d9cd1cce3a57340e2b0c88ca47a1b687b355,
             issuedAt: 1792886400,
             expiresAt: 1792887300
         });
         (bytes32 typ, bytes32 domain, bytes32 structure, bytes32 digest) = HashHarness(fixture).hashes(a);
         assertEq(typ, 0x67beb001f81b85e71e91091bf36753e1a578fbec204642b1bee40134161f22dd);
         assertEq(domain, 0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a);
-        assertEq(structure, 0x57d9261a3e04d73fc8c39e6d110b718b839c7816a76830d61ac2ff951e53927d);
-        assertEq(digest, 0x2917ee6a3d428ef2088a6f96d9873f46dbba4cf3da8c9cd75a3b0dd2ec284301);
+        assertEq(structure, 0x03adf1ef61eedf783fe7f8c9cb36d935142f0df0671ad9f196f5f979c5428376);
+        assertEq(digest, 0xc27d9c2c45c47967b9db10a8b859e73a16d819caad89939b6a803760d0d92dab);
     }
 
     function _expectInvalid(uint256 id, AgentDemand.ValidationAttestation memory a, bytes memory sig) internal {

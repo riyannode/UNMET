@@ -67,6 +67,8 @@ A public funded demand record contains:
 - fixed review threshold
 - lifecycle state
 
+`maxUnitPrice` is the maximum Mainnet USDC price per service call: `eip155:196` / `0xb6ceceab302e2e4948951ee7843fc24e92933061`, six decimals. It is independent from Testnet USDC escrow collateral on chain 1952. Compare only exact network/contract/decimal identities; no stablecoin parity, bridge equivalence or conversion is implied.
+
 The system must say “supporting wallets,” not “unique users.”
 
 ## Economics

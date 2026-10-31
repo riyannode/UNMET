@@ -922,13 +922,13 @@ test("index checkpoint cannot cross contract or chain", async () => {
   await expect(refreshIndex(fakeClient(), { ...marketDeployment, contract: testContract, chainId: 196 }, state)).rejects.toThrow("INDEX_DEPLOYMENT_MISMATCH");
 });
 
-test("market amount filters and output use configured decimals", () => {
+test("escrow output uses configured decimals while service price retains Mainnet USDC units", () => {
   const parsed = validateOpportunitiesInput({ minBounty: "1.23" }, 2);
   expect(parsed.ok && parsed.value.minBounty).toBe(123n);
   expect(validateOpportunitiesInput({ minBounty: "1.234" }, 2).ok).toBe(false);
   const rows = filterAndSort([syntheticEntry(1n, { committed: 123n, maxUnitPrice: 5n })], { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 1 }, BigInt(fixedNow / 1000), 2);
   expect(rows[0]?.currentEscrow).toBe("1.23");
-  expect(rows[0]?.maxUnitPrice).toBe("0.05");
+  expect(rows[0]?.maxUnitPrice).toBe("0.000005");
 });
 
 

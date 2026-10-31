@@ -113,6 +113,7 @@ import { errorMessage } from "./errors.ts";
 import { useTheme } from "./theme.ts";
 import { resolveReownStatus, runDisconnectRequest, WALLET_REQUIRED_TOAST_ID, type ReownStatus } from "./reown-status.ts";
 import { parseRequestMetadata, validationNetworks } from "./validation.ts";
+import { formatServicePrice, parseServicePrice, SERVICE_PRICE_SYMBOL } from "../shared/service-price";
 type CreateDemandInput = Parameters<typeof createDemand>[0];
 type CreateDemandPendingTransactionRecord = PendingTransactionRecord & {
   actionId: typeof CREATE_DEMAND_ACTION_ID;
@@ -727,7 +728,7 @@ export default function App() {
             creator: account,
             capability: normalizeCapability(createdDemand.capability),
             specification: createdDemand.specification.trim(),
-            maxPrice: parseTokenAmount(createdDemand.maxPrice),
+            maxPrice: parseServicePrice(createdDemand.maxPrice),
             expectedCalls: BigInt(createdDemand.expectedCalls),
             initialCommitment: parseTokenAmount(createdDemand.commitment),
           },
@@ -1328,7 +1329,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
               </div>
               <div>
                 <dt>Max / call</dt>
-                <dd>{formatTokenAmount(demand.maxUnitPrice)} <small>{ESCROW_SYMBOL}</small></dd>
+                <dd>{formatServicePrice(demand.maxUnitPrice)} <small>{SERVICE_PRICE_SYMBOL}</small></dd>
               </div>
             </dl>
           </div>
@@ -1448,7 +1449,7 @@ export function DemandDetail({
                   <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatTokenAmount(demand.committed)} <span>{ESCROW_SYMBOL}</span></dd></div>
                   <div><dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd></div>
                   <div><dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd></div>
-                  <div><dt>Max unit price</dt><dd>{formatTokenAmount(demand.maxUnitPrice)} <span>{ESCROW_SYMBOL}</span></dd></div>
+                  <div><dt>Max unit price</dt><dd>{formatServicePrice(demand.maxUnitPrice)} <span>{SERVICE_PRICE_SYMBOL}</span></dd></div>
                   <div><dt>Status</dt><dd><Badge className="market-status-badge demand-detail-status" data-status={state} variant="secondary" size="lg">{state}</Badge></dd></div>
                 </dl>
               </CardContent>

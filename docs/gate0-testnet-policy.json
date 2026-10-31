@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "unmet-validation-policy-v2",
+  "escrowChainId": "1952",
+  "escrowContract": "0x57bdd53eaabda18c81afea1dfcac30b15bd58e99",
+  "profile": {
+    "id": "okx-xlayer-mainnet",
+    "enabled": true,
+    "network": "eip155:196",
+    "x402Versions": [
+      2
+    ],
+    "schemes": [
+      "exact"
+    ],
+    "assets": [
+      {
+        "asset": "0xb6ceceab302e2e4948951ee7843fc24e92933061",
+        "decimals": 6,
+        "enabled": true,
+        "defaultTransferMethod": "eip3009",
+        "transferMethods": [
+          {
+            "method": "eip3009",
+            "enabled": true,
+            "paymentFlows": [
+              "authorization"
+            ],
+            "defaultPaymentFlow": "authorization",
+            "tokenDomain": {
+              "name": "USDC",
+              "version": "2"
+            },
+            "permit2Contract": null,
+            "settlementSpender": null
+          }
+        ]
+      }
+    ],
+    "paymentRules": {
+      "amountType": "uint256",
+      "priceComparison": "same-asset-exact",
+      "maxTimeoutSeconds": 300
+    },
+    "receiverRules": {
+      "mode": "builder-authorized",
+      "allowZeroAddress": false
+    },
+    "facilitator": {
+      "id": "okx",
+      "url": "https://web3.okx.com/"
+    }
+  },
+  "demandPriceAsset": {
+    "network": "eip155:196",
+    "asset": "0xb6ceceab302e2e4948951ee7843fc24e92933061",
+    "decimals": 6
+  }
+}

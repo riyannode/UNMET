@@ -1,0 +1,108 @@
+services:
+  api:
+    environment:
+      OKX_API_KEY: !reset null
+      OKX_SECRET_KEY: !reset null
+      OKX_PASSPHRASE: !reset null
+      OKX_CREDENTIALS_PATH: /run/secrets/okx-credentials.json
+    volumes:
+      - type: bind
+        source: ${OKX_CREDENTIALS_FILE:?Configure private OKX_CREDENTIALS_FILE}
+        target: /run/secrets/okx-credentials.json
+        read_only: true
+        bind: {create_host_path: false}
+  web:
+    environment:
+      VALIDATION_UPSTREAM: 127.0.0.1:3001
+  validator:
+    image: unmet-validation:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.validation
+    network_mode: service:web
+    user: "10001:1000"
+    environment:
+      VALIDATION_CONFIG_PATH: /run/config/validator.json
+      VALIDATION_ALLOWED_ORIGINS: ${FRONTEND_ORIGIN:?Configure FRONTEND_ORIGIN}
+    volumes:
+      - type: bind
+        source: ${VALIDATION_CONFIG_FILE:?Configure VALIDATION_CONFIG_FILE}
+        target: /run/config/validator.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${SIGNER_AUTH_TOKEN_FILE:?Configure SIGNER_AUTH_TOKEN_FILE}
+        target: /run/secrets/signer-auth.token
+        read_only: true
+        bind: {create_host_path: false}
+      - type: volume
+        source: signer_socket
+        target: /run/unmet-signer
+        read_only: true
+    depends_on:
+      web: {condition: service_started}
+      signer: {condition: service_healthy}
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:size=16m,noexec,nosuid"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://127.0.0.1:3001/v1/x402/validate',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});const j=await r.json();process.exit(r.status===400&&j.code==='INVALID_REQUEST'?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  signer:
+    image: unmet-validation:${IMAGE_TAG:-local}
+    network_mode: none
+    user: "1000:1000"
+    command: ["sh", "-c", "umask 007; exec bun run backend/validation-signer.ts"]
+    environment:
+      VALIDATION_SIGNER_CONFIG_PATH: /run/config/signer.json
+    volumes:
+      - type: bind
+        source: ${SIGNER_CONFIG_FILE:?Configure SIGNER_CONFIG_FILE}
+        target: /run/config/signer.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${SIGNER_AUTH_TOKEN_FILE:?Configure SIGNER_AUTH_TOKEN_FILE}
+        target: /run/secrets/signer-auth.token
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${SIGNER_PRIVATE_KEY_FILE:?Configure SIGNER_PRIVATE_KEY_FILE}
+        target: /run/secrets/operator.key
+        read_only: true
+        bind: {create_host_path: false}
+      - signer_socket:/run/unmet-signer
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:size=16m,noexec,nosuid"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const {request}=require('node:http');const r=request({socketPath:'/run/unmet-signer/signer.sock',path:'/sign',method:'POST'},s=>{s.resume();s.on('end',()=>process.exit(s.statusCode===400?0:1))});r.on('error',()=>process.exit(1));r.end('{}')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+volumes:
+  signer_socket:

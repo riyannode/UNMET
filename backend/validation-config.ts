@@ -2,8 +2,9 @@ import Ajv2020 from "ajv/dist/2020";
 import { isIP } from "node:net";
 import schema from "../docs/schemas/validation-policy.json";
 import { hashJSON, parseStrictJSON, parseUint256, ValidationError } from "./validation-codec";
+import type { ServicePriceAsset } from "../shared/service-price";
 
-export interface PriceAsset { network: string; asset: string; decimals: number }
+export type PriceAsset = ServicePriceAsset;
 export interface TransferMethod {
   method: "eip3009" | "permit2";
   enabled: boolean;

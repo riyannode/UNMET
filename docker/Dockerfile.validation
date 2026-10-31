@@ -1,0 +1,18 @@
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS dependencies
+WORKDIR /app
+COPY package.json bun.lock ./
+COPY backend/package.json backend/package.json
+COPY frontend/package.json frontend/package.json
+RUN bun install --frozen-lockfile --production --filter unmet-backend
+
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/backend/node_modules ./backend/node_modules
+COPY backend/package.json backend/validation-service.ts backend/validation-signer.ts backend/validation-config.ts backend/validation-transport.ts backend/validation-evaluator.ts backend/validation-crypto.ts backend/validation-codec.ts ./backend/
+COPY shared/validation-types.ts ./shared/validation-types.ts
+COPY docs/schemas/validation-policy.json docs/schemas/validation-request.json docs/schemas/validation-response.json ./docs/schemas/
+RUN mkdir -p /run/unmet-signer && chown 1000:1000 /run/unmet-signer && chmod 2770 /run/unmet-signer
+USER 10001:1000
+CMD ["bun", "run", "backend/validation-service.ts"]

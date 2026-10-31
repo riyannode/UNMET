@@ -31,6 +31,7 @@ import {
 } from "@/create-demand-chat-model";
 import type { createDemand } from "@/contract";
 import { ESCROW_SYMBOL, selectedDemandHref as demandHref } from "@/contract";
+import { SERVICE_PRICE_SYMBOL } from "../shared/service-price";
 import { explorerTx } from "@/contract";
 import { WALLET_REQUIRED_TOAST_ID, type ReownStatus } from "@/reown-status";
 import { isTransactionSubmissionBlocked, type TransactionIntent } from "@/transaction-lifecycle";
@@ -101,7 +102,7 @@ const EDIT_FIELDS: Array<{ field: EditableDemandField; label: string }> = [
 const EDIT_PROMPTS: Record<EditableDemandField, string> = {
   capability: "Update the service you need",
   specification: "Update what the service should provide",
-  maxPrice: `Update the maximum price per call in ${ESCROW_SYMBOL}`,
+  maxPrice: `Update the maximum price per call in Mainnet ${SERVICE_PRICE_SYMBOL}`,
   expectedCalls: "Update the expected number of calls",
   commitment: `Update the initial escrow commitment in ${ESCROW_SYMBOL}`,
   deadlineDays: "Update the deadline in days",
@@ -147,7 +148,7 @@ function editPreview(answers: CreateDemandAnswers, field: EditableDemandField): 
   switch (field) {
     case "capability": return answers.capabilityLabel;
     case "specification": return answers.specification;
-    case "maxPrice": return `${answers.maxPrice} ${ESCROW_SYMBOL} / call`;
+    case "maxPrice": return `${answers.maxPrice} ${SERVICE_PRICE_SYMBOL} / call`;
     case "expectedCalls": return `${new Intl.NumberFormat("en-US").format(BigInt(answers.expectedCalls))} calls`;
     case "commitment": return `${answers.commitment} ${ESCROW_SYMBOL}`;
     case "deadlineDays": return `${answers.deadlineDays} days`;
@@ -691,7 +692,7 @@ export function CreateDemandChat({
         {!completedReview && step === "pricing" && !editing && !blocksChatInput && (
           <form className="create-demand-pricing-form" onSubmit={handlePricingContinue} noValidate>
             <div className="create-demand-pricing-field">
-              <label htmlFor="create-demand-max-price">Max price per call ({ESCROW_SYMBOL})</label>
+              <label htmlFor="create-demand-max-price">Max price per call ({SERVICE_PRICE_SYMBOL})</label>
               <Input
                 id="create-demand-max-price"
                 type="number"
@@ -711,7 +712,7 @@ export function CreateDemandChat({
               />
               {pricingErrors.maxPrice
                 ? <p id="create-demand-max-price-error" className="create-demand-field-error" role="alert" aria-live="polite">{pricingErrors.maxPrice}</p>
-                : <p id="create-demand-max-price-help" className="create-demand-field-help">Enter the most you would pay for one call</p>}
+                : <p id="create-demand-max-price-help" className="create-demand-field-help">Maximum Mainnet USDC price for one service call, separate from Testnet escrow</p>}
             </div>
             <div className="create-demand-pricing-field">
               <label htmlFor="create-demand-expected-calls">Expected total calls</label>

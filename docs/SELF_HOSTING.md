@@ -1,5 +1,56 @@
 # Self-hosting unmet
 
+## Gate-0 validator and signer
+
+The opt-in `compose.validation.yaml` overlay extends the same API/web images with one reusable validation image, run as two separate services. Use this topology locally and on a later approved VPS; target-host security still needs independent validation.
+
+```bash
+docker compose --env-file .env.gate0-local -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file .env.gate0-local -f compose.yaml -f compose.validation.yaml build
+docker compose --env-file .env.gate0-local -f compose.yaml -f compose.validation.yaml up -d --wait
+```
+
+Set `IMAGE_TAG` to the reviewed source plus a packaging revision. Local-only port overrides can publish only `127.0.0.1:18080:8080`; the base configuration also maps its configured HTTPS port. Do not reuse unrelated Compose projects or volumes.
+
+The four services have these boundaries:
+
+| Service | Network / ingress | Private storage |
+| --- | --- | --- |
+| web | Only published ingress; Caddy serves frontend and proxies normal API traffic | Existing Caddy data/config volumes |
+| api | Application bridge, no published port | Its own durable payment volume and read-only OKX credential file |
+| validator | `network_mode: service:web`; unchanged `127.0.0.1:3001` listener | Read-only validator configuration, auth token and signer socket volume; no key or payment database |
+| signer | `network_mode: none`; authenticated Unix socket only | Read-only signer configuration, key and auth token; writable socket volume |
+
+Caddy routes exactly `/v1/x402/validate` to loopback only when the overlay sets `VALIDATION_UPSTREAM`. Without the overlay, that path retains the API upstream. Ordinary API routes still use `api:8787`. No internal service publishes a host port.
+
+All runtimes use read-only roots, dropped capabilities and `no-new-privileges`. Validator runs as `10001:1000`; signer as `1000:1000`. The image initializes the socket directory as owner/group `1000:1000`, mode `2770`; signer uses umask `007`. Validator mounts that volume read-only. Bind-mounted file ownership/modes must allow the configured container identities to read them; local Compose mounts preserve host ownership rather than remapping secrets.
+
+Keep these files outside the repository and build context, inside a mode-700 parent directory:
+
+| Compose input | Contents / host permissions |
+| --- | --- |
+| `OKX_CREDENTIALS_FILE` | Mode 600, UID 1000; JSON containing exactly nonempty `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE` strings |
+| `VALIDATION_CONFIG_FILE` | Mode 640, group 1000; parsed by `parseValidationConfig` |
+| `SIGNER_CONFIG_FILE` | Mode 600, UID 1000; exact signer deployment/policy allowlist and container file paths |
+| `SIGNER_AUTH_TOKEN_FILE` | Mode 640, group 1000; 64–256 lowercase hexadecimal bytes, no newline |
+| `SIGNER_PRIVATE_KEY_FILE` | Mode 600, UID 1000; raw verifier key, mounted only in signer |
+
+The overlay removes the three OKX secret environment values and uses `OKX_CREDENTIALS_PATH=/run/secrets/okx-credentials.json`. The API entrypoint loads them for initialization, then removes them from `process.env` in `finally`. The official facilitator retains its private credentials in process memory to authenticate requests. Missing or conflicting credential sources fail closed. The base two-service environment-based startup remains supported. No secret is a build argument or a `VITE_*` input.
+
+Validator configuration must use `/run/unmet-signer/signer.sock` and `/run/secrets/signer-auth.token`. Signer configuration must use those same paths plus `/run/secrets/operator.key`. Bind one exact lowercase escrow chain/contract/verifier and exact `validationPolicyId`; never use a wildcard. Its policy is SHA-256/JCS of the public envelope, excluding RPC URLs and secrets.
+
+For the separately approved local deployment on chain 1952 at `0x57bdd53eaabda18c81afea1dfcac30b15bd58e99`, the owner selected Mainnet `eip155:196` / USDC `0xb6ceceab302e2e4948951ee7843fc24e92933061` / 6 decimals as the service-price denomination in [Future Implementation §4.6](FUTURE_IMPLEMENTATION.md#46-price-denomination-policy). Testnet USDC is escrow collateral only. The approved local profile uses x402 v2 `exact`, EIP-3009 with its standard default, `authorization` with its standard default, token domain `USDC` / `2`, builder-authorized nonzero receivers, same-asset integer comparison, and an owner-approved 300-second maximum payment authorization timeout. USD₮0, USDG, Permit2, other flows and other networks are not enabled. The separate 900-second attestation lifetime is unchanged.
+
+Evidence: [Circle's native USDC on X Layer listing](https://www.circle.com/blog/now-available-native-usdc-cctp-on-x-layer), [EVM exact EIP-3009 method/default](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md), and [x402 v2 authorization-flow default](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md#61-asset-transfer-methods-and-payment-flow-models). Read-only Mainnet calls verified chain 196, token bytecode, name, six decimals, and the `DOMAIN_SEPARATOR` reconstructed from `USDC` / `2` / chain / address. The installed official `@okxweb3/x402-core` 0.1.0 uses `https://web3.okx.com`; profile facilitator metadata identifies that public base URL only. The denomination and timeout are explicit owner decisions. They are not derived from a synthetic vector or Demand Intelligence billing.
+
+The public [Gate-0 Testnet policy envelope](gate0-testnet-policy.json) records the exact approved deployment/profile without RPC URLs, file paths or secrets. Its SHA-256/JCS `validationPolicyId` is `0x7e74b01782c3851842b7520000058814e32eb3bfce82872e09b08e2f6faa6fd4`. Use its `demandPriceAsset` and `profile` unchanged when preparing the private validator config, adding the separately reviewed RPC URLs; the signer must allow only that exact deployment/policy tuple. Changing any public policy field requires review and a recomputed ID.
+
+Build frontend with `VITE_VALIDATION_URL=/v1/x402/validate` and only the configured policy's networks after runtime readiness is proven. A builder endpoint must be public HTTPS and expose a compatible unpaid x402 challenge. PASS does not prove future payment settlement or service quality. Never use a private/local endpoint as passing evidence.
+
+Healthchecks probe the validator's malformed-request rejection and the signer's unauthenticated rejection. These are liveness probes, not proof of a valid builder PASS. Independently verify chain/configuration, socket authentication, exact policy scope and failure paths. Recreate validator whenever web is recreated, because its network namespace belongs to web. A stale Unix socket after an abnormal exit must be investigated with signer stopped; do not blindly delete a live socket or change its permissions to world-writable.
+
+For a later VPS, retain these images and topology. Change domain/origin, TLS, secret paths/ownership, and reviewed management-address denylist. Independently verify ingress firewall rules, namespace/mount separation, host/metadata/management denial, and egress controls outside the validator process; explicitly permit reviewed DNS/RPC control paths and checked public HTTPS targets. The application bridge is not an egress firewall. Local acceptance does not establish target-host G0.6 readiness or authorize VPS deployment.
+
 One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
