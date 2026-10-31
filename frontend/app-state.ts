@@ -1,3 +1,9 @@
+import { deploymentKey, type EscrowDeployment } from "../shared/deployment";
+
+export function supportIdentity(deployment: Pick<EscrowDeployment, "chainId" | "contract">, wallet: string, demandId: bigint): string {
+  return `${deploymentKey(deployment.chainId, deployment.contract)}:${wallet.toLowerCase()}:${demandId}`;
+}
+
 export type SupportReadResult<T> =
   | { kind: "ready"; value: T }
   | { kind: "error"; error: unknown }

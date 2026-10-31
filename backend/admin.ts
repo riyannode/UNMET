@@ -3,7 +3,7 @@ import { AGENT_DEMAND_ABI, getPublicClient, loadConfig, verifyMarket } from "./c
 import { deploymentPlan } from "./deployment-plan.ts";
 
 const command = process.argv[2] || "inspect";
-if (command === "deploy-testnet" || command === "deploy-mainnet") throw new Error("DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5");
+if (command === "deploy-testnet" || command === "deploy-mainnet") throw new Error("DEPLOYMENT_TOOLING_UNAVAILABLE: AgentDemand deployment broadcast requires separate owner authorization");
 if (command === "plan") {
   const plan = deploymentPlan(process.env);
   console.log(JSON.stringify(plan, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2));

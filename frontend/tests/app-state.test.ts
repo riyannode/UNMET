@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { encodeAbiParameters, encodeEventTopics, type Address, type Hash, type PublicClient } from "viem";
-import { afterConfirmedTransaction, deriveMarketRequests, nextMarketStatusChangeAt, readSupportForIdentity, settleBoardRead, settleSupportRead } from "../app-state";
+import { afterConfirmedTransaction, deriveMarketRequests, nextMarketStatusChangeAt, readSupportForIdentity, settleBoardRead, settleSupportRead, supportIdentity } from "../app-state";
 import { deriveGlobalAnalytics } from "../analytics.ts";
 import { DEMAND_ABI, demandIdsFromLogs, effectiveStatus, parseMarketSyncInterval, synchronizeMarketBoard, type DemandView, type MarketSyncCursor } from "../contract";
 
@@ -284,6 +284,26 @@ describe("support read identity", () => {
       .resolves.toEqual({ kind: "ready", value: "position" });
     await expect(readSupportForIdentity("alice:1", async () => { throw new Error("RPC offline"); }, (key) => key === "alice:1"))
       .resolves.toMatchObject({ kind: "error", error: new Error("RPC offline") });
+  });
+
+  test("scopes support reads to deployment and discards a prior deployment result", async () => {
+    const wallet = "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa";
+    const a = { chainId: 1952, contract: "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa" as const };
+    const b = { chainId: 1952, contract: "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB" as const };
+    const identityA = supportIdentity(a, wallet, 1n);
+    const identityB = supportIdentity(b, wallet, 1n);
+    expect(identityA).toBe(`1952:${a.contract.toLowerCase()}:${wallet.toLowerCase()}:1`);
+    expect(identityA).not.toBe(identityB);
+    expect(supportIdentity({ ...a, contract: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }, wallet.toLowerCase(), 1n)).toBe(identityA);
+    let current = identityA;
+    let resolve!: (value: string) => void;
+    const pending = new Promise<string>((done) => { resolve = done; });
+    const result = readSupportForIdentity(identityA, () => pending, identity => identity === current);
+    current = identityB;
+    resolve("old deployment position");
+    await expect(result).resolves.toEqual({ kind: "stale" });
+    await expect(readSupportForIdentity(identityB, async () => "current position", identity => identity === current))
+      .resolves.toEqual({ kind: "ready", value: "current position" });
   });
 
   test("discards success or failure from an old demand/account identity", async () => {

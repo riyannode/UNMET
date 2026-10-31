@@ -505,7 +505,7 @@ test.each(["deploy-testnet", "deploy-mainnet"])("deployment command %s is unavai
     expect(child.exitCode).toBe(1);
     expect(child.stdout.toString()).toBe("");
     expect(child.stderr.toString().split("\n")).toContain(
-      "error: DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5",
+      "error: DEPLOYMENT_TOOLING_UNAVAILABLE: AgentDemand deployment broadcast requires separate owner authorization",
     );
   }
 });

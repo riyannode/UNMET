@@ -48,6 +48,7 @@ import {
   afterConfirmedTransaction,
   deriveMarketRequests,
   readSupportForIdentity,
+  supportIdentity as makeSupportIdentity,
   settleBoardRead,
   settleSupportRead,
   nextMarketStatusChangeAt,
@@ -317,7 +318,7 @@ export default function App() {
     setStatus("");
   }, [currentWalletIdentity, setStatus]);
 
-  const supportIdentity = account && selectedId !== null ? account.toLowerCase() + ":" + selectedId.toString() : "";
+  const supportIdentity = selectedDeployment && account && selectedId !== null ? makeSupportIdentity(selectedDeployment, account, selectedId) : "";
   const supportIdentityRef = useRef(supportIdentity);
   supportIdentityRef.current = supportIdentity;
   const supportRequestRef = useRef(0);
@@ -593,7 +594,7 @@ export default function App() {
   }, [marketSyncRoute, board, marketClock]);
 
   useEffect(() => {
-    if (!account || selectedId === null) {
+    if (!account || selectedId === null || !supportIdentity) {
       supportRequestRef.current += 1;
       setSupport(EMPTY_SUPPORT);
       setSupportKey("");
@@ -602,11 +603,10 @@ export default function App() {
       return;
     }
     let live = true;
-    const key = account.toLowerCase() + ":" + selectedId.toString();
     setSupport(EMPTY_SUPPORT);
-    void loadSupport(selectedId, account, key, () => live);
+    void loadSupport(selectedId, account, supportIdentity, () => live);
     return () => { live = false; };
-  }, [account, loadSupport, selectedId]);
+  }, [account, loadSupport, selectedId, supportIdentity]);
 
   async function connect() {
     const kit = walletKit;

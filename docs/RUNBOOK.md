@@ -73,7 +73,7 @@ The currently documented buyer example expects test USD₮0, but the live Mock M
 
 No current repository command deploys canonical AgentDemand. Any future deployment still requires separate owner authorization.
 
-`backend/admin.ts deploy-testnet` and `backend/admin.ts deploy-mainnet` terminate locally with `DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5`. `ALLOW_MAINNET_DEPLOY=1` does not enable deployment. The obsolete six-argument deployment flow has been removed.
+`backend/admin.ts deploy-testnet` and `backend/admin.ts deploy-mainnet` terminate locally with `DEPLOYMENT_TOOLING_UNAVAILABLE: AgentDemand deployment broadcast requires separate owner authorization`. `ALLOW_MAINNET_DEPLOY=1` does not enable deployment. The obsolete six-argument deployment flow has been removed.
 
 The offline `plan` command validates the canonical eight constructor arguments without a key, network call or transaction. Configure `PAYMENT_TOKEN`, `DEMAND_TREASURY`, `DEMAND_FEE_BPS`, `DEMAND_QUORUM_BPS`, `DEMAND_MIN_COMMITMENT` (atomic units), `DEMAND_REVIEW_PERIOD` (seconds), `DEMAND_VERIFIER`, and `DEMAND_VERIFIER_ADMIN`, then run `bun run backend/admin.ts plan`. The read-only `inspect` command checks the configured chain, contract code, immutable token and decimals, plus every planned constructor parameter. Configure `DEMAND_CONTRACT`, `PAYMENT_TOKEN_DECIMALS`, and the chain RPC before inspection.
 
