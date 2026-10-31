@@ -5,12 +5,16 @@
 The opt-in `compose.validation.yaml` overlay extends the same API/web images with one reusable validation image, run as two separate services. Use this topology locally and on a later approved VPS; target-host security still needs independent validation.
 
 ```bash
-docker compose --env-file .env.gate0-local -f compose.yaml -f compose.validation.yaml config --quiet
-docker compose --env-file .env.gate0-local -f compose.yaml -f compose.validation.yaml build
-docker compose --env-file .env.gate0-local -f compose.yaml -f compose.validation.yaml up -d --wait
+UNMET_ENV_FILE=.env.gate0-local # Use the reviewed private environment file on each host.
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml build
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml up -d --no-build --force-recreate --wait
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
 ```
 
 Set `IMAGE_TAG` to the reviewed source plus a packaging revision. Local-only port overrides can publish only `127.0.0.1:18080:8080`; the base configuration also maps its configured HTTPS port. Do not reuse unrelated Compose projects or volumes.
+
+For every four-service operation, retain both Compose files, the same project name, private environment file and any host-specific `-f` overrides. Follow [update, rollback and stop](#update-rollback-and-stop) for the complete lifecycle. Whenever web is replaced, validator must also be recreated: it shares web's network namespace. The four-service `up --force-recreate` procedure deliberately recreates all four containers, including that pair, while preserving named volumes.
 
 The four services have these boundaries:
 
@@ -68,6 +72,8 @@ Start with at least 2 CPU cores / 2 GiB RAM and additional build headroom; this 
 Obtain your own OKX API key, secret, passphrase, API fee recipient address, RPC access/quota, intended deployed demand/token addresses, and Reown project with your localhost/domain origins allowed. No deployment key is needed.
 
 ## Configure and start
+
+The following commands start the base API/web stack only. Gate-0 deployments must instead use the [four-service procedure](#gate-0-validator-and-signer), including its lifecycle commands.
 
 ~~~bash
 git clone https://github.com/riyannode/UNMET.git
@@ -234,21 +240,46 @@ Local validation changes no DNS, production certificates or production configura
 
 Record the current commit/image tag before updating. Retain known-good images with an explicit tag and matching private configuration securely. Never commit .env.
 
+These commands manage the canonical four-service Gate-0 stack on local and VPS hosts. Set `UNMET_ENV_FILE` to that host's reviewed private environment file; retain the same project name and any extra host-specific Compose overrides on every command. Do not fall back to base Compose only. A base API/web installation without Gate-0 may omit the validation overlay; that is not the four-service lifecycle.
+
 ~~~bash
+UNMET_ENV_FILE=.env.gate0-local
 git fetch origin
 read -r -p 'Reviewed release commit: ' release_commit
 git switch --detach "$release_commit"
-# Set IMAGE_TAG to that reviewed commit in .env; preserve other settings.
-docker compose build --pull
-docker compose up -d --no-build
-docker compose ps
+# Set IMAGE_TAG to that reviewed commit in the selected environment file.
+# Preserve its other settings and the matching private mounted configuration.
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml build --pull
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml up -d --no-build --force-recreate --wait
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
 ~~~
 
 After update or rollback, repeat the [health and unpaid verification](#health-smoke-checks-and-logs) against the actual configured origin. Use the automated smoke script only for a local HTTP origin with its configured port; use the manual curl checks for public HTTPS.
 
-Rollback: restore the previous reviewed source/config combination, set IMAGE_TAG to its retained known-good tag, then run docker compose up -d --no-build. If missing, rebuild that commit first. Public frontend settings must match its build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
+Rollback: restore the previous reviewed four-service source/config combination and set IMAGE_TAG to its retained known-good tag. If the images are missing, rebuild that commit with the merged-file build command above. Then recreate all four services, including web and validator together:
 
-Use docker compose stop for graceful stop, or docker compose down to remove this stack's containers/network. **Do not remove volumes** during update/rollback: retain certificates and private configuration. API drains for 20 seconds, then closes remaining connections and exits nonzero; Compose allows 25 seconds. Do not assume an interrupted paid request was unsettled.
+~~~bash
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml up -d --no-build --force-recreate --wait
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
+~~~
+
+Never complete a web replacement without recreating validator, even when its image/configuration is unchanged. Otherwise it can retain the previous web network namespace and Caddy cannot reach its loopback listener. Public frontend settings must match the selected build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
+
+For a graceful stop, manage all four services with the same merged configuration:
+
+~~~bash
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml stop
+~~~
+
+Alternatively, remove this stack's containers/network while retaining its named volumes:
+
+~~~bash
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml down
+~~~
+
+**Do not remove volumes** during update, rollback or shutdown: retain payment, Caddy and signer-socket volumes, plus private configuration. API drains for 20 seconds, then closes remaining connections and exits nonzero; Compose allows 25 seconds. Do not assume an interrupted paid request was unsettled.
 
 ## Troubleshooting and scaling
 
