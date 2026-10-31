@@ -19,7 +19,6 @@ import {
 import { normalizeCapability } from "./capability";
 import {
   waitForTransaction,
-  type ObservedTransaction,
   type TransactionIntent,
   type TransactionStage,
   type TransactionUpdateHandler,
@@ -459,21 +458,6 @@ async function requireAccount(deployment: EscrowDeployment | null, session?: Wal
   await ensureChain(deployment, boundSession, account);
   await assertWalletSession(boundSession, account, deployment.chainId);
   return { account, session: boundSession };
-}
-
-async function readTransactionByHash(hash: Hash): Promise<ObservedTransaction> {
-  const transaction = await getPublic().getTransaction({ hash });
-  return {
-    hash: transaction.hash,
-    from: transaction.from,
-    to: transaction.to,
-    data: transaction.input,
-    value: transaction.value,
-  };
-}
-
-export async function readTransactionOnChain(hash: Hash): Promise<ObservedTransaction> {
-  return readTransactionByHash(hash);
 }
 
 async function wait(
