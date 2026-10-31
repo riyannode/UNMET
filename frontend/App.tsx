@@ -1349,7 +1349,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
   );
 }
 
-function DemandDetail({
+export function DemandDetail({
   demand, support, supportState, account, busy, close, closeLabel, run, blockedActionIds,
 }: {
   demand: DemandView;
@@ -1519,6 +1519,9 @@ function DemandDetail({
                     <div><dt>Service URL</dt><dd>{safeUrl ? <a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a> : demand.serviceUrl}</dd></div>
                     <div><dt>Evidence</dt><dd>{demand.evidenceHash}</dd></div>
                   </dl>
+                  {demand.status === 4 && supportState === "ready" && support.approved && support.refundable && support.commitment > 0n && (
+                    <span className="status-line">Settlement cancelled · remaining commitment refundable</span>
+                  )}
                 </CardContent>
               ) : state === "OPEN" ? (
                 <CardContent>

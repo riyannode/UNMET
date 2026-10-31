@@ -83,3 +83,36 @@ describe("app routes", () => {
     },
   );
 });
+
+test("approved proposal describes settlement and cancelled refund eligibility", () => {
+  const script = `
+    import { mock } from "bun:test";
+    import { createElement } from "react";
+    import { renderToStaticMarkup } from "react-dom/server";
+    import { strict as assert } from "node:assert";
+    mock.module("./Analytics.tsx", () => ({ AnalyticsDashboard: () => null }));
+    const tabs = { ...await import("./components/ui/tabs.tsx") };
+    mock.module("./components/ui/tabs.tsx", () => ({
+      ...tabs, TabsContent: props => createElement(tabs.TabsContent, { ...props, keepMounted: true }),
+    }));
+    const { DemandDetail } = await import("./App.tsx");
+    const address = "0x1111111111111111111111111111111111111111";
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const demand = { demandId: 1n, submissionNonce: 1n, creator: address, builder: address, maxUnitPrice: 1n, committed: 50_000n, reviewCommitted: 50_000n, approvalRequired: 30_000n, expectedCalls: 1n, deadline: now + 86400n, reviewEndsAt: now + 3600n, supporterCount: 1, status: 1, capability: "example", specification: "example", serviceUrl: "https://example.test", evidenceHash: "0x" + "0".repeat(64), approvalWeight: 50_000n, quorumReached: true, rejectionWeight: 0n, rejectionThreshold: 20_001n, candidateRejected: false };
+    const support = { commitment: 50_000n, expectedCalls: 1n, approved: true, rejected: false, refundable: false };
+    const render = (status, refundable, commitment = 50_000n) => renderToStaticMarkup(createElement(DemandDetail, {
+      demand: { ...demand, status }, support: { ...support, refundable, commitment }, supportState: "ready",
+      account: address, busy: false, close: () => {}, closeLabel: "Close", run: async () => { throw new Error("unexpected transaction"); }, blockedActionIds: [],
+    }));
+    const active = render(1, false);
+    assert.match(active, /Approved \u00b7 commitment eligible for settlement/);
+    assert.doesNotMatch(active, /Settlement cancelled/);
+    const cancelled = render(4, true);
+    assert.doesNotMatch(cancelled, /Approved \u00b7 commitment eligible for settlement/);
+    assert.match(cancelled, /Settlement cancelled \u00b7 remaining commitment refundable/);
+    assert.doesNotMatch(render(4, false, 0n), /remaining commitment refundable/);
+  `;
+  const result = Bun.spawnSync([process.execPath, "-e", script], { cwd: "frontend", stdout: "pipe", stderr: "pipe", timeout: 30_000 });
+  expect(result.stderr.toString()).toBe("");
+  expect(result.exitCode).toBe(0);
+});
