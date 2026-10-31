@@ -30,7 +30,7 @@ import {
   type EditableDemandField,
 } from "@/create-demand-chat-model";
 import type { createDemand } from "@/contract";
-import { demandHref } from "@/routing";
+import { ESCROW_SYMBOL, selectedDemandHref as demandHref } from "@/contract";
 import { explorerTx } from "@/contract";
 import { WALLET_REQUIRED_TOAST_ID, type ReownStatus } from "@/reown-status";
 import { isTransactionSubmissionBlocked, type TransactionIntent } from "@/transaction-lifecycle";
@@ -101,9 +101,9 @@ const EDIT_FIELDS: Array<{ field: EditableDemandField; label: string }> = [
 const EDIT_PROMPTS: Record<EditableDemandField, string> = {
   capability: "Update the service you need",
   specification: "Update what the service should provide",
-  maxPrice: "Update the maximum price per call in USD₮0",
+  maxPrice: `Update the maximum price per call in ${ESCROW_SYMBOL}`,
   expectedCalls: "Update the expected number of calls",
-  commitment: "Update the initial escrow commitment in USD₮0",
+  commitment: `Update the initial escrow commitment in ${ESCROW_SYMBOL}`,
   deadlineDays: "Update the deadline in days",
 };
 
@@ -123,7 +123,7 @@ function buildTurns(
   turns.push({ speaker: "You", text: formatPriceUsage(answers.maxPrice, answers.expectedCalls) });
   turns.push({ speaker: "UNMET", text: PROMPTS.commitment });
   if (!answers.commitment) return turns;
-  turns.push({ speaker: "You", text: `${answers.commitment} USD₮0` });
+  turns.push({ speaker: "You", text: `${answers.commitment} ${ESCROW_SYMBOL}` });
   turns.push({ speaker: "UNMET", text: PROMPTS.deadline });
   if (!answers.deadlineDays) return turns;
   turns.push({ speaker: "You", text: `${answers.deadlineDays} days` });
@@ -147,9 +147,9 @@ function editPreview(answers: CreateDemandAnswers, field: EditableDemandField): 
   switch (field) {
     case "capability": return answers.capabilityLabel;
     case "specification": return answers.specification;
-    case "maxPrice": return `${answers.maxPrice} USD₮0 / call`;
+    case "maxPrice": return `${answers.maxPrice} ${ESCROW_SYMBOL} / call`;
     case "expectedCalls": return `${new Intl.NumberFormat("en-US").format(BigInt(answers.expectedCalls))} calls`;
-    case "commitment": return `${answers.commitment} USD₮0`;
+    case "commitment": return `${answers.commitment} ${ESCROW_SYMBOL}`;
     case "deadlineDays": return `${answers.deadlineDays} days`;
   }
 }
@@ -165,7 +165,7 @@ function editPrompt(field: EditableDemandField | null, step: ChatStep): { label:
     case "capability": return { label: PROMPTS.capability, placeholder: "e.g. Vendor KYB API" };
     case "specification": return { label: PROMPTS.specification, placeholder: "Describe the response, data and format you need…" };
     case "pricing": return { label: PROMPTS.pricing, placeholder: "" };
-    case "commitment": return { label: PROMPTS.commitment, placeholder: "e.g. 20 USD₮0" };
+    case "commitment": return { label: PROMPTS.commitment, placeholder: `e.g. 20 ${ESCROW_SYMBOL}` };
     case "deadline": return { label: PROMPTS.deadline, placeholder: "e.g. 14 days" };
     case "review": return { label: "Demand review", placeholder: "" };
   }
@@ -525,7 +525,7 @@ export function CreateDemandChat({
             <strong>{unresolvedOutcome.kind === "broadcast" ? "Transaction submitted; receipt pending" : "Transaction status is unknown"}</strong>
             <p>{unresolvedOutcome.message}</p>
             <p>{unresolvedOutcome.stage === "approval"
-              ? "The USD₮0 approval may still be pending. Verify it before submitting the demand"
+              ? `The ${ESCROW_SYMBOL} approval may still be pending. Verify it before submitting the demand`
               : "The demand transaction may still be pending. Do not submit it again until this transaction is verified"}</p>
             <a href={explorerTx(unresolvedOutcome.hash)} target="_blank" rel="noreferrer">View transaction</a>
             <Button type="button" variant="outline" disabled={sessionVerificationPending || busy} onClick={() => void handleVerify(unresolvedOutcome)}>
@@ -679,7 +679,7 @@ export function CreateDemandChat({
                 {!account && walletStatus === "unavailable" && <p className="create-demand-wallet-state" role="status">Reown Unavailable</p>}
                 {!account && walletStatus === "ready" && <p className="create-demand-wallet-state">Wallet connection opens in Reown only after you continue</p>}
                 {account && <p className="create-demand-wallet-state">Reown wallet connected · {account.slice(0, 6)}…{account.slice(-4)}</p>}
-                <p className="create-demand-wallet-note">If required, Reown will request a separate USD₮0 approval before the demand transaction</p>
+                <p className="create-demand-wallet-note">If required, Reown will request a separate {ESCROW_SYMBOL} approval before the demand transaction</p>
                 <Button type="button" className="create-demand-submit" disabled={!canCreate} onClick={() => void handleCreate()}>
                   {busyCreating ? (account ? "Waiting for wallet or X Layer…" : "Opening Reown…") : "Create & Fund Demand"}
                 </Button>
@@ -691,7 +691,7 @@ export function CreateDemandChat({
         {!completedReview && step === "pricing" && !editing && !blocksChatInput && (
           <form className="create-demand-pricing-form" onSubmit={handlePricingContinue} noValidate>
             <div className="create-demand-pricing-field">
-              <label htmlFor="create-demand-max-price">Max price per call (USD₮0)</label>
+              <label htmlFor="create-demand-max-price">Max price per call ({ESCROW_SYMBOL})</label>
               <Input
                 id="create-demand-max-price"
                 type="number"

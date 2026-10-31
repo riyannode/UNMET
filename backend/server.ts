@@ -14,18 +14,19 @@ import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { decodeEventLog, getAddress, type Address, type PublicClient } from "viem";
 import {
   AGENT_DEMAND_ABI,
-  formatUnits6,
   getPublicClient,
   isoFromUnix,
   loadConfig,
-  parseUnits6,
   readApprovalProgress,
   readDemand,
   readNextDemandId,
   readRejectionProgress,
   statusLabel,
+  verifyMarket,
   type DemandTuple,
 } from "./contract.ts";
+
+import { deploymentKey, parseEscrowAmount, type EscrowDeployment } from "../shared/deployment.ts";
 
 const cfg = loadConfig();
 const operations = loadOperationalConfig();
@@ -83,6 +84,7 @@ type QueryInput = {
 };
 
 export type DemandIndexState = {
+  deploymentKey: string | null;
   entries: Map<string, IndexEntry>;
   ready: boolean;
   lastIndexedBlock: bigint;
@@ -90,7 +92,7 @@ export type DemandIndexState = {
 };
 
 export function createDemandIndexState(): DemandIndexState {
-  return { entries: new Map(), ready: false, lastIndexedBlock: 0n, lastIndexedBlockHash: null };
+  return { deploymentKey: null, entries: new Map(), ready: false, lastIndexedBlock: 0n, lastIndexedBlockHash: null };
 }
 
 const demandIndex = createDemandIndexState();
@@ -236,7 +238,11 @@ export async function changedDemandIds(client: PublicClient, contract: Address, 
   return ids;
 }
 
-export async function refreshIndex(client: PublicClient, contract: Address, state: DemandIndexState, config = operations) {
+export async function refreshIndex(client: PublicClient, deployment: EscrowDeployment, state: DemandIndexState, config = operations) {
+  const { contract, chainId } = deployment;
+  const key = deploymentKey(chainId, contract);
+  if (state.deploymentKey !== null && state.deploymentKey !== key) throw new Error("INDEX_DEPLOYMENT_MISMATCH");
+  state.deploymentKey = key;
   const check = indexBudget(config);
   if (!state.ready) return rebuildIndex(client, contract, state, config, check);
   const current = await client.getBlock();
@@ -270,11 +276,12 @@ export async function refreshIndex(client: PublicClient, contract: Address, stat
 }
 
 let lastRefresh = 0;
-async function ensureIndex(client: PublicClient, contract = cfg.contract) {
-  if (!contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+async function ensureIndex(client: PublicClient, deployment: EscrowDeployment) {
+  const { contract, chainId } = deployment;
+  if (demandIndex.deploymentKey !== null && demandIndex.deploymentKey !== deploymentKey(chainId, contract)) throw new Error("INDEX_DEPLOYMENT_MISMATCH");
   if (refreshPromise) return refreshPromise;
   if (demandIndex.ready && Date.now() - lastRefresh < operations.indexRefreshMs) return;
-  refreshPromise = refreshIndex(client, contract, demandIndex).then(() => {
+  refreshPromise = refreshIndex(client, deployment, demandIndex, operations).then(() => {
     lastRefresh = Date.now();
   }).finally(() => { refreshPromise = null; });
   return refreshPromise;
@@ -331,16 +338,22 @@ function effectiveStatus(entry: IndexEntry, nowUnix: bigint): string {
   return base;
 }
 
-function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint): Opportunity {
+function formatAmount(value: bigint, decimals: number): string {
+  const scale = 10n ** BigInt(decimals);
+  if (!decimals) return value.toString();
+  return `${value / scale}.${(value % scale).toString().padStart(decimals, "0")}`;
+}
+
+function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint, decimals: number): Opportunity {
   return {
     demandId: entry.demandId.toString(),
     capability: entry.data.capability,
-    currentEscrow: formatUnits6(entry.data.committed),
-    fundedBounty: formatUnits6(entry.data.reviewCommitted === 0n ? entry.data.committed : entry.data.reviewCommitted),
-    reviewCommitted: formatUnits6(entry.data.reviewCommitted),
+    currentEscrow: formatAmount(entry.data.committed, decimals),
+    fundedBounty: formatAmount(entry.data.reviewCommitted === 0n ? entry.data.committed : entry.data.reviewCommitted, decimals),
+    reviewCommitted: formatAmount(entry.data.reviewCommitted, decimals),
     supporters: Number(entry.data.supporterCount),
     expectedCalls: entry.data.expectedCalls.toString(),
-    maxUnitPrice: formatUnits6(entry.data.maxUnitPrice),
+    maxUnitPrice: formatAmount(entry.data.maxUnitPrice, decimals),
     deadline: isoFromUnix(entry.data.deadline),
     status: effectiveStatus(entry, nowUnix),
     creator: entry.data.creator,
@@ -357,7 +370,7 @@ function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint): Oppor
 const SORTS = new Set(["bounty", "supporters", "calls", "deadline", "score"]);
 const STATUSES = new Set(["open", "submitted", "ready", "rejected", "expired", "fulfilled", "closed"]);
 
-export function validateOpportunitiesInput(body: unknown): { ok: true; value: QueryInput } | { ok: false; code: string; message: string } {
+export function validateOpportunitiesInput(body: unknown, decimals = 6): { ok: true; value: QueryInput } | { ok: false; code: string; message: string } {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { ok: false, code: "INVALID_JSON", message: "Body must be a JSON object" };
   }
@@ -369,8 +382,8 @@ export function validateOpportunitiesInput(body: unknown): { ok: true; value: Qu
   let minBounty = 0n;
   if (input.minBounty !== undefined) {
     if (typeof input.minBounty !== "string") return { ok: false, code: "INVALID_JSON", message: "minBounty must be a decimal string" };
-    try { minBounty = parseUnits6(input.minBounty); }
-    catch { return { ok: false, code: "INVALID_JSON", message: "minBounty must have at most 6 decimals" }; }
+    try { minBounty = parseEscrowAmount(input.minBounty, decimals); }
+    catch { return { ok: false, code: "INVALID_JSON", message: `minBounty must have at most ${decimals} decimals` }; }
   }
 
   const minSupporters = input.minSupporters === undefined ? 1 : input.minSupporters;
@@ -432,13 +445,13 @@ function compareScored(a: { entry: IndexEntry; score: number; deadline: string |
   return compareBigDesc(a.entry.data.committed, b.entry.data.committed) || compareBigDesc(a.entry.demandId, b.entry.demandId);
 }
 
-export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000))): Opportunity[] {
+export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000)), decimals = 6): Opportunity[] {
   const { scored } = matchingEntries(entries, input, nowUnix);
-  return scored.slice(0, input.limit).map(({ entry, score }) => toOpportunity(entry, score, nowUnix));
+  return scored.slice(0, input.limit).map(({ entry, score }) => toOpportunity(entry, score, nowUnix, decimals));
 }
 
 function compareBigDesc(a: bigint, b: bigint): number { return b > a ? 1 : b < a ? -1 : 0; }
-function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint, marketToken: Address) {
+function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint, marketToken: Address, decimals: number) {
   const { filtered, scored } = matchingEntries(entries, input, nowUnix);
   const ranked = [...scored].sort((a, b) => b.score - a.score || compareBigDesc(a.entry.demandId, b.entry.demandId));
   const ranks = new Map(ranked.map((row, index) => [row.entry.demandId.toString(), index + 1]));
@@ -452,7 +465,7 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
   const allRoundedScoresTied = filtered.length > 1 && scored.every((peer) => peer.score === scored[0]?.score);
   const opportunities = scored.slice(0, input.limit).map((row) => {
     const { entry, score, terms } = row;
-    const base = toOpportunity(entry, score, nowUnix);
+    const base = toOpportunity(entry, score, nowUnix, decimals);
     const remaining = entry.data.deadline > nowUnix ? entry.data.deadline - nowUnix : 0n;
     const timeLeft = remaining.toString();
     const positive: string[] = [], cautions: string[] = [
@@ -482,8 +495,8 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
     else if (allEconomicFactorsTied && varies.deadlineFreshness) cautions.push("Deadline freshness distinguishes rounded scores among demands with tied economic factors.");
     const submitted = Number(entry.data.status) === 1;
     const review = submitted ? {
-      approvalGap: formatUnits6(entry.approvalRequired > entry.approvalWeight ? entry.approvalRequired - entry.approvalWeight : 0n),
-      rejectionHeadroom: formatUnits6(entry.rejectionThreshold > entry.rejectionWeight ? entry.rejectionThreshold - entry.rejectionWeight : 0n),
+      approvalGap: formatAmount(entry.approvalRequired > entry.approvalWeight ? entry.approvalRequired - entry.approvalWeight : 0n, decimals),
+      rejectionHeadroom: formatAmount(entry.rejectionThreshold > entry.rejectionWeight ? entry.rejectionThreshold - entry.rejectionWeight : 0n, decimals),
       reviewTimeRemainingSeconds: (entry.data.reviewEndsAt > nowUnix ? entry.data.reviewEndsAt - nowUnix : 0n).toString(),
     } : null;
     return {
@@ -496,14 +509,14 @@ function paidAnalysis(entries: IndexEntry[], input: QueryInput, nowUnix: bigint,
         deadlineFreshness: { factor: terms.deadlineFreshness, contribution: terms.deadlineFreshness * 0.1 },
       },
       economicSignals: {
-        escrowPerExpectedCall: entry.data.expectedCalls === 0n ? null : formatUnits6(entry.data.committed / entry.data.expectedCalls),
+        escrowPerExpectedCall: entry.data.expectedCalls === 0n ? null : formatAmount(entry.data.committed / entry.data.expectedCalls, decimals),
         timeRemainingSeconds: timeLeft,
         review,
       },
       reasoning: { positive, cautions },
     };
   });
-  return { poolSize: filtered.length, rankingScope: "matching_filters_before_limit", scoreVersion: "escrow-percentiles-v1", marketToken, tokenDecimals: 6, opportunities };
+  return { poolSize: filtered.length, rankingScope: "matching_filters_before_limit", scoreVersion: "escrow-percentiles-v1", marketToken, tokenDecimals: decimals, opportunities };
 }
 
 export function paymentStorageGuard(available: boolean): RequestHandler {
@@ -655,7 +668,10 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   const indexState = options.indexState || demandIndex;
   const app = express();
   let client = options.client;
-  const rpc = () => client ??= getPublicClient();
+  const rpc = () => {
+    if (!market.deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+    return client ??= getPublicClient(market.deployment);
+  };
   const limiter = rateLimiter(config, options.now);
   const gate = concurrencyGate(config.maxInFlight);
   app.disable("x-powered-by");
@@ -683,15 +699,11 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     if (healthCache && Date.now() < healthCache.until) return Promise.resolve(healthCache.result);
     if (healthPending) return healthPending;
     healthPending = (async (): Promise<Health> => {
-      if (!market.contract) return { status: 503, body: { ok: false, error: { code: "CHAIN_CONTRACT_UNCONFIGURED", message: "DEMAND_CONTRACT not configured" } } };
+      if (!market.deployment) return { status: 503, body: { ok: false, error: { code: "CHAIN_CONTRACT_UNCONFIGURED", message: "Escrow deployment not configured" } } };
       try {
-        const [latestBlock, bytecode, chainId] = await Promise.all([
-          rpc().getBlockNumber({ cacheTime: 0 }),
-          rpc().getBytecode({ address: market.contract }),
-          rpc().getChainId(),
-        ]);
-        if (!bytecode || bytecode === "0x" || chainId !== market.chainId) throw new Error("CHAIN_RPC_UNAVAILABLE");
-        return { status: 200, body: { ok: true, name: "UNMET", chainId: market.chainId, contract: market.contract, latestBlock: latestBlock.toString() } };
+        await verifyMarket(rpc(), market.deployment);
+        const latestBlock = await rpc().getBlockNumber({ cacheTime: 0 });
+        return { status: 200, body: { ok: true, name: "UNMET", chainId: market.deployment.chainId, contract: market.deployment.contract, latestBlock: latestBlock.toString() } };
       } catch {
         return { status: 503, body: { ok: false, error: { code: "CHAIN_RPC_UNAVAILABLE", message: "RPC or contract unavailable" } } };
       }
@@ -722,9 +734,12 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
 
   app.get("/v1/demands", limiter("demands", config.demandsPerWindow), gate, admittedWork(async (req, res, next) => {
     try {
-      if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
-      if (indexState === demandIndex) await ensureIndex(rpc(), market.contract);
-      else if (!indexState.ready) await refreshIndex(rpc(), market.contract, indexState);
+      if (!market.deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+      if ((await health()).status !== 200) throw new Error("CHAIN_RPC_UNAVAILABLE");
+      if (indexState === demandIndex) await ensureIndex(rpc(), market.deployment);
+      else if (indexState.ready) {
+        if (indexState.deploymentKey !== deploymentKey(market.deployment.chainId, market.deployment.contract)) throw new Error("INDEX_DEPLOYMENT_MISMATCH");
+      } else await refreshIndex(rpc(), market.deployment, indexState, config);
       if (req.aborted || res.destroyed) {
         res.statusCode = 503;
         res.end();
@@ -732,8 +747,8 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       }
       const entries = [...indexState.entries.values()];
       const evaluationTime = options.now?.() ?? Date.now();
-      const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 }, BigInt(Math.floor(evaluationTime / 1000)));
-      res.json({ chainId: market.chainId, contract: market.contract, blockNumber: indexState.lastIndexedBlock.toString(), generatedAt: new Date(evaluationTime).toISOString(), demands });
+      const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 }, BigInt(Math.floor(evaluationTime / 1000)), market.deployment.escrowToken.decimals);
+      res.json({ chainId: market.deployment.chainId, contract: market.deployment.contract, escrowToken: market.deployment.escrowToken, blockNumber: indexState.lastIndexedBlock.toString(), generatedAt: new Date(evaluationTime).toISOString(), demands });
     } catch (error) { next(error); }
   }));
 
@@ -742,7 +757,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       res.status(415).json({ error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "Use application/json" } });
       return;
     }
-    const parsed = validateOpportunitiesInput(req.body);
+    const parsed = validateOpportunitiesInput(req.body, market.deployment?.escrowToken.decimals ?? 6);
     if (!parsed.ok) {
       res.status(400).json({ error: { code: parsed.code, message: parsed.message } });
       return;
@@ -752,9 +767,12 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   };
   app.post("/v1/opportunities", validate, limiter("opportunities", config.opportunitiesPerWindow), gate, admittedWork(payment.middleware), admittedWork(async (req, res, next) => {
     try {
-      if (!market.contract) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
-      if (indexState === demandIndex) await ensureIndex(rpc(), market.contract);
-      else if (!indexState.ready) await refreshIndex(rpc(), market.contract, indexState);
+      if (!market.deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+      if ((await health()).status !== 200) throw new Error("CHAIN_RPC_UNAVAILABLE");
+      if (indexState === demandIndex) await ensureIndex(rpc(), market.deployment);
+      else if (indexState.ready) {
+        if (indexState.deploymentKey !== deploymentKey(market.deployment.chainId, market.deployment.contract)) throw new Error("INDEX_DEPLOYMENT_MISMATCH");
+      } else await refreshIndex(rpc(), market.deployment, indexState, config);
       if (req.aborted || res.destroyed) {
         res.statusCode = 503;
         res.end();
@@ -763,10 +781,11 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       const input: QueryInput = res.locals.opportunityInput;
       const evaluationTime = options.now?.() ?? Date.now();
       const nowUnix = BigInt(Math.floor(evaluationTime / 1000));
-      const result = paidAnalysis([...indexState.entries.values()], input, nowUnix, market.paymentToken);
+      const result = paidAnalysis([...indexState.entries.values()], input, nowUnix, market.deployment.escrowToken.address, market.deployment.escrowToken.decimals);
       res.json({
-        chainId: market.chainId,
-        contract: market.contract,
+        chainId: market.deployment.chainId,
+        contract: market.deployment.contract,
+        escrowToken: market.deployment.escrowToken,
         blockNumber: indexState.lastIndexedBlock.toString(),
         generatedAt: new Date(evaluationTime).toISOString(),
         analysis: { poolSize: result.poolSize, rankingScope: result.rankingScope, scoreVersion: result.scoreVersion, marketToken: result.marketToken, tokenDecimals: result.tokenDecimals },
@@ -792,7 +811,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       : parserStatus === 413 ? "BODY_TOO_LARGE"
       : parserStatus === 415 ? "UNSUPPORTED_MEDIA_TYPE"
       : error instanceof SyntaxError && "body" in error ? "INVALID_JSON"
-      : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
+      : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "INDEX_DEPLOYMENT_MISMATCH", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
       : "CHAIN_RPC_UNAVAILABLE";
     const status = error instanceof PaymentError ? error.status
       : code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
@@ -809,7 +828,7 @@ export const app = createApp();
 export default app;
 
 export async function startServer() {
-  if (!cfg.contract) throw new Error("CONFIG_INVALID: DEMAND_CONTRACT");
+  if (!cfg.deployment) throw new Error("CONFIG_INVALID: ESCROW_DEPLOYMENT");
   const pay = requirePaymentEnv();
   if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_ORIGIN?.trim()) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
   const middleware = await createPaymentMiddleware();

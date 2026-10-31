@@ -25,8 +25,8 @@ chmod 600 .env
 
 Edit `.env` privately. It starts with **Compose production defaults**, including `NODE_ENV=production` and Mainnet x402 billing. For standalone local development, set `NODE_ENV=development`, `HOST=127.0.0.1`, and `FRONTEND_ORIGIN=http://localhost:5173`. Keep `CHAIN_ID=1952` and matching Testnet contract/token/RPC configuration. Production requires `X402_CHAIN_ID=196`; a deliberately configured nonproduction process may use `1952`. Neither choice authorizes a signed payment.
 
-- Backend startup needs `DEMAND_CONTRACT`, `XLAYER_RPC_URL`, `PAYMENT_TOKEN`, and your own `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `OKX_PAY_TO`. See the full [configuration matrix](docs/SELF_HOSTING.md#configuration-matrix).
-- Frontend: set matching public `VITE_CHAIN_ID`, `VITE_DEMAND_CONTRACT`, `VITE_PAYMENT_TOKEN`, `VITE_XLAYER_RPC_URL`, and your public `VITE_REOWN_PROJECT_ID`; allow the local origin in Reown.
+- Backend startup needs `DEMAND_CONTRACT`, `XLAYER_RPC_URL`, `PAYMENT_TOKEN`, `PAYMENT_TOKEN_DECIMALS`, and your own `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `OKX_PAY_TO`. See the full [configuration matrix](docs/SELF_HOSTING.md#configuration-matrix).
+- Frontend: set matching public `VITE_CHAIN_ID`, `VITE_DEMAND_CONTRACT`, `VITE_PAYMENT_TOKEN`, `VITE_PAYMENT_TOKEN_DECIMALS`, `VITE_XLAYER_RPC_URL`, and your public `VITE_REOWN_PROJECT_ID`; allow the local origin in Reown. Builder validation additionally needs an explicitly configured public `VITE_VALIDATION_URL` and approved `VITE_VALIDATION_NETWORKS`. See the standalone validator CORS/proxy procedure in [API](docs/API.md#standalone-g02-validation-runtime).
 - `VITE_*` is public build-time data. Keep private provider credentials, OKX secrets and wallet keys out of it. No deployment key is needed to develop or run checks.
 - For standalone durable payments, create a private local directory first and set an absolute `PAYMENT_DB_PATH`. Compose fixes this path to `/data/payments.sqlite`. See [payment recovery](docs/PAYMENT_RECOVERY.md).
 

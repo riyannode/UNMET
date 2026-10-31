@@ -28,6 +28,10 @@ VALIDATION_CONFIG_PATH=/path/to/validation-config.json bun --no-env-file backend
 
 It binds `127.0.0.1:3001` and exposes only `POST /v1/x402/validate`. There is no built-in production profile. The strict configuration has `maxInFlight`, `managementAddresses`, absolute `signerSocketPath` and `signerAuthTokenPath`, and a nonempty `deployments` array. Each deployment has `escrowChainId`, `escrowContract`, `escrowRpcUrl`, lowercase nonzero `verifier`, `demandPriceAsset` and a nonempty `paymentProfiles` array. Each payment profile contains the fields in the [public policy schema](schemas/validation-policy.json) under `profile`, plus `paymentRpcUrl`. Identity is the exact `(escrowChainId, escrowContract, paymentNetwork)` tuple. RPC URLs, signer settings, verifier and admission settings are excluded from the public policy digest. Configuration and its RPC endpoints are trusted operator inputs.
 
+Browser integration uses public build inputs `VITE_VALIDATION_URL` (the full `/v1/x402/validate` URL) and `VITE_VALIDATION_NETWORKS` (approved comma-separated CAIP-2 networks matching operator policy). Missing configuration disables builder submission. A public HTTPS reverse proxy must forward that path to the standalone validator on `127.0.0.1:3001`; the repository does not provision or deploy this ingress. A same-origin proxy path is also supported. Keep this route directed to the isolated validator, separately from the existing payment API.
+
+For cross-origin browser calls, set `VALIDATION_ALLOWED_ORIGINS` on the standalone validator to an exact comma-separated origin allowlist. Only POST with `content-type` is allowed by preflight; unknown origins or requested headers receive 403. Responses to allowed origins include CORS headers, including FAIL/UNAVAILABLE. Cookies and ambient credentials are omitted. This transport configuration does not change the signed policy schema or establish G0.6 target-host isolation.
+
 The request follows the [validation request schema](schemas/validation-request.json), plus the semantic rules in the [roadmap](FUTURE_IMPLEMENTATION.md#48-validation-service-endpoint). The runtime bounds raw input at 32 KiB and checks strict JSON, Unicode, numeric and depth constraints before schema validation. GET uses null body/content type; POST uses a JSON object and `application/json`. Up to 32 ordered query pairs are appended to the service URL. HTTPS targets use effective port 443 only; an explicit `:443` and the root URL without a trailing slash are accepted and serialized using WHATWG URL rules. Other noncanonical service URLs are rejected. The transport checks DNS and peer addresses, verifies TLS for the original hostname, does not follow redirects and destroys the response without reading its body.
 
 The endpoint checks canonical pinned escrow reads, declared receiver consistency, and a same-network, same-asset integer price against the onchain maximum. The challenge must be HTTP 402 with one `PAYMENT-REQUIRED` header. It validates the entire x402 V2 envelope before selecting the first eligible offer. Its core wire interpretation is pinned to [x402 V2 revision `3c0a740ef84f5a58215a75b709b2f3332839463c`](https://github.com/x402-foundation/x402/blob/3c0a740ef84f5a58215a75b709b2f3332839463c/specs/x402-specification-v2.md): standard canonical base64 is accepted with or without padding; `extra`, if present, must be an object rather than null. Generic offers require a decimal amount and positive finite timeout; the selected EVM profile additionally requires a uint256 amount and positive safe-integer timeout within its limit. Unsupported structurally valid alternatives do not invalidate an eligible offer. The runtime never attaches payment credentials or invokes payment verification or settlement.
@@ -64,6 +68,7 @@ Synthetic example (one returned row shown):
 {
   "chainId": 1952,
   "contract": "0x3333333333333333333333333333333333333333",
+  "escrowToken": { "address": "0x4444444444444444444444444444444444444444", "symbol": "USDC", "decimals": 6 },
   "blockNumber": "100",
   "generatedAt": "2026-10-26T00:00:00.000Z",
   "demands": [{
@@ -101,7 +106,7 @@ The route uses the official `@okxweb3/x402-express` middleware with `OKXFacilita
 
 Without valid payment, the middleware returns HTTP `402` using the standard x402 v2 payment challenge (`PAYMENT-REQUIRED`). The buyer pays/signs according to the challenge and replays the same request with the standard `PAYMENT-SIGNATURE` header. Official verification precedes route execution. The Express SDK buffers the result, skips settlement for unsuccessful execution, settles through OKX, then releases the response. Self-hosted durable mode records the reservation and in-flight marker before settlement and releases content only after confirmed success is persisted.
 
-Production advertises exactly three `eip155:196` native EIP-3009 exact options in order: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`, domain `USD₮0` v1), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`, `USDC` v2), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`, `Global Dollar` v1). Each is `10000` atomic units (6 decimals) and uses configured `OKX_PAY_TO`, independent of the contract treasury. `X402_RPC_URL` (default `https://rpc.xlayer.tech`) is used only to confirm Mainnet inclusion and must report chain ID 196. The market's Testnet token remains separate on `eip155:1952`.
+Production advertises exactly three `eip155:196` native EIP-3009 exact options in order: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`, domain `USD₮0` v1), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`, `USDC` v2), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`, `Global Dollar` v1). Each is `10000` atomic units (6 decimals) and uses configured `OKX_PAY_TO`, independent of the contract treasury. `X402_RPC_URL` (default `https://rpc.xlayer.tech`) is used only to confirm Mainnet inclusion and must report chain ID 196. The escrow token remains independently configured.
 
 With durable SQLite enabled, content is released only after the facilitator reports strict success and the persisted transaction is confirmed in a successful canonical X Layer Mainnet L2 block with matching EIP-3009 authorization and token logs. This is current L2 inclusion, not safe/finalized or L1 finality. Without durable storage, unpaid requests can still receive the SDK's standard challenge, while requests carrying a payment signature receive `503 PAYMENT_STORAGE_UNAVAILABLE`.
 
@@ -128,7 +133,7 @@ UNMET does not accept a locally invented payment ID as proof.
 All fields are optional; `{}` uses defaults. Body must be a JSON object, with no unknown fields, `Content-Type: application/json`, and at most 32 KiB. Validation runs before payment.
 
 Rules:
-- `minBounty`: non-negative decimal string, maximum 6 decimals
+- `minBounty`: non-negative decimal string, maximum configured escrow-token decimals
 - `minSupporters`: uint32-safe integer, default `1`
 - `status`: `open | submitted | ready | rejected | expired | fulfilled | closed`, case-insensitive (default: `open`)
 - `sort`: `bounty | supporters | calls | deadline | score`
@@ -144,6 +149,7 @@ Synthetic example for `{"sort":"score","limit":1}`: three OPEN demands match bef
 {
   "chainId": 1952,
   "contract": "0x3333333333333333333333333333333333333333",
+  "escrowToken": { "address": "0x4444444444444444444444444444444444444444", "symbol": "USDC", "decimals": 6 },
   "blockNumber": "100",
   "generatedAt": "2026-10-26T00:00:00.000Z",
   "analysis": {
@@ -211,14 +217,14 @@ All existing opportunity fields and request defaults are preserved. Additions ar
 
 | Field | Calculation and interpretation |
 | --- | --- |
-| `escrowPerExpectedCall` | `currentEscrowAtomic / expectedCalls`, integer division rounded down, then formatted with six decimals. `null` when expected calls is zero. Units: **market tokens per historically expected call**, not service price, revenue, cost coverage or payout. Values below one atomic unit become `"0.000000"`. |
+| `escrowPerExpectedCall` | `currentEscrowAtomic / expectedCalls`, integer division rounded down, then formatted with the configured token decimals. `null` when expected calls is zero. Units: **market tokens per historically expected call**, not service price, revenue, cost coverage or payout. Values below one atomic unit become zero formatted to the configured decimals. |
 | `timeRemainingSeconds` | `max(deadlineUnix - evaluationUnix, 0)`, exact decimal integer string. Still available for deadlines outside the ISO date range. |
 | `review` | `null` unless the underlying contract status is SUBMITTED, including derived READY, REJECTED or EXPIRED states. It is also null for FULFILLED and CLOSED. |
-| `review.approvalGap` | `max(approvalRequiredAtomic - approvalWeightAtomic, 0)`, formatted as six-decimal market tokens. Zero does not prove settlement occurred. |
-| `review.rejectionHeadroom` | `max(rejectionThresholdAtomic - rejectionWeightAtomic, 0)`, formatted as six-decimal market tokens: additional rejection weight that would block the candidate. |
+| `review.approvalGap` | `max(approvalRequiredAtomic - approvalWeightAtomic, 0)`, formatted as market tokens with the configured decimals. Zero does not prove settlement occurred. |
+| `review.rejectionHeadroom` | `max(rejectionThresholdAtomic - rejectionWeightAtomic, 0)`, formatted as market tokens with the configured decimals: additional rejection weight that would block the candidate. |
 | `review.reviewTimeRemainingSeconds` | `max(reviewEndsAtUnix - evaluationUnix, 0)`, exact decimal integer string. |
 
-`analysis.marketToken` and `tokenDecimals: 6` identify these monetary units. They are independent of the Mainnet asset used to buy intelligence. Existing `approvalWeight`, `approvalRequired`, `rejectionWeight` and `rejectionThreshold` retain their **atomic integer string** units; `currentEscrow`, `fundedBounty`, `reviewCommitted` and `maxUnitPrice` retain six-decimal token strings.
+The top-level `chainId`, `contract`, and `escrowToken` identify the selected deployment and denomination. `analysis.marketToken` and `analysis.tokenDecimals` repeat the token address and decimals. They are independent of the Mainnet asset used to buy intelligence. Existing `approvalWeight`, `approvalRequired`, `rejectionWeight` and `rejectionThreshold` retain their **atomic integer string** units; `currentEscrow`, `fundedBounty`, `reviewCommitted` and `maxUnitPrice` retain fixed-width token strings at the configured decimals.
 
 Reasoning uses only the indexed facts, evaluation time and matching-pool percentiles. Funding/call/supporter quartile claims require that the particular factor varies across the full matching pool before limit: at or above the 75th percentile can indicate a relative strength, and at or below the 25th percentile a relative weakness. A constant factor supplies no relative distinction, even though its legacy strict-lower percentile remains zero in a multi-demand pool. Absolute zero-value cautions still apply.
 
@@ -294,3 +300,5 @@ Default per-IP route quotas are 60 demands and 20 opportunities per 60 seconds, 
 API responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a server-generated `X-Request-ID`. CORS allows configured exact origins, exposes `link`, `payment-required`, and `payment-response`, and permits `idempotency-key`.
 
 See the canonical [error reference](ERRORS.md) and [operational limits](SELF_HOSTING.md#limits-and-bounded-work).
+
+The market is unavailable until an operator supplies a reviewed contract, token address and token decimals. Before market reads, the API verifies RPC chain ID, contract code, immutable `token()` and token `decimals()`; mismatches fail closed. Each index is bound to `(chainId, contract)` and ranks only that deployment.

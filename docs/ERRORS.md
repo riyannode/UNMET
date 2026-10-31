@@ -6,7 +6,7 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 
 | Code | Meaning | Recovery |
 | --- | --- | --- |
-| `CHAIN_CONTRACT_UNCONFIGURED` | `DEMAND_CONTRACT` is unset | deploy/configure contract |
+| `CHAIN_CONTRACT_UNCONFIGURED` | Selected contract or token configuration is incomplete | Configure a reviewed deployment and token |
 | `CHAIN_RPC_UNAVAILABLE` | RPC or configured contract unavailable | verify RPC, chain ID, address and bytecode |
 | `CHAIN_WRONG_NETWORK` | wallet is not on the configured demand-market network | switch/add X Layer Testnet chain `1952`; the x402 API billing rail's Mainnet `196` does not change the wallet network for demand-market actions |
 | `CHAIN_RECEIPT_FAILED` | mined write failed | inspect revert and transaction |
@@ -34,7 +34,7 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 
 | Code | Context | Recovery |
 | --- | --- | --- |
-| `DEPLOYMENT_TOOLING_UNAVAILABLE` | `deploy-testnet` and `deploy-mainnet` exit locally before deployment work | Canonical AgentDemand deployment tooling is deferred to G0.5 and requires separate owner authorization; read-only `inspect` remains available. |
+| `DEPLOYMENT_TOOLING_UNAVAILABLE` | `deploy-testnet` and `deploy-mainnet` exit locally before deployment work | Deployment requires separate owner authorization; offline `plan` and read-only `inspect` remain available. |
 
 ## Self-hosted API operations
 
@@ -49,6 +49,7 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `INDEX_CAPACITY` | 503; index exceeds bounds | Review chain size and measured capacity |
 | `INDEX_BUDGET_EXCEEDED` | 503; refresh deadline/window bound | Check RPC latency/budget |
 | `INDEX_REORG` | 503; pinned block changed | Retry; previous checkpoint remains intact |
+| `INDEX_DEPLOYMENT_MISMATCH` | 503; checkpoint belongs to another chain or contract | Initialize a fresh disposable index for the selected deployment |
 | `PAYMENT_UNAVAILABLE` | 503 readiness | Check official facilitator initialization |
 | `CONFIG_INVALID: PAYMENT_DISCOVERY` | Startup/readiness failure | Synchronize `frontend/public/openapi.json` with the configured `X402_CHAIN_ID` and `OPPORTUNITY_PRICE` using `bun run sync:payment-discovery`, then run `bun run check:payment-discovery`. |
 | `CONFIG_INVALID` | Startup failure | Correct the named environment field |
@@ -128,6 +129,17 @@ These codes classify internal payment processing and do not create new public HT
 | `CONFIRMATION_RETRY_EXHAUSTED` | Confirmation retry budget ended without proof | Reconcile the existing transaction; do not resubmit settlement. |
 
 Wallet transaction recovery also distinguishes `broadcast`, `confirmed`, `reverted`, `cancelled`, and `unknown` in `TransactionLifecycleError` and wallet-scoped pending records. `broadcast`/`unknown` block another submission. Observe the existing hash and original intent before any intentional retry; a successful receipt with failed readback is not permission to fund again. See [wallet session/recovery limits](WALLET_DISCONNECT.md).
+
+| Frontend integration error | Meaning |
+| --- | --- |
+| `VALIDATION_UNAVAILABLE` | Public validation endpoint or payment network is not configured. |
+| `VALIDATION_INVALID_REQUEST`, `VALIDATION_INVALID_PAYTO` | Request metadata or authorized receiver is invalid. |
+| `VALIDATION_FAILED` | Validator failed, was unavailable, returned a non-success response, or returned a malformed response. |
+| `VALIDATION_INVALID_PASS`, `VALIDATION_INVALID_SIGNATURE` | PASS bindings, lifetime, or current-verifier signature failed verification. |
+| `VALIDATION_EXPIRED`, `VALIDATION_NONCE_STALE` | Attestation expired or nonce changed before broadcast; explicitly validate again. |
+| `SUBMISSION_READBACK_FAILED` | Receipt succeeded, but canonical submitted state or digests could not be verified; the pending record is retained. |
+| `DEPLOYMENT_INVALID`, `DEPLOYMENT_CHAIN_MISMATCH`, `DEPLOYMENT_NO_CODE`, `DEPLOYMENT_TOKEN_MISMATCH`, `DEPLOYMENT_DECIMALS_MISMATCH` | Deployment configuration or its onchain identity does not match. |
+| `TRANSACTION_DEPLOYMENT_MISMATCH`, `TRANSACTION_INTENT_MISMATCH`, `MARKET_DEPLOYMENT_MISMATCH` | Saved transaction or market checkpoint belongs to a different deployment or intent. |
 
 ## Contract custom errors
 

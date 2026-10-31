@@ -81,11 +81,12 @@
       "ErrorResponse": { "type": "object", "required": ["error"], "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } } } },
       "LiveResponse": { "type": "object", "required": ["ok", "name"], "properties": { "ok": { "const": true }, "name": { "const": "UNMET" } } },
       "HealthResponse": { "type": "object", "required": ["ok", "name", "chainId", "contract", "latestBlock"], "properties": { "ok": { "const": true }, "name": { "const": "UNMET" }, "chainId": { "type": "integer" }, "contract": { "type": "string" }, "latestBlock": { "type": "string" } } },
+      "EscrowToken": { "type": "object", "required": ["address", "symbol", "decimals"], "properties": { "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" }, "symbol": { "type": "string", "minLength": 1 }, "decimals": { "type": "integer", "minimum": 0, "maximum": 255 } } },
       "OpportunityQuery": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "minBounty": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,6})?$", "default": "0", "description": "Minimum committed amount, decimal units with at most 6 fractional digits." },
+          "minBounty": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$", "default": "0", "description": "Minimum committed amount, decimal units with at most the selected escrow token decimals." },
           "minSupporters": { "type": "integer", "minimum": 0, "maximum": 4294967295, "default": 1 },
           "status": { "type": "string", "pattern": "^(?:[oO][pP][eE][nN]|[sS][uU][bB][mM][iI][tT][tT][eE][dD]|[rR][eE][aA][dD][yY]|[rR][eE][jJ][eE][cC][tT][eE][dD]|[eE][xX][pP][iI][rR][eE][dD]|[fF][uU][lL][fF][iI][lL][lL][eE][dD]|[cC][lL][oO][sS][eE][dD])$", "default": "open", "description": "Status comparison is case-insensitive. Omit the property to use the default status filter." },
           "sort": { "type": "string", "enum": ["bounty", "supporters", "calls", "deadline", "score"], "default": "bounty" },
@@ -100,13 +101,13 @@
         }
       },
       "DemandsResponse": {
-        "type": "object", "required": ["chainId", "contract", "blockNumber", "generatedAt", "demands"],
-        "properties": { "chainId": { "type": "integer" }, "contract": { "type": "string" }, "blockNumber": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" }, "demands": { "type": "array", "maxItems": 50, "items": { "$ref": "#/components/schemas/Demand" } } }
+        "type": "object", "required": ["chainId", "contract", "escrowToken", "blockNumber", "generatedAt", "demands"],
+        "properties": { "chainId": { "type": "integer" }, "contract": { "type": "string" }, "escrowToken": { "$ref": "#/components/schemas/EscrowToken" }, "blockNumber": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" }, "demands": { "type": "array", "maxItems": 50, "items": { "$ref": "#/components/schemas/Demand" } } }
       },
       "OpportunitiesResponse": {
-        "type": "object", "required": ["chainId", "contract", "blockNumber", "generatedAt", "analysis", "opportunities"],
+        "type": "object", "required": ["chainId", "contract", "escrowToken", "blockNumber", "generatedAt", "analysis", "opportunities"],
         "properties": {
-          "chainId": { "type": "integer" }, "contract": { "type": "string" }, "blockNumber": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" },
+          "chainId": { "type": "integer" }, "contract": { "type": "string" }, "escrowToken": { "$ref": "#/components/schemas/EscrowToken" }, "blockNumber": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" },
           "analysis": { "type": "object", "required": ["poolSize", "rankingScope", "scoreVersion", "marketToken", "tokenDecimals"], "properties": { "poolSize": { "type": "integer" }, "rankingScope": { "type": "string" }, "scoreVersion": { "type": "string" }, "marketToken": { "type": "string" }, "tokenDecimals": { "type": "integer" } } },
           "opportunities": { "type": "array", "items": { "allOf": [
             { "$ref": "#/components/schemas/Demand" },

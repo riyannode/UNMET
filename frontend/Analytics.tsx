@@ -1,7 +1,8 @@
 import { Link } from "react-router";
 import { Card, CardContent } from "./components/ui/card";
-import { demandHref, ROUTES } from "./routing";
-import { formatUsd0, type DemandView } from "./contract";
+import { ROUTES } from "./routing";
+import { ESCROW_SYMBOL, selectedDemandHref as demandHref } from "./contract";
+import { formatTokenAmount, type DemandView } from "./contract";
 import { deriveGlobalAnalytics } from "./analytics";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -55,7 +56,7 @@ export function AnalyticsDashboard({ board, loading, loadError, contractConfigur
           <div className="analytics-kpis">
             <MetricCard label="Total requests" value={analytics.totalRequests.toLocaleString()} detail="Unique on-chain demand IDs" />
             <MetricCard label="Requests fulfilled" value={analytics.fulfilledRequests.toLocaleString()} detail="Current fulfilled status, counted once per request" />
-            <MetricCard label="Escrow locked" value={formatUsd0(analytics.escrowLocked)} unit="USD₮0" detail="Current committed balances across all requests" />
+            <MetricCard label="Escrow locked" value={formatTokenAmount(analytics.escrowLocked)} unit={ESCROW_SYMBOL} detail="Current committed balances across all requests" />
             <MetricCard label="Builder payouts" value="Unavailable" detail="Complete fulfillment events are not indexed" unavailable />
           </div>
 
@@ -212,7 +213,7 @@ function EscrowBars({ requests }: { requests: DemandView[] }) {
                 <span>{demand.capability.trim() || "Capability not provided"}</span>
               </span>
               <span className="analytics-bar-track" aria-hidden="true"><span style={{ width: `${width}%` }} /></span>
-              <span className="analytics-bar-value">{formatUsd0(demand.committed)} <small>USD₮0</small></span>
+              <span className="analytics-bar-value">{formatTokenAmount(demand.committed)} <small>{ESCROW_SYMBOL}</small></span>
             </Link>
           </li>
         );

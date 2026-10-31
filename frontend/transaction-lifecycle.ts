@@ -35,6 +35,7 @@ export type ObservedTransaction = {
 export type PendingTransactionRecord = {
   wallet: Address;
   chainId: number;
+  contract: Address;
   actionId: string;
   actionLabel: string;
   stage: TransactionStage;
@@ -77,7 +78,8 @@ export type LegacyPendingCreate = {
   intent: TransactionIntent;
 };
 
-export const PENDING_TRANSACTION_PREFIX = "unmet.pending-transaction.v1:";
+export const PENDING_TRANSACTION_PREFIX = "unmet.pending-transaction.v2:";
+const OLD_PENDING_TRANSACTION_PREFIX = "unmet.pending-transaction.v1:";
 export const LEGACY_PENDING_CREATE_KEY = "unmet.pending-create-transaction";
 export const CREATE_DEMAND_ACTION_ID = "create-demand";
 
@@ -172,11 +174,12 @@ function parseVerification(value: unknown): CreatedDemandVerification | undefine
 }
 
 function parsePendingTransaction(value: unknown): PendingTransactionRecord | null {
-  if (!isRecord(value) || value.version !== 1) return null;
+  if (!isRecord(value) || value.version !== 2) return null;
   const wallet = parseAddress(value.wallet);
+  const contract = parseAddress(value.contract);
   const hash = parseHash(value.hash);
   const intent = parseIntent(value.intent);
-  if (!wallet || !hash || !intent) return null;
+  if (!wallet || !contract || /^0x0{40}$/i.test(contract) || !hash || !intent) return null;
   if (typeof value.chainId !== "number" || !Number.isSafeInteger(value.chainId) || value.chainId <= 0) return null;
   if (typeof value.actionId !== "string" || !value.actionId || value.actionId.length > 160) return null;
   if (typeof value.actionLabel !== "string" || !value.actionLabel || value.actionLabel.length > 80) return null;
@@ -185,6 +188,7 @@ function parsePendingTransaction(value: unknown): PendingTransactionRecord | nul
   const verification = parseVerification(value.verification);
   return {
     wallet,
+    contract,
     chainId: value.chainId,
     actionId: value.actionId,
     actionLabel: value.actionLabel,
@@ -196,8 +200,8 @@ function parsePendingTransaction(value: unknown): PendingTransactionRecord | nul
   };
 }
 
-function transactionStorageKey(wallet: Address, chainId: number, actionId: string): string {
-  return PENDING_TRANSACTION_PREFIX + chainId + ":" + wallet.toLowerCase() + ":" + encodeURIComponent(actionId);
+function transactionStorageKey(wallet: Address, chainId: number, contract: Address, actionId: string): string {
+  return PENDING_TRANSACTION_PREFIX + chainId + ":" + contract.toLowerCase() + ":" + wallet.toLowerCase() + ":" + encodeURIComponent(actionId);
 }
 
 function serializePendingTransaction(record: PendingTransactionRecord): string {
@@ -213,9 +217,10 @@ function serializePendingTransaction(record: PendingTransactionRecord): string {
     }
     : undefined;
   return JSON.stringify({
-    version: 1,
+    version: 2,
     wallet: record.wallet,
     chainId: record.chainId,
+    contract: record.contract,
     actionId: record.actionId,
     actionLabel: record.actionLabel,
     stage: record.stage,
@@ -237,6 +242,7 @@ export function readPendingTransactions(storage: TransactionStorageLike | null):
   try {
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
+      if (key?.startsWith(OLD_PENDING_TRANSACTION_PREFIX)) { invalidRecords += 1; continue; }
       if (!key?.startsWith(PENDING_TRANSACTION_PREFIX)) continue;
       const raw = storage.getItem(key);
       let record: PendingTransactionRecord | null = null;
@@ -245,7 +251,7 @@ export function readPendingTransactions(storage: TransactionStorageLike | null):
       } catch {
         record = null;
       }
-      if (!record || key !== transactionStorageKey(record.wallet, record.chainId, record.actionId)) {
+      if (!record || key !== transactionStorageKey(record.wallet, record.chainId, record.contract, record.actionId)) {
         invalidRecords += 1;
         continue;
       }
@@ -260,7 +266,7 @@ export function readPendingTransactions(storage: TransactionStorageLike | null):
 export function storePendingTransaction(storage: TransactionStorageLike | null, record: PendingTransactionRecord): boolean {
   if (!storage) return false;
   try {
-    storage.setItem(transactionStorageKey(record.wallet, record.chainId, record.actionId), serializePendingTransaction(record));
+    storage.setItem(transactionStorageKey(record.wallet, record.chainId, record.contract, record.actionId), serializePendingTransaction(record));
     return true;
   } catch {
     return false;
@@ -270,7 +276,7 @@ export function storePendingTransaction(storage: TransactionStorageLike | null, 
 export function removePendingTransaction(storage: TransactionStorageLike | null, record: PendingTransactionRecord): boolean {
   if (!storage) return false;
   try {
-    storage.removeItem(transactionStorageKey(record.wallet, record.chainId, record.actionId));
+    storage.removeItem(transactionStorageKey(record.wallet, record.chainId, record.contract, record.actionId));
     return true;
   } catch {
     return false;
@@ -281,11 +287,13 @@ export function findPendingTransaction(
   records: readonly PendingTransactionRecord[],
   wallet: Address,
   chainId: number,
+  contract: Address,
   actionId: string,
 ): PendingTransactionRecord | null {
   return records.find((record) =>
     record.wallet.toLowerCase() === wallet.toLowerCase()
     && record.chainId === chainId
+    && record.contract.toLowerCase() === contract.toLowerCase()
     && record.actionId === actionId,
   ) ?? null;
 }
@@ -310,25 +318,6 @@ export function readLegacyPendingCreate(storage: TransactionStorageLike | null):
   } catch {
     return { available: false, invalid: false, record: null };
   }
-}
-
-export function recoverLegacyPendingCreate(
-  legacy: LegacyPendingCreate,
-  observed: ObservedTransaction,
-  wallet: Address,
-  chainId: number,
-): PendingTransactionRecord | null {
-  if (observed.hash.toLowerCase() !== legacy.hash.toLowerCase() || !isTransactionIntentMatch(legacy.intent, observed, wallet)) return null;
-  return {
-    wallet,
-    chainId,
-    actionId: CREATE_DEMAND_ACTION_ID,
-    actionLabel: "Create Demand",
-    stage: legacy.stage,
-    state: "unknown",
-    hash: legacy.hash,
-    intent: legacy.intent,
-  };
 }
 
 export function isTransactionIntentMatch(

@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
 import UnmetNavigation, { RollText } from "../UnmetNavigation";
-import { demandHref, parseDemandId, ROUTES } from "../routing";
+import { demandHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
+
+const contract = "0x1111111111111111111111111111111111111111";
 
 const routeObjects = Object.entries(ROUTES).flatMap(([id, route]) =>
   "path" in route ? [{ id, path: route.path }] : [],
@@ -13,7 +15,7 @@ describe("app routes", () => {
   test.each([
     ["/", "landing"],
     ["/market", "market"],
-    ["/market/42", "demandDetail"],
+    [`/market/1952/${contract}/42`, "demandDetail"],
     ["/create-demand", "createDemand"],
     ["/analytics", "analytics"],
   ])("matches %s to %s", (path, routeId) => {
@@ -56,7 +58,11 @@ describe("app routes", () => {
   });
 
   test("builds demand URLs that can be opened directly", () => {
-    expect(demandHref(42n)).toBe("/market/42");
+    expect(demandHref(1952, contract, 42n)).toBe(`/market/1952/${contract}/42`);
+    expect(parseDemandRoute("1952", contract, "42")).toEqual({ chainId: 1952, contract, demandId: 42n });
+    expect(parseDemandRoute("0", contract, "42")).toBeNull();
+    expect(parseDemandRoute("1952", `0x${"0".repeat(40)}`, "42")).toBeNull();
+    expect(parseDemandRoute("1952", contract, "0")).toBeNull();
   });
 
   test("does not register the removed activity route", () => {

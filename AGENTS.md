@@ -9,7 +9,7 @@ UNMET is an onchain demand market for AI-agent capabilities that users need but 
 The demand lifecycle is create → support → builder proposal → commitment-weighted review → finalize or eligible refund/reopen. Submission fixes the review escrow and approval quorum. Only explicit approver funds settle to the builder and treasury; eligible non-approver commitments remain refundable.
 
 Demand funding and API billing are separate:
-- Demand-market reads, wallet actions and escrow use X Layer Testnet `1952` in the current setup.
+- Demand-market reads, wallet actions and escrow bind to one configured deployment. The USDC-first template uses X Layer Testnet `1952`; the canonical contract address remains unset until separately deployed.
 - `POST /v1/opportunities` sells demand intelligence through official OKX x402. Production billing requires X Layer Mainnet `196` independently of the market network.
 - An intelligence payment does not fund a demand, buy service execution or change escrow state.
 
@@ -60,9 +60,9 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 
 ## System architecture
 
-- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:demandId`, `/create-demand` and `/analytics`.
+- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:chainId/:contract/:demandId`, `/create-demand` and `/analytics`.
 - The app shell owns wallet/session orchestration. Reown AppKit is configured in `frontend/reown.ts`; `frontend/contract.ts` uses viem for direct RPC reads, approvals and contract writes. Ordinary demand actions do not pass through the Bun API.
-- `backend/AgentDemand.sol` is the canonical escrow source. Frontend/backend ABIs and deployment tooling still use the experimental interface pending canonical AgentDemand G0.5 integration; inspect [Architecture](docs/ARCHITECTURE.md#canonical-attestation) before changing those consumers.
+- `backend/AgentDemand.sol` is the canonical escrow source. Frontend/backend use the shared canonical ABI; offline deployment planning and read-only verification are in `backend/admin.ts`. Before changing deployment identity, submission or recovery, inspect [Architecture](docs/ARCHITECTURE.md#canonical-attestation) before changing those consumers.
 - `backend/server.ts` exports the Express app and implements API routes, health/readiness, demand indexing and ranking. `backend/start.ts` is the standalone Bun/container entrypoint.
 - The backend index is disposable, process-local derived chain state. Reads use pinned blocks; canonical hashes, bounded log windows and atomic checkpoints protect refreshes and reorg recovery.
 - Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.
@@ -160,7 +160,7 @@ Use [Self-hosting](docs/SELF_HOSTING.md#health-smoke-checks-and-logs) for custom
 ### Wallet
 
 - Bind every action to the intended provider, account, chain and explicit user intent; never silently substitute another wallet.
-- Preserve receipt success, intent/replacement matching and state readback before reporting success. Keep wallet-scoped recovery records and compatibility keys.
+- Preserve receipt success, intent/replacement matching and state readback before reporting success. Keep chain/contract/wallet-scoped v2 recovery records. Preserve ambiguous legacy records without guessing a deployment.
 - Treat broadcast/unknown outcomes as pending observation, not permission to submit again. Never blindly retry uncertain transactions. Read [wallet limitations](docs/WALLET_DISCONNECT.md) before changing disconnect/session handling.
 
 ### x402

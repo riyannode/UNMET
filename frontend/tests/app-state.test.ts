@@ -5,6 +5,7 @@ import { deriveGlobalAnalytics } from "../analytics.ts";
 import { DEMAND_ABI, demandIdsFromLogs, effectiveStatus, parseMarketSyncInterval, synchronizeMarketBoard, type DemandView, type MarketSyncCursor } from "../contract";
 
 const SYNC_CONTRACT = "0x00000000000000000000000000000000000000aa" as Address;
+const SYNC_DEPLOYMENT = { chainId: 1952, contract: SYNC_CONTRACT, rpcUrl: "https://example.test", deployBlock: 0n, chain: { name: "Test", explorerUrl: "https://example.test", nativeCurrency: { name: "Test", symbol: "T", decimals: 18 } }, escrowToken: { address: SYNC_CONTRACT, symbol: "USDC", decimals: 6 } };
 const SYNC_HASH = (block: bigint) => `0x${block.toString(16).padStart(64, "0")}` as Hash;
 
 function syncDemand(demandId: bigint, committed: bigint): DemandView {
@@ -95,15 +96,17 @@ describe("incremental Market synchronization", () => {
     ];
     expect(demandIdsFromLogs(logs)).toEqual(new Set([1n, 2n]));
     expect(DEMAND_ABI.filter((item) => item.type === "event").map((item) => item.name)).toEqual([
+      "DemandClosed",
       "DemandCreated",
+      "DemandFulfilled",
       "DemandSupported",
-      "ServiceSubmitted",
+      "EIP712DomainChanged",
+      "Refunded",
       "ServiceApproved",
       "ServiceRejected",
+      "ServiceSubmitted",
       "SubmissionRejected",
-      "DemandFulfilled",
-      "Refunded",
-      "DemandClosed",
+      "VerifierRotated",
     ]);
   });
 
@@ -138,8 +141,8 @@ describe("incremental Market synchronization", () => {
         throw new Error(`Unexpected contract read ${functionName}`);
       },
     } as unknown as PublicClient;
-    const cursor: MarketSyncCursor = { blockNumber: 10n, blockHash: SYNC_HASH(10n) };
-    const result = await synchronizeMarketBoard(client, SYNC_CONTRACT, [syncDemand(1n, 1_000_000n)], cursor);
+    const cursor: MarketSyncCursor = { deploymentKey: "1952:" + SYNC_CONTRACT, blockNumber: 10n, blockHash: SYNC_HASH(10n) };
+    const result = await synchronizeMarketBoard(client, SYNC_DEPLOYMENT, [syncDemand(1n, 1_000_000n)], cursor);
 
     expect(logRanges).toEqual([{ fromBlock: 11n, toBlock: 15n }]);
     expect(getDemandReads).toEqual([{ id: 1n, blockNumber: 15n }, { id: 2n, blockNumber: 15n }]);
@@ -153,16 +156,21 @@ describe("incremental Market synchronization", () => {
 
   test("keeps the previous board and cursor unchanged when event reads fail", async () => {
     const previous = [syncDemand(1n, 3_000_000n)];
-    const cursor: MarketSyncCursor = { blockNumber: 10n, blockHash: SYNC_HASH(10n) };
+    const cursor: MarketSyncCursor = { deploymentKey: "1952:" + SYNC_CONTRACT, blockNumber: 10n, blockHash: SYNC_HASH(10n) };
     const client = {
       getBlockNumber: async () => 11n,
       getBlock: async ({ blockNumber }: { blockNumber?: bigint }) => ({ number: blockNumber, hash: SYNC_HASH(blockNumber ?? 10n) }),
       getLogs: async () => { throw new Error("RPC offline"); },
     } as unknown as PublicClient;
 
-    await expect(synchronizeMarketBoard(client, SYNC_CONTRACT, previous, cursor)).rejects.toThrow("RPC offline");
+    await expect(synchronizeMarketBoard(client, SYNC_DEPLOYMENT, previous, cursor)).rejects.toThrow("RPC offline");
     expect(previous[0]?.committed).toBe(3_000_000n);
-    expect(cursor).toEqual({ blockNumber: 10n, blockHash: SYNC_HASH(10n) });
+    expect(cursor).toEqual({ deploymentKey: "1952:" + SYNC_CONTRACT, blockNumber: 10n, blockHash: SYNC_HASH(10n) });
+  });
+
+  test("rejects a checkpoint from another deployment", async () => {
+    const cursor: MarketSyncCursor = { deploymentKey: "1952:0x00000000000000000000000000000000000000bb", blockNumber: 10n, blockHash: SYNC_HASH(10n) };
+    await expect(synchronizeMarketBoard({} as PublicClient, SYNC_DEPLOYMENT, [], cursor)).rejects.toThrow("MARKET_DEPLOYMENT_MISMATCH");
   });
 
   test("advances an empty event range without contract state reads", async () => {
@@ -173,8 +181,8 @@ describe("incremental Market synchronization", () => {
       getLogs: async () => [],
       readContract: async () => { contractReadCount += 1; throw new Error("No state read expected"); },
     } as unknown as PublicClient;
-    const cursor: MarketSyncCursor = { blockNumber: 10n, blockHash: SYNC_HASH(10n) };
-    const result = await synchronizeMarketBoard(client, SYNC_CONTRACT, [syncDemand(1n, 2_000_000n)], cursor);
+    const cursor: MarketSyncCursor = { deploymentKey: "1952:" + SYNC_CONTRACT, blockNumber: 10n, blockHash: SYNC_HASH(10n) };
+    const result = await synchronizeMarketBoard(client, SYNC_DEPLOYMENT, [syncDemand(1n, 2_000_000n)], cursor);
 
     expect(result).toMatchObject({ changed: false, cursor: { blockNumber: 11n, blockHash: SYNC_HASH(11n) } });
     expect(result.demands).toEqual([syncDemand(1n, 2_000_000n)]);
@@ -199,8 +207,8 @@ describe("incremental Market synchronization", () => {
         throw new Error(`Unexpected contract read ${functionName}`);
       },
     } as unknown as PublicClient;
-    const cursor: MarketSyncCursor = { blockNumber: 10n, blockHash: SYNC_HASH(10n) };
-    const result = await synchronizeMarketBoard(client, SYNC_CONTRACT, [], cursor);
+    const cursor: MarketSyncCursor = { deploymentKey: "1952:" + SYNC_CONTRACT, blockNumber: 10n, blockHash: SYNC_HASH(10n) };
+    const result = await synchronizeMarketBoard(client, SYNC_DEPLOYMENT, [], cursor);
 
     expect(logReads).toBe(0);
     expect(result).toMatchObject({ changed: true, reorgRecovered: true, cursor: { blockNumber: 15n, blockHash: SYNC_HASH(15n) } });

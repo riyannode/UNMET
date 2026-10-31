@@ -3,16 +3,14 @@ import {
   createWalletClient,
   custom,
   decodeEventLog,
+  decodeFunctionData,
   defineChain,
   encodeFunctionData,
-  formatUnits,
   getAddress,
   http,
   isAddress,
   keccak256,
-  parseUnits,
   toBytes,
-  type Abi,
   type Address,
   type Hash,
   type Log,
@@ -27,18 +25,21 @@ import {
   type TransactionUpdateHandler,
 } from "./transaction-lifecycle";
 import { deadlineDurationSeconds } from "./create-demand-chat-model";
+import { demandHref } from "./routing";
+import { deploymentKey, formatEscrowAmount, parseEscrowAmount, validateDeployment, verifyDeployment, type EscrowDeployment } from "../shared/deployment";
+import { authorization, validatePass, validateRequest, validationNetworks, type RequestMetadata } from "./validation";
+import { ESCROW_DECIMALS, ESCROW_SYMBOL } from "./escrow-metadata";
+export { ESCROW_DECIMALS, ESCROW_SYMBOL } from "./escrow-metadata";
 
 export const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || "1952");
-if (CHAIN_ID !== 1952 && CHAIN_ID !== 196) throw new Error("VITE_CHAIN_ID must be 1952 or 196");
+if (!Number.isSafeInteger(CHAIN_ID) || CHAIN_ID <= 0) throw new Error("CONFIG_INVALID: VITE_CHAIN_ID");
 
-const DEFAULT_RPC = CHAIN_ID === 196 ? "https://rpc.xlayer.tech" : "https://testrpc.xlayer.tech/terigon";
-const DEFAULT_TOKEN = CHAIN_ID === 196
-  ? "0x779ded0c9e1022225f8e0630b35a9b54be713736"
-  : "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c";
-
+const DEFAULT_RPC = CHAIN_ID === 196 ? "https://rpc.xlayer.tech" : CHAIN_ID === 1952 ? "https://testrpc.xlayer.tech/terigon" : "";
 export const RPC_URL = import.meta.env.VITE_XLAYER_RPC_URL || DEFAULT_RPC;
 export const DEMAND_CONTRACT = parseConfiguredAddress(import.meta.env.VITE_DEMAND_CONTRACT, "VITE_DEMAND_CONTRACT");
-export const PAYMENT_TOKEN = getAddress(import.meta.env.VITE_PAYMENT_TOKEN || DEFAULT_TOKEN);
+export function selectedDemandHref(demandId: bigint): string { return demandHref(CHAIN_ID, requireContract(), demandId); }
+export const PAYMENT_TOKEN = parseConfiguredAddress(import.meta.env.VITE_PAYMENT_TOKEN, "VITE_PAYMENT_TOKEN");
+if (PAYMENT_TOKEN && !import.meta.env.VITE_PAYMENT_TOKEN_DECIMALS) throw new Error("CONFIG_INVALID: VITE_PAYMENT_TOKEN_DECIMALS");
 
 const DEFAULT_MARKET_SYNC_INTERVAL_MS = 60_000;
 const MARKET_SYNC_LOG_RANGE = 100n;
@@ -55,196 +56,40 @@ export const MARKET_SYNC_INTERVAL_MS = parseMarketSyncInterval(import.meta.env.V
 
 export const targetChain = defineChain({
   id: CHAIN_ID,
-  name: CHAIN_ID === 196 ? "X Layer" : "X Layer Testnet",
-  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+  name: import.meta.env.VITE_CHAIN_NAME || (CHAIN_ID === 196 ? "X Layer" : CHAIN_ID === 1952 ? "X Layer Testnet" : ""),
+  nativeCurrency: { name: import.meta.env.VITE_CHAIN_NATIVE_NAME || (CHAIN_ID === 1952 || CHAIN_ID === 196 ? "OKB" : ""), symbol: import.meta.env.VITE_CHAIN_NATIVE_SYMBOL || (CHAIN_ID === 1952 || CHAIN_ID === 196 ? "OKB" : ""), decimals: Number(import.meta.env.VITE_CHAIN_NATIVE_DECIMALS || (CHAIN_ID === 1952 || CHAIN_ID === 196 ? "18" : "NaN")) },
   rpcUrls: { default: { http: [RPC_URL] } },
   blockExplorers: {
     default: {
       name: "OKX Explorer",
-      url: CHAIN_ID === 196
+      url: import.meta.env.VITE_CHAIN_EXPLORER_URL || (CHAIN_ID === 196
         ? "https://www.okx.com/web3/explorer/xlayer"
-        : "https://www.okx.com/web3/explorer/xlayer-test",
+        : CHAIN_ID === 1952 ? "https://www.okx.com/web3/explorer/xlayer-test" : ""),
     },
   },
 });
+if (!RPC_URL || !targetChain.name || !targetChain.nativeCurrency.name || !targetChain.nativeCurrency.symbol || !Number.isInteger(targetChain.nativeCurrency.decimals) || !targetChain.blockExplorers.default.url) throw new Error("CONFIG_INVALID: VITE_CHAIN_METADATA");
 
-export const DEMAND_ABI = [
-  { type: "function", name: "nextDemandId", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  {
-    type: "function", name: "createDemand", stateMutability: "nonpayable",
-    inputs: [
-      { name: "capability", type: "string" },
-      { name: "specification", type: "string" },
-      { name: "maxUnitPrice", type: "uint96" },
-      { name: "expectedCalls", type: "uint64" },
-      { name: "deadline", type: "uint64" },
-      { name: "initialCommitment", type: "uint96" },
-    ], outputs: [{ name: "demandId", type: "uint256" }],
-  },
-  {
-    type: "function", name: "supportDemand", stateMutability: "nonpayable",
-    inputs: [
-      { name: "demandId", type: "uint256" },
-      { name: "amount", type: "uint96" },
-      { name: "expectedCalls", type: "uint64" },
-    ], outputs: [],
-  },
-  {
-    type: "function", name: "submitService", stateMutability: "nonpayable",
-    inputs: [
-      { name: "demandId", type: "uint256" },
-      { name: "serviceUrl", type: "string" },
-      { name: "evidenceHash", type: "bytes32" },
-    ], outputs: [],
-  },
-  { type: "function", name: "approveService", stateMutability: "nonpayable", inputs: [{ name: "demandId", type: "uint256" }], outputs: [] },
-  { type: "function", name: "rejectService", stateMutability: "nonpayable", inputs: [{ name: "demandId", type: "uint256" }], outputs: [] },
-  { type: "function", name: "finalize", stateMutability: "nonpayable", inputs: [{ name: "demandId", type: "uint256" }], outputs: [] },
-  { type: "function", name: "reopen", stateMutability: "nonpayable", inputs: [{ name: "demandId", type: "uint256" }], outputs: [] },
-  { type: "function", name: "refund", stateMutability: "nonpayable", inputs: [{ name: "demandId", type: "uint256" }], outputs: [] },
-  {
-    type: "function", name: "getDemand", stateMutability: "view", inputs: [{ name: "demandId", type: "uint256" }],
-    outputs: [{ name: "", type: "tuple", components: [
-      { name: "creator", type: "address" },
-      { name: "builder", type: "address" },
-      { name: "maxUnitPrice", type: "uint96" },
-      { name: "committed", type: "uint128" },
-      { name: "reviewCommitted", type: "uint128" },
-      { name: "approvalRequired", type: "uint128" },
-      { name: "expectedCalls", type: "uint64" },
-      { name: "deadline", type: "uint64" },
-      { name: "reviewEndsAt", type: "uint64" },
-      { name: "supporterCount", type: "uint32" },
-      { name: "status", type: "uint8" },
-      { name: "capability", type: "string" },
-      { name: "specification", type: "string" },
-      { name: "serviceUrl", type: "string" },
-      { name: "evidenceHash", type: "bytes32" },
-    ] }],
-  },
-  {
-    type: "function", name: "getSupport", stateMutability: "view",
-    inputs: [{ name: "demandId", type: "uint256" }, { name: "supporter", type: "address" }],
-    outputs: [
-      { name: "commitment", type: "uint96" },
-      { name: "expectedCalls", type: "uint64" },
-      { name: "approvedCurrentSubmission", type: "bool" },
-      { name: "rejectedCurrentSubmission", type: "bool" },
-    ],
-  },
-  {
-    type: "function", name: "approvalProgress", stateMutability: "view", inputs: [{ name: "demandId", type: "uint256" }],
-    outputs: [
-      { name: "weight", type: "uint256" },
-      { name: "required", type: "uint256" },
-      { name: "quorumReached", type: "bool" },
-    ],
-  },
-  {
-    type: "function", name: "rejectionProgress", stateMutability: "view", inputs: [{ name: "demandId", type: "uint256" }],
-    outputs: [
-      { name: "weight", type: "uint256" },
-      { name: "thresholdToBlock", type: "uint256" },
-      { name: "candidateRejected", type: "bool" },
-    ],
-  },
-  {
-    type: "function", name: "isRefundable", stateMutability: "view",
-    inputs: [{ name: "demandId", type: "uint256" }, { name: "supporter", type: "address" }],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "event", name: "DemandCreated", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "demandKey", type: "bytes32", indexed: true },
-      { name: "creator", type: "address", indexed: true },
-      { name: "capability", type: "string", indexed: false },
-      { name: "maxUnitPrice", type: "uint96", indexed: false },
-      { name: "expectedCalls", type: "uint64", indexed: false },
-      { name: "deadline", type: "uint64", indexed: false },
-      { name: "initialCommitment", type: "uint96", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "DemandSupported", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "supporter", type: "address", indexed: true },
-      { name: "amount", type: "uint96", indexed: false },
-      { name: "expectedCalls", type: "uint64", indexed: false },
-      { name: "committedTotal", type: "uint128", indexed: false },
-      { name: "supporterCount", type: "uint32", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "ServiceSubmitted", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "submissionNonce", type: "uint256", indexed: true },
-      { name: "builder", type: "address", indexed: true },
-      { name: "serviceUrl", type: "string", indexed: false },
-      { name: "evidenceHash", type: "bytes32", indexed: false },
-      { name: "reviewEndsAt", type: "uint64", indexed: false },
-      { name: "reviewCommitted", type: "uint128", indexed: false },
-      { name: "approvalRequired", type: "uint128", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "ServiceApproved", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "submissionNonce", type: "uint256", indexed: true },
-      { name: "supporter", type: "address", indexed: true },
-      { name: "weight", type: "uint96", indexed: false },
-      { name: "approvalWeight", type: "uint256", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "ServiceRejected", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "submissionNonce", type: "uint256", indexed: true },
-      { name: "supporter", type: "address", indexed: true },
-      { name: "weight", type: "uint96", indexed: false },
-      { name: "rejectionWeight", type: "uint256", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "SubmissionRejected", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "submissionNonce", type: "uint256", indexed: true },
-      { name: "builder", type: "address", indexed: true },
-      { name: "approvalWeight", type: "uint256", indexed: false },
-      { name: "rejectionWeight", type: "uint256", indexed: false },
-      { name: "approvalRequired", type: "uint128", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "DemandFulfilled", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "builder", type: "address", indexed: true },
-      { name: "treasury", type: "address", indexed: true },
-      { name: "approvedAmount", type: "uint128", indexed: false },
-      { name: "fee", type: "uint128", indexed: false },
-      { name: "payout", type: "uint128", indexed: false },
-      { name: "remainingRefundable", type: "uint128", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "Refunded", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "supporter", type: "address", indexed: true },
-      { name: "amount", type: "uint96", indexed: false },
-    ],
-  },
-  {
-    type: "event", name: "DemandClosed", inputs: [
-      { name: "demandId", type: "uint256", indexed: true },
-      { name: "demandKey", type: "bytes32", indexed: true },
-    ],
-  },
-] as const satisfies Abi;
+export const selectedDeployment: EscrowDeployment | null = DEMAND_CONTRACT && PAYMENT_TOKEN ? validateDeployment({
+  chainId: CHAIN_ID, contract: DEMAND_CONTRACT, rpcUrl: RPC_URL, deployBlock: 0n,
+  chain: { name: targetChain.name, explorerUrl: targetChain.blockExplorers.default.url, nativeCurrency: targetChain.nativeCurrency },
+  escrowToken: { address: PAYMENT_TOKEN, symbol: ESCROW_SYMBOL, decimals: ESCROW_DECIMALS },
+}) : null;
 
-export const ERC20_ABI = [
-  { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
-  { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] },
-] as const satisfies Abi;
+async function requireVerifiedDeployment(deployment: EscrowDeployment | null = selectedDeployment): Promise<EscrowDeployment> {
+  if (!deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+  const client = getPublic(deployment);
+  await verifyDeployment({
+    getChainId: () => client.getChainId(),
+    getBytecode: (address) => client.getBytecode({ address }),
+    getToken: (address) => client.readContract({ address, abi: DEMAND_ABI, functionName: "token" }),
+    getDecimals: (address) => client.readContract({ address, abi: ERC20_ABI, functionName: "decimals" }),
+  }, deployment);
+  return deployment;
+}
+
+export { AGENT_DEMAND_ABI as DEMAND_ABI, ERC20_ABI } from "../shared/abi.ts";
+import { AGENT_DEMAND_ABI as DEMAND_ABI, ERC20_ABI } from "../shared/abi.ts";
 
 export type DemandView = {
   demandId: bigint;
@@ -292,7 +137,7 @@ export type WalletSession = {
 
 function parseConfiguredAddress(value: string | undefined, name: string): Address | undefined {
   if (!value) return undefined;
-  if (!isAddress(value)) throw new Error(`${name} is not a valid EVM address`);
+  if (!isAddress(value) || /^0x0{40}$/i.test(value)) throw new Error(`${name} is not a valid EVM address`);
   return getAddress(value);
 }
 
@@ -331,17 +176,22 @@ export function captureWalletSession(account: Address | null = null): WalletSess
     : null;
 }
 
-export function getPublic(): PublicClient {
-  return createPublicClient({ chain: targetChain, transport: http(RPC_URL, { timeout: 15_000, retryCount: 2 }) }) as PublicClient;
+function chainFor(deployment: EscrowDeployment) {
+  return defineChain({ id: deployment.chainId, name: deployment.chain.name, nativeCurrency: deployment.chain.nativeCurrency, rpcUrls: { default: { http: [deployment.rpcUrl] } }, blockExplorers: { default: { name: "Explorer", url: deployment.chain.explorerUrl } } });
+}
+export function getPublic(deployment: EscrowDeployment | null = selectedDeployment): PublicClient {
+  if (!deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+  return createPublicClient({ chain: chainFor(deployment), transport: http(deployment.rpcUrl, { timeout: 15_000, retryCount: 2 }) }) as PublicClient;
 }
 
-export function walletClient(session?: WalletSession) {
+export function walletClient(session?: WalletSession, deployment: EscrowDeployment | null = selectedDeployment) {
+  if (!deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
   const provider = session?.provider ?? requireReownProvider();
-  return createWalletClient({ chain: targetChain, transport: custom({
+  return createWalletClient({ chain: chainFor(deployment), transport: custom({
     request: async (request: { method: string; params?: readonly unknown[] }) => {
-      if (session && (request.method === "eth_sendTransaction" || request.method === "wallet_sendTransaction")) {
+      if (session && (request.method === "eth_sendTransaction" || request.method === "wallet_sendTransaction" || request.method.startsWith("eth_signTypedData"))) {
         if (!session.account) throw new Error("WALLET_NOT_CONNECTED");
-        await assertWalletSession(session, session.account);
+        await assertWalletSession(session, session.account, deployment.chainId);
         assertProviderSession(session);
       }
       return provider.request(request);
@@ -386,13 +236,13 @@ async function sessionChainId(session: WalletSession): Promise<number | null> {
   return typeof result === "string" ? Number.parseInt(result, 16) : null;
 }
 
-async function assertWalletSession(session: WalletSession, expectedAccount: Address): Promise<void> {
+async function assertWalletSession(session: WalletSession, expectedAccount: Address, chainId = CHAIN_ID): Promise<void> {
   const account = await sessionWallet(session);
   if (!account) throw new Error("WALLET_NOT_CONNECTED");
   if (account.toLowerCase() !== expectedAccount.toLowerCase() || session.account && account.toLowerCase() !== session.account.toLowerCase()) {
     throw new Error("WALLET_CHANGED");
   }
-  if (await sessionChainId(session) !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
+  if (await sessionChainId(session) !== chainId) throw new Error("CHAIN_WRONG_NETWORK");
 }
 
 async function requireWalletSession(session?: WalletSession): Promise<WalletSession> {
@@ -402,17 +252,17 @@ async function requireWalletSession(session?: WalletSession): Promise<WalletSess
   return current;
 }
 
-async function ensureChain(session?: WalletSession, expectedAccount?: Address): Promise<void> {
+async function ensureChain(deployment: EscrowDeployment, session?: WalletSession, expectedAccount?: Address): Promise<void> {
   const currentSession = await requireWalletSession(session);
   const account = expectedAccount ?? currentSession.account ?? await sessionWallet(currentSession);
   if (!account) throw new Error("WALLET_NOT_CONNECTED");
   if (currentSession.account && account.toLowerCase() !== currentSession.account.toLowerCase()) throw new Error("WALLET_CHANGED");
   if ((await sessionWallet(currentSession))?.toLowerCase() !== account.toLowerCase()) throw new Error("WALLET_CHANGED");
   const current = await sessionChainId(currentSession);
-  if (current === CHAIN_ID) return;
+  if (current === deployment.chainId) return;
   assertProviderSession(currentSession);
   try {
-    await currentSession.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }] });
+    await currentSession.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${deployment.chainId.toString(16)}` }] });
   } catch (error) {
     const code = (error as { code?: number }).code;
     if (code !== 4902) {
@@ -422,14 +272,14 @@ async function ensureChain(session?: WalletSession, expectedAccount?: Address): 
     assertProviderSession(currentSession);
     if ((await sessionWallet(currentSession))?.toLowerCase() !== account.toLowerCase()) throw new Error("WALLET_CHANGED");
     await currentSession.provider.request({ method: "wallet_addEthereumChain", params: [{
-      chainId: `0x${CHAIN_ID.toString(16)}`,
-      chainName: targetChain.name,
-      nativeCurrency: targetChain.nativeCurrency,
-      rpcUrls: targetChain.rpcUrls.default.http,
-      blockExplorerUrls: [targetChain.blockExplorers.default.url],
+      chainId: `0x${deployment.chainId.toString(16)}`,
+      chainName: deployment.chain.name,
+      nativeCurrency: deployment.chain.nativeCurrency,
+      rpcUrls: [deployment.rpcUrl],
+      blockExplorerUrls: [deployment.chain.explorerUrl],
     }] });
   }
-  await assertWalletSession({ ...currentSession, account }, account);
+  await assertWalletSession({ ...currentSession, account }, account, deployment.chainId);
 }
 
 function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
@@ -485,7 +335,7 @@ function sortDemandsByFunding(output: DemandView[]): DemandView[] {
   return output.sort((a, b) => (b.committed > a.committed ? 1 : b.committed < a.committed ? -1 : b.demandId > a.demandId ? 1 : b.demandId < a.demandId ? -1 : 0));
 }
 
-export type MarketSyncCursor = { blockNumber: bigint; blockHash: Hash };
+export type MarketSyncCursor = { deploymentKey: string; blockNumber: bigint; blockHash: Hash };
 type MarketBoardSnapshot = { demands: DemandView[]; cursor: MarketSyncCursor | null };
 type MarketSyncResult = MarketBoardSnapshot & { changed: boolean; reorgRecovered: boolean };
 
@@ -500,17 +350,18 @@ async function readBoardAt(client: PublicClient, contract: Address, blockNumber:
   return sortDemandsByFunding(output);
 }
 
-async function readBoardSnapshotWithClient(client: PublicClient, contract: Address): Promise<MarketBoardSnapshot> {
+async function readBoardSnapshotWithClient(client: PublicClient, deployment: EscrowDeployment): Promise<MarketBoardSnapshot> {
   const block = await client.getBlock({ blockTag: "latest" });
-  const demands = await readBoardAt(client, contract, block.number);
+  const demands = await readBoardAt(client, deployment.contract, block.number);
   const canonicalBlock = await client.getBlock({ blockNumber: block.number });
   if (canonicalBlock.hash !== block.hash) throw new Error("MARKET_SNAPSHOT_REORGED");
-  return { demands, cursor: { blockNumber: block.number, blockHash: block.hash } };
+  return { demands, cursor: { deploymentKey: deploymentKey(deployment.chainId, deployment.contract), blockNumber: block.number, blockHash: block.hash } };
 }
 
 export async function readBoardSnapshot(): Promise<MarketBoardSnapshot> {
-  if (!DEMAND_CONTRACT) return { demands: [], cursor: null };
-  return readBoardSnapshotWithClient(getPublic(), DEMAND_CONTRACT);
+  if (!selectedDeployment) return { demands: [], cursor: null };
+  const deployment = await requireVerifiedDeployment();
+  return readBoardSnapshotWithClient(getPublic(deployment), deployment);
 }
 
 export function demandIdsFromLogs(logs: readonly Pick<Log, "data" | "topics">[]): Set<bigint> {
@@ -518,7 +369,7 @@ export function demandIdsFromLogs(logs: readonly Pick<Log, "data" | "topics">[])
   for (const log of logs) {
     try {
       const decoded = decodeEventLog({ abi: DEMAND_ABI, data: log.data, topics: log.topics, strict: false });
-      if (typeof decoded.args.demandId === "bigint") demandIds.add(decoded.args.demandId);
+      if ("demandId" in decoded.args && typeof decoded.args.demandId === "bigint") demandIds.add(decoded.args.demandId);
     } catch {
       // Ignore logs from events outside the AgentDemand ABI.
     }
@@ -528,18 +379,19 @@ export function demandIdsFromLogs(logs: readonly Pick<Log, "data" | "topics">[])
 
 export async function synchronizeMarketBoard(
   client: PublicClient,
-  contract: Address,
+  deployment: EscrowDeployment,
   currentBoard: readonly DemandView[],
   cursor: MarketSyncCursor,
 ): Promise<MarketSyncResult> {
+  if (cursor.deploymentKey !== deploymentKey(deployment.chainId, deployment.contract)) throw new Error("MARKET_DEPLOYMENT_MISMATCH");
   const head = await client.getBlockNumber();
   if (head < cursor.blockNumber) {
-    return { ...(await readBoardSnapshotWithClient(client, contract)), changed: true, reorgRecovered: true };
+    return { ...(await readBoardSnapshotWithClient(client, deployment)), changed: true, reorgRecovered: true };
   }
 
   const checkpoint = await client.getBlock({ blockNumber: cursor.blockNumber });
   if (checkpoint.hash !== cursor.blockHash) {
-    return { ...(await readBoardSnapshotWithClient(client, contract)), changed: true, reorgRecovered: true };
+    return { ...(await readBoardSnapshotWithClient(client, deployment)), changed: true, reorgRecovered: true };
   }
   if (head === cursor.blockNumber) {
     return { demands: [...currentBoard], cursor, changed: false, reorgRecovered: false };
@@ -552,7 +404,7 @@ export async function synchronizeMarketBoard(
   for (let fromBlock = cursor.blockNumber + 1n; fromBlock <= lastBlock;) {
     const rangeEnd = fromBlock + MARKET_SYNC_LOG_RANGE - 1n;
     const toBlock = rangeEnd < lastBlock ? rangeEnd : lastBlock;
-    const logs = await client.getLogs({ address: contract, fromBlock, toBlock });
+    const logs = await client.getLogs({ address: deployment.contract, fromBlock, toBlock });
     for (const demandId of demandIdsFromLogs(logs)) changedIds.add(demandId);
     fromBlock = toBlock + 1n;
   }
@@ -561,7 +413,7 @@ export async function synchronizeMarketBoard(
   const updates: DemandView[] = [];
   for (let i = 0; i < ids.length; i += BOARD_READ_BATCH_SIZE) {
     updates.push(...await Promise.all(
-      ids.slice(i, i + BOARD_READ_BATCH_SIZE).map((demandId) => readDemandWithClient(client, demandId, lastBlock, contract)),
+      ids.slice(i, i + BOARD_READ_BATCH_SIZE).map((demandId) => readDemandWithClient(client, demandId, lastBlock, deployment.contract)),
     ));
   }
 
@@ -570,7 +422,7 @@ export async function synchronizeMarketBoard(
 
   if (updates.length === 0) return {
     demands: [...currentBoard],
-    cursor: { blockNumber: lastBlock, blockHash: target.hash },
+    cursor: { deploymentKey: cursor.deploymentKey, blockNumber: lastBlock, blockHash: target.hash },
     changed: false,
     reorgRecovered: false,
   };
@@ -579,15 +431,16 @@ export async function synchronizeMarketBoard(
   for (const demand of updates) demandsById.set(demand.demandId.toString(), demand);
   return {
     demands: sortDemandsByFunding([...demandsById.values()]),
-    cursor: { blockNumber: lastBlock, blockHash: target.hash },
+    cursor: { deploymentKey: cursor.deploymentKey, blockNumber: lastBlock, blockHash: target.hash },
     changed: true,
     reorgRecovered: false,
   };
 }
 
 export async function readSupport(demandId: bigint, supporter: Address): Promise<SupportView> {
-  const client = getPublic();
-  const contract = requireContract();
+  const deployment = await requireVerifiedDeployment();
+  const client = getPublic(deployment);
+  const { contract } = deployment;
   const [support, refundable] = await Promise.all([
     client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "getSupport", args: [demandId, supporter] }),
     client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "isRefundable", args: [demandId, supporter] }),
@@ -596,14 +449,15 @@ export async function readSupport(demandId: bigint, supporter: Address): Promise
   return { commitment: value[0], expectedCalls: value[1], approved: value[2], rejected: value[3], refundable: Boolean(refundable) };
 }
 
-async function requireAccount(session?: WalletSession): Promise<{ account: Address; session: WalletSession }> {
+async function requireAccount(deployment: EscrowDeployment | null, session?: WalletSession): Promise<{ account: Address; session: WalletSession }> {
+  if (!deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
   const currentSession = await requireWalletSession(session);
   const account = await sessionWallet(currentSession);
   if (!account) throw new Error("WALLET_NOT_CONNECTED");
   if (currentSession.account && account.toLowerCase() !== currentSession.account.toLowerCase()) throw new Error("WALLET_CHANGED");
   const boundSession = { ...currentSession, account };
-  await ensureChain(boundSession, account);
-  await assertWalletSession(boundSession, account);
+  await ensureChain(deployment, boundSession, account);
+  await assertWalletSession(boundSession, account, deployment.chainId);
   return { account, session: boundSession };
 }
 
@@ -630,7 +484,10 @@ async function wait(
   chainId: number,
   onUpdate?: TransactionUpdateHandler,
   verifyExisting = false,
+  deployment: EscrowDeployment | null = selectedDeployment,
 ): Promise<Hash> {
+  if (!deployment || deployment.chainId !== chainId) throw new Error("CHAIN_WRONG_NETWORK");
+  const client = getPublic(deployment);
   return waitForTransaction({
     stage,
     hash,
@@ -638,8 +495,8 @@ async function wait(
     wallet,
     chainId,
     onUpdate,
-    ...(verifyExisting ? { readTransaction: readTransactionByHash } : {}),
-    waitForReceipt: ({ hash: receiptHash, onReplaced }) => getPublic().waitForTransactionReceipt({
+    ...(verifyExisting ? { readTransaction: async (txHash: Hash) => { const tx = await client.getTransaction({ hash: txHash }); return { hash: tx.hash, from: tx.from, to: tx.to, data: tx.input, value: tx.value }; } } : {}),
+    waitForReceipt: ({ hash: receiptHash, onReplaced }) => client.waitForTransactionReceipt({
       hash: receiptHash,
       onReplaced: (replacement) => onReplaced?.({
         reason: replacement.reason,
@@ -666,39 +523,50 @@ async function writeDemand(
   session: WalletSession,
   stage: TransactionStage = "action",
   onUpdate?: TransactionUpdateHandler,
+  beforeBroadcast?: () => Promise<void>,
+  originatingDeployment: EscrowDeployment | null = selectedDeployment,
 ): Promise<Hash> {
-  const address = requireContract();
+  const deployment = await requireVerifiedDeployment(originatingDeployment);
+  const address = deployment.contract;
   const data = encodeFunctionData({ abi: DEMAND_ABI, functionName, args: args as never });
   const intent: TransactionIntent = { to: address, data, value: 0n };
-  await assertWalletSession(session, account);
-  const hash = await walletClient(session).writeContract({
+  await assertWalletSession(session, account, deployment.chainId);
+  await beforeBroadcast?.();
+  await assertWalletSession(session, account, deployment.chainId);
+  const hash = await walletClient(session, deployment).writeContract({
     address,
     abi: DEMAND_ABI,
     functionName,
     args: args as never,
     account,
-    chain: targetChain,
+    chain: chainFor(deployment),
   }) as Hash;
-  return wait(hash, intent, stage, account, CHAIN_ID, onUpdate);
+  return wait(hash, intent, stage, account, deployment.chainId, onUpdate, false, deployment);
 }
 
-async function ensureAllowance(owner: Address, amount: bigint, session: WalletSession, onUpdate?: TransactionUpdateHandler): Promise<void> {
+async function verifySubmission(deployment: EscrowDeployment, wallet: Address, id: bigint, url: string, evidence: Hash, attestation: { submissionNonce: bigint; paymentRequirementsHash: Hash; validationPolicyId: Hash }): Promise<void> {
+  const client = getPublic(deployment);
+  const [demand, nonce, digests] = await Promise.all([readDemandWithClient(client, id, undefined, deployment.contract), client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "submissionNonce", args: [id] }), client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "submissionDigests", args: [id, attestation.submissionNonce] })]);
+  if (![1, 2].includes(demand.status) || demand.builder.toLowerCase() !== wallet.toLowerCase() || nonce !== attestation.submissionNonce || demand.serviceUrl !== url || demand.evidenceHash.toLowerCase() !== evidence.toLowerCase() || digests[0] !== attestation.paymentRequirementsHash || digests[1] !== attestation.validationPolicyId) throw new Error("SUBMISSION_READBACK_FAILED");
+}
+
+async function ensureAllowance(owner: Address, amount: bigint, session: WalletSession, deployment: EscrowDeployment, onUpdate?: TransactionUpdateHandler): Promise<void> {
   if (amount <= 0n) throw new Error("SUPPORT_TOO_SMALL");
-  const client = getPublic();
-  const contract = requireContract();
-  const current = await client.readContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "allowance", args: [owner, contract] }) as bigint;
+  const client = getPublic(deployment);
+  const { contract, escrowToken: { address: token } } = await requireVerifiedDeployment(deployment);
+  const current = await client.readContract({ address: token, abi: ERC20_ABI, functionName: "allowance", args: [owner, contract] }) as bigint;
   if (current >= amount) return;
-  const wallet = walletClient(session);
+  const wallet = walletClient(session, deployment);
   if (current > 0n) {
     const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, 0n] });
-    await assertWalletSession(session, owner);
-    const reset = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, 0n], account: owner, chain: targetChain });
-    await wait(reset, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
+    await assertWalletSession(session, owner, deployment.chainId);
+    const reset = await wallet.writeContract({ address: token, abi: ERC20_ABI, functionName: "approve", args: [contract, 0n], account: owner, chain: chainFor(deployment) });
+    await wait(reset, { to: token, data, value: 0n }, "approval", owner, deployment.chainId, onUpdate, false, deployment);
   }
   const data = encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [contract, amount] });
-  await assertWalletSession(session, owner);
-  const approval = await wallet.writeContract({ address: PAYMENT_TOKEN, abi: ERC20_ABI, functionName: "approve", args: [contract, amount], account: owner, chain: targetChain });
-  await wait(approval, { to: PAYMENT_TOKEN, data, value: 0n }, "approval", owner, CHAIN_ID, onUpdate);
+  await assertWalletSession(session, owner, deployment.chainId);
+  const approval = await wallet.writeContract({ address: token, abi: ERC20_ABI, functionName: "approve", args: [contract, amount], account: owner, chain: chainFor(deployment) });
+  await wait(approval, { to: token, data, value: 0n }, "approval", owner, deployment.chainId, onUpdate, false, deployment);
 }
 
 function parsePositiveUint(value: string, bits: 64 | 96, code: string): bigint {
@@ -717,60 +585,110 @@ export async function createDemand(input: {
   commitment: string;
 }, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
   const durationSeconds = deadlineDurationSeconds(input.deadlineDays);
-  const { account, session } = await requireAccount(originatingSession);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
   const capability = normalizeCapability(input.capability);
   const specification = input.specification.trim();
   if (!specification || new TextEncoder().encode(specification).length > 2048) throw new Error("DEMAND_INVALID_SPEC");
-  const commitment = parseUsd0(input.commitment);
-  const maxPrice = parseUsd0(input.maxPrice);
+  const commitment = parseTokenAmount(input.commitment);
+  const maxPrice = parseTokenAmount(input.maxPrice);
   if (commitment <= 0n || commitment > (1n << 96n) - 1n || maxPrice <= 0n || maxPrice > (1n << 96n) - 1n) throw new Error("DEMAND_INVALID_AMOUNT");
   const calls = parsePositiveUint(input.expectedCalls, 64, "DEMAND_INVALID_CALLS");
   const deadline = BigInt(Math.floor(Date.now() / 1000) + durationSeconds);
-  await ensureAllowance(account, commitment, session, onUpdate);
-  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment], session, "demand", onUpdate);
+  const verified = await requireVerifiedDeployment(deployment);
+  await ensureAllowance(account, commitment, session, verified, onUpdate);
+  return writeDemand(account, "createDemand", [capability, specification, maxPrice, calls, deadline, commitment], session, "demand", onUpdate, undefined, verified);
 }
 
 export async function supportDemand(demandId: bigint, amount: string, expectedCalls: string, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  const atomic = parseUsd0(amount);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  const atomic = parseTokenAmount(amount);
   if (atomic <= 0n || atomic > (1n << 96n) - 1n) throw new Error("SUPPORT_TOO_SMALL");
   const calls = parsePositiveUint(expectedCalls, 64, "DEMAND_INVALID_CALLS");
-  await ensureAllowance(account, atomic, session, onUpdate);
-  return writeDemand(account, "supportDemand", [demandId, atomic, calls], session, "action", onUpdate);
+  const verified = await requireVerifiedDeployment(deployment);
+  await ensureAllowance(account, atomic, session, verified, onUpdate);
+  return writeDemand(account, "supportDemand", [demandId, atomic, calls], session, "action", onUpdate, undefined, verified);
 }
 
-export async function submitService(demandId: bigint, serviceUrl: string, evidence: string, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  let parsedUrl: URL;
-  try { parsedUrl = new URL(serviceUrl.trim()); } catch { throw new Error("SUBMISSION_INVALID_URL"); }
-  if (parsedUrl.protocol !== "https:") throw new Error("SUBMISSION_INVALID_URL");
+export async function submitService(demandId: bigint, serviceUrl: string, evidence: string, payTo: string, network: string, request: RequestMetadata, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const endpoint = import.meta.env.VITE_VALIDATION_URL;
+  if (!endpoint || !validationNetworks.includes(network)) throw new Error("VALIDATION_UNAVAILABLE");
+  const endpointUrl = new URL(endpoint, window.location.origin);
+  if ((endpointUrl.origin !== window.location.origin && endpointUrl.protocol !== "https:") || endpointUrl.username || endpointUrl.password || endpointUrl.hash || endpointUrl.search || endpointUrl.pathname !== "/v1/x402/validate") throw new Error("VALIDATION_UNAVAILABLE");
+  const selected = selectedDeployment;
+  const { account, session } = await requireAccount(selected, originatingSession);
+  const deployment = await requireVerifiedDeployment(selected);
+  let url: URL;
+  try { url = new URL(serviceUrl.trim()); } catch { throw new Error("SUBMISSION_INVALID_URL"); }
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.port) throw new Error("SUBMISSION_INVALID_URL");
+  if (!isAddress(payTo) || /^0x0{40}$/i.test(payTo)) throw new Error("VALIDATION_INVALID_PAYTO");
   const evidenceValue = evidence.trim();
   if (!evidenceValue) throw new Error("SUBMISSION_INVALID_EVIDENCE");
-  const evidenceHash = /^0x[0-9a-fA-F]{64}$/.test(evidenceValue)
-    ? evidenceValue as `0x${string}`
-    : keccak256(toBytes(evidenceValue));
-  return writeDemand(account, "submitService", [demandId, parsedUrl.toString(), evidenceHash], session, "action", onUpdate);
+  const evidenceHash = (/^0x[0-9a-fA-F]{64}$/.test(evidenceValue) ? evidenceValue.toLowerCase() : keccak256(toBytes(evidenceValue))) as Hash;
+  if (/^0x0{64}$/.test(evidenceHash)) throw new Error("SUBMISSION_INVALID_EVIDENCE");
+  const client = getPublic(deployment);
+  const nonce = await client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "submissionNonce", args: [demandId] }) + 1n;
+  const input = { chainId: deployment.chainId, contract: deployment.contract, demandId, builder: account, payTo: getAddress(payTo), serviceUrl: url.href, evidenceHash, network, nonce, request };
+  const issuedAt = BigInt(Math.floor(Date.now() / 1000));
+  const expiresAt = issuedAt + 300n;
+  validateRequest(input, issuedAt, expiresAt);
+  await assertWalletSession(session, account);
+  const signature = await walletClient(session, deployment).signTypedData({ ...authorization(input, issuedAt, expiresAt), account });
+  await assertWalletSession(session, account);
+  const requestBody = JSON.stringify({
+    schemaVersion: "unmet-x402-validation-v1", escrowChainId: String(deployment.chainId), escrowContract: deployment.contract.toLowerCase(), demandId: String(demandId), submissionNonce: String(nonce), builderWallet: account.toLowerCase(), authorizedPayTo: input.payTo.toLowerCase(), serviceUrl: input.serviceUrl, evidenceHash, paymentNetwork: network, request, builderAuthorization: { issuedAt: String(issuedAt), expiresAt: String(expiresAt), signature: signature.toLowerCase() },
+  });
+  if (new TextEncoder().encode(requestBody).length > 32768 || !/^0x(?:[0-9a-f]{2}){1,4096}$/.test(signature.toLowerCase())) throw new Error("VALIDATION_INVALID_REQUEST");
+  const response = await fetch(endpointUrl, { method: "POST", credentials: "omit", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30000), body: requestBody });
+  const result: unknown = await response.json();
+  if (!response.ok || !result || typeof result !== "object" || !("status" in result) || result.status !== "PASS") throw new Error("VALIDATION_FAILED");
+  const verifier = await client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "verifier" });
+  const pass = await validatePass(result, input, verifier, BigInt(Math.floor(Date.now() / 1000)), expiresAt);
+  await assertWalletSession(session, account);
+  if (await client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "submissionNonce", args: [demandId] }) + 1n !== nonce) throw new Error("VALIDATION_NONCE_STALE");
+  let confirmedUpdate: Parameters<TransactionUpdateHandler>[0] | undefined;
+  const hash = await writeDemand(account, "submitService", [demandId, input.serviceUrl, evidenceHash, pass.attestation, pass.signature], session, "action", update => {
+    if (update.state === "confirmed") confirmedUpdate = update;
+    else onUpdate?.(update);
+  }, async () => {
+    if (BigInt(Math.floor(Date.now() / 1000)) >= pass.attestation.expiresAt) throw new Error("VALIDATION_EXPIRED");
+    if (await client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "submissionNonce", args: [demandId] }) + 1n !== nonce) throw new Error("VALIDATION_NONCE_STALE");
+  }, deployment);
+  try {
+    await verifySubmission(deployment, account, demandId, input.serviceUrl, evidenceHash, pass.attestation);
+  } catch {
+    if (confirmedUpdate) onUpdate?.({ ...confirmedUpdate, state: "unknown" });
+    throw new Error("SUBMISSION_READBACK_FAILED");
+  }
+  if (confirmedUpdate) onUpdate?.(confirmedUpdate);
+  return hash;
 }
 
 export async function approveService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  return writeDemand(account, "approveService", [demandId], session, "action", onUpdate);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  return writeDemand(account, "approveService", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 export async function rejectService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  return writeDemand(account, "rejectService", [demandId], session, "action", onUpdate);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  return writeDemand(account, "rejectService", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 export async function finalizeDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  return writeDemand(account, "finalize", [demandId], session, "action", onUpdate);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  return writeDemand(account, "finalize", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 export async function reopenDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  return writeDemand(account, "reopen", [demandId], session, "action", onUpdate);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  return writeDemand(account, "reopen", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
-  const { account, session } = await requireAccount(originatingSession);
-  return writeDemand(account, "refund", [demandId], session, "action", onUpdate);
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  return writeDemand(account, "refund", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 
 export async function verifyTransaction(
@@ -779,16 +697,39 @@ export async function verifyTransaction(
   intent: TransactionIntent,
   expectedWallet: Address,
   expectedChainId: number,
+  expectedContract: Address,
   onUpdate?: TransactionUpdateHandler,
   originatingSession?: WalletSession,
 ): Promise<Hash> {
   const session = await requireWalletSession(originatingSession ?? captureWalletSession(expectedWallet) ?? undefined);
   if (expectedChainId !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
   await assertWalletSession({ ...session, account: expectedWallet }, expectedWallet);
-  const wallet = expectedWallet;
-  return wait(hash, intent, stage, wallet, expectedChainId, onUpdate, true);
+  const deployment = await requireVerifiedDeployment();
+  if (expectedContract.toLowerCase() !== deployment.contract.toLowerCase()) throw new Error("TRANSACTION_DEPLOYMENT_MISMATCH");
+  if (stage === "approval") {
+    if (intent.to.toLowerCase() !== deployment.escrowToken.address.toLowerCase()) throw new Error("TRANSACTION_INTENT_MISMATCH");
+    const decoded = decodeFunctionData({ abi: ERC20_ABI, data: intent.data });
+    if (decoded.functionName !== "approve" || decoded.args[0].toLowerCase() !== deployment.contract.toLowerCase()) throw new Error("TRANSACTION_INTENT_MISMATCH");
+  } else if (intent.to.toLowerCase() !== deployment.contract.toLowerCase()) throw new Error("TRANSACTION_INTENT_MISMATCH");
+  const decoded = stage === "action" ? decodeFunctionData({ abi: DEMAND_ABI, data: intent.data }) : null;
+  let confirmedUpdate: Parameters<TransactionUpdateHandler>[0] | undefined;
+  const transactionHash = await wait(hash, intent, stage, expectedWallet, expectedChainId, update => {
+    if (decoded?.functionName === "submitService" && update.state === "confirmed") confirmedUpdate = update;
+    else onUpdate?.(update);
+  }, true, deployment);
+  if (decoded?.functionName === "submitService") {
+    const [id, url, evidence, attestation] = decoded.args;
+    try {
+      await verifySubmission(deployment, expectedWallet, id, url, evidence, attestation);
+    } catch {
+      if (confirmedUpdate) onUpdate?.({ ...confirmedUpdate, state: "unknown" });
+      throw new Error("SUBMISSION_READBACK_FAILED");
+    }
+    if (confirmedUpdate) onUpdate?.(confirmedUpdate);
+  }
+  return transactionHash;
 }
 
-export function formatUsd0(value: bigint): string { return formatUnits(value, 6); }
-export function parseUsd0(value: string): bigint { return parseUnits(value.trim(), 6); }
+export function formatTokenAmount(value: bigint): string { return formatEscrowAmount(value, ESCROW_DECIMALS); }
+export function parseTokenAmount(value: string): bigint { return parseEscrowAmount(value, ESCROW_DECIMALS); }
 export function explorerTx(hash: string): string { return `${targetChain.blockExplorers.default.url}/tx/${hash}`; }

@@ -1,3 +1,4 @@
+import { deploymentPlan } from "./deployment-plan.ts";
 import { expect, test } from "bun:test";
 import { createApp } from "./server.ts";
 import { PaymentError } from "./payment-error.ts";
@@ -40,6 +41,10 @@ import { createBoundedFetch, settleStatusErrorCode, withBoundedFetch, withBounde
 import { createDemandIndexState, refreshIndex } from "./server.ts";
 import { type Address, type PublicClient } from "viem";
 import { loadConfig } from "./contract.ts";
+
+const fixtureContract = "0x0000000000000000000000000000000000000001" as Address;
+const fixtureToken = "0x4444444444444444444444444444444444444444" as Address;
+const fixtureDeployment = { chainId: 1952, contract: fixtureContract, rpcUrl: "https://example.org", deployBlock: 0n, chain: { name: "Test", explorerUrl: "https://example.org", nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 } }, escrowToken: { address: fixtureToken, symbol: "USDC", decimals: 6 } };
 
 async function withServer(app: Express, task: (url: string) => Promise<void>) {
   const server = app.listen(0, "127.0.0.1");
@@ -197,7 +202,7 @@ test("index capacity failure leaves the previous complete checkpoint intact", as
     getLogs: async () => [],
     readContract: async () => 100n,
   } as unknown as PublicClient;
-  await expect(refreshIndex(client, "0x0000000000000000000000000000000000000001" as Address, state,
+  await expect(refreshIndex(client, fixtureDeployment, state,
     loadOperationalConfig({ INDEX_MAX_DEMANDS: "2" }))).rejects.toThrow("INDEX_CAPACITY");
   expect(state.lastIndexedBlock).toBe(1n);
   expect(state.entries.size).toBe(0);
@@ -210,14 +215,14 @@ test("readiness is dependency-aware and coalesces repeated checks while liveness
     getBytecode: async () => { calls++; return "0x1234"; },
     getChainId: async () => { calls++; return 1; },
   } as unknown as PublicClient;
-  await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, { client, market: { ...loadConfig(), contract: "0x0000000000000000000000000000000000000001" } }), async (url) => {
+  await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, { client, market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment } }), async (url) => {
     expect((await fetch(url + "/live")).status).toBe(200);
     expect(calls).toBe(0);
     const responses = await Promise.all(Array.from({ length: 5 }, () => fetch(url + "/ready")));
     expect(responses.every((r) => r.status === 503)).toBe(true);
-    expect(calls).toBe(3);
+    expect(calls).toBe(1);
     expect((await fetch(url + "/health")).status).toBe(503);
-    expect(calls).toBeLessThanOrEqual(3);
+    expect(calls).toBeLessThanOrEqual(1);
   });
 });
 
@@ -280,7 +285,7 @@ test("minimum RPC capacity still completes a rebuild when a larger demand batch 
       } finally { active--; }
     },
   } as unknown as PublicClient;
-  await refreshIndex(client, "0x0000000000000000000000000000000000000001" as Address, state,
+  await refreshIndex(client, fixtureDeployment, state,
     loadOperationalConfig({ RPC_MAX_IN_FLIGHT: "4", INDEX_BATCH_SIZE: "32" }));
   expect(state.ready).toBe(true);
   expect(state.entries.size).toBe(6);
@@ -294,7 +299,7 @@ test("an exhausted rebuild budget starts no additional RPC operation", async () 
     getBlock: async () => { await Bun.sleep(120); return { number: 1n, hash: "0x" + "a".repeat(64) }; },
     readContract: async () => { reads++; return 1n; },
   } as unknown as PublicClient;
-  await expect(refreshIndex(client, "0x0000000000000000000000000000000000000001" as Address,
+  await expect(refreshIndex(client, fixtureDeployment,
     createDemandIndexState(), loadOperationalConfig({ INDEX_BUDGET_MS: "100" }))).rejects.toThrow("INDEX_BUDGET_EXCEEDED");
   expect(reads).toBe(0);
 });
@@ -460,14 +465,17 @@ for (const phase of ["execution failure", "verification", "settlement"] as const
         }
         return { number: 1n, hash };
       },
-      readContract: async () => 1n,
+      getChainId: async () => 1952,
+      getBytecode: async () => "0x1234",
+      getBlockNumber: async () => 1n,
+      readContract: async ({ functionName }: { functionName: string }) => functionName === "token" ? fixtureToken : functionName === "decimals" ? 6 : 1n,
     } as unknown as PublicClient;
     await withServer(createApp({ middleware: (req, res, next) => {
       res.once("close", disconnected.resolve);
       return Promise.resolve(middleware(req, res, next)).finally(done.resolve);
     } }, {
       config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }),
-      market: { ...loadConfig(), contract: "0x0000000000000000000000000000000000000001" }, client,
+      market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment }, client,
     }), async (url) => {
       const controller = new AbortController();
       const pending = fetch(url + "/v1/opportunities", {
@@ -500,4 +508,25 @@ test.each(["deploy-testnet", "deploy-mainnet"])("deployment command %s is unavai
       "error: DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5",
     );
   }
+});
+
+
+test("canonical deployment plan validates all eight arguments without signing", () => {
+  const env = { PAYMENT_TOKEN: fixtureToken, DEMAND_TREASURY: fixtureContract, DEMAND_FEE_BPS: "1000", DEMAND_QUORUM_BPS: "5001", DEMAND_MIN_COMMITMENT: ((1n << 96n) - 1n).toString(), DEMAND_REVIEW_PERIOD: "604800", DEMAND_VERIFIER: fixtureContract, DEMAND_VERIFIER_ADMIN: fixtureContract };
+  const plan = deploymentPlan(env);
+  expect(Object.keys(plan)).toHaveLength(8);
+  expect(plan.token).toBe(fixtureToken);
+  for (const [key, value] of [["DEMAND_FEE_BPS", "1001"], ["DEMAND_QUORUM_BPS", "5000"], ["DEMAND_QUORUM_BPS", "10001"], ["DEMAND_MIN_COMMITMENT", (1n << 96n).toString()], ["DEMAND_REVIEW_PERIOD", "3599"], ["DEMAND_REVIEW_PERIOD", "604801"], ["PAYMENT_TOKEN", "0x0000000000000000000000000000000000000000"]]) {
+    expect(() => deploymentPlan({ ...env, [key!]: value })).toThrow("CONFIG_INVALID");
+  }
+});
+
+
+test("offline plan CLI emits eight ordered constructor arguments without credentials or network", () => {
+  const env = { PATH: process.env.PATH, PAYMENT_TOKEN: fixtureToken, DEMAND_TREASURY: fixtureContract, DEMAND_FEE_BPS: "1", DEMAND_QUORUM_BPS: "5001", DEMAND_MIN_COMMITMENT: "2", DEMAND_REVIEW_PERIOD: "3600", DEMAND_VERIFIER: fixtureContract, DEMAND_VERIFIER_ADMIN: fixtureContract, HTTP_PROXY: "http://127.0.0.1:1", HTTPS_PROXY: "http://127.0.0.1:1" };
+  const child = Bun.spawnSync([process.execPath, "run", "--no-env-file", "--no-install", "backend/admin.ts", "plan"], { cwd: new URL("..", import.meta.url).pathname, env, stdout: "pipe", stderr: "pipe", timeout: 5000 });
+  expect(child.exitCode).toBe(0);
+  const plan = JSON.parse(child.stdout.toString());
+  expect(Object.keys(plan)).toEqual(["token", "treasury", "feeBps", "quorumBps", "minCommitment", "reviewPeriod", "verifier", "verifierAdmin"]);
+  expect(Object.values(plan)).toEqual([fixtureToken, fixtureContract, "1", "5001", "2", "3600", fixtureContract, fixtureContract]);
 });

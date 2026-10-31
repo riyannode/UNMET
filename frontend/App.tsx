@@ -15,18 +15,20 @@ import { ArrowUpDown, ChevronDown, CircleCheck, CircleHelp, CircleX, Clock3, Mor
 import { toast } from "sonner";
 import {
   CHAIN_ID,
+  ESCROW_SYMBOL,
   DEMAND_CONTRACT,
+  selectedDeployment,
+  selectedDemandHref as demandHref,
   MARKET_SYNC_INTERVAL_MS,
   approveService,
   captureWalletSession,
   createDemand,
   getPublic,
-  readTransactionOnChain,
   effectiveStatus,
   explorerTx,
   finalizeDemand,
-  formatUsd0,
-  parseUsd0,
+  formatTokenAmount,
+  parseTokenAmount,
   readBoardSnapshot,
   readSupport,
   synchronizeMarketBoard,
@@ -93,7 +95,6 @@ import {
   findPendingTransaction,
   readLegacyPendingCreate,
   readPendingTransactions,
-  recoverLegacyPendingCreate,
   removePendingTransaction,
   storePendingTransaction,
   TransactionLifecycleError,
@@ -104,11 +105,12 @@ import {
   type TransactionState,
   type TransactionUpdateHandler,
 } from "./transaction-lifecycle";
-import { demandHref, parseDemandId, ROUTES } from "./routing.ts";
+import { parseDemandRoute, ROUTES } from "./routing.ts";
 import { AnalyticsDashboard } from "./Analytics";
 import { errorMessage } from "./errors.ts";
 import { useTheme } from "./theme.ts";
 import { resolveReownStatus, runDisconnectRequest, WALLET_REQUIRED_TOAST_ID, type ReownStatus } from "./reown-status.ts";
+import { parseRequestMetadata, validationNetworks } from "./validation.ts";
 type CreateDemandInput = Parameters<typeof createDemand>[0];
 type CreateDemandPendingTransactionRecord = PendingTransactionRecord & {
   actionId: typeof CREATE_DEMAND_ACTION_ID;
@@ -156,7 +158,7 @@ function readTransactionPersistence(): TransactionPersistenceState {
     : pending.invalidRecords > 0 || legacy.invalid
       ? "An unreadable saved transaction record was preserved in this tab, but it cannot be safely verified"
       : legacy.record
-        ? "An older unresolved transaction was found. Its sender and intent must match a wallet on X Layer before it can be restored"
+        ? "An older unresolved transaction was preserved but cannot be safely associated with a deployment"
         : null;
   return { records: pending.records, legacy: legacy.record, warning };
 }
@@ -166,6 +168,7 @@ function upsertPendingRecord(records: readonly PendingTransactionRecord[], next:
     ...records.filter((record) =>
       record.wallet.toLowerCase() !== next.wallet.toLowerCase()
       || record.chainId !== next.chainId
+      || record.contract.toLowerCase() !== next.contract.toLowerCase()
       || record.actionId !== next.actionId,
     ),
     next,
@@ -176,6 +179,7 @@ function withoutPendingRecord(records: readonly PendingTransactionRecord[], targ
   return records.filter((record) =>
     record.wallet.toLowerCase() !== target.wallet.toLowerCase()
     || record.chainId !== target.chainId
+    || record.contract.toLowerCase() !== target.contract.toLowerCase()
     || record.actionId !== target.actionId,
   );
 }
@@ -249,7 +253,8 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const demandMatch = useMatch(ROUTES.demandDetail.href);
-  const selectedId = parseDemandId(demandMatch?.params.demandId);
+  const matchedDemand = parseDemandRoute(demandMatch?.params.chainId, demandMatch?.params.contract, demandMatch?.params.demandId);
+  const selectedId = matchedDemand && matchedDemand.chainId === CHAIN_ID && matchedDemand.contract === DEMAND_CONTRACT?.toLowerCase() ? matchedDemand.demandId : null;
   const [board, setBoard] = useState<DemandView[]>([]);
   const boardRef = useRef(board);
   boardRef.current = board;
@@ -324,7 +329,8 @@ export default function App() {
   const pendingTransactions = transactionPersistence.records.filter((record) =>
     account !== null
     && record.wallet.toLowerCase() === account.toLowerCase()
-    && record.chainId === CHAIN_ID,
+    && record.chainId === CHAIN_ID
+    && record.contract.toLowerCase() === selectedDeployment?.contract.toLowerCase(),
   );
   const pendingCreateRecord = pendingTransactions.find(
     (record): record is CreateDemandPendingTransactionRecord =>
@@ -358,6 +364,8 @@ export default function App() {
     actionStageLabel = "action",
   ): TransactionUpdateHandler {
     return ({ stage, state, hash, intent, wallet, chainId }) => {
+      const contract = baseRecord?.contract ?? selectedDeployment?.contract;
+      if (!contract) return;
       setLastTx(hash);
       setLastTxWallet(wallet.toLowerCase());
       setTransactionState(state);
@@ -370,6 +378,7 @@ export default function App() {
         ...baseRecord,
         wallet,
         chainId,
+        contract,
         actionId,
         actionLabel: baseRecord?.actionLabel ?? label,
         stage,
@@ -381,32 +390,6 @@ export default function App() {
       updatePendingRecord(state === "broadcast" || state === "unknown" ? target : null, target);
     };
   }
-
-  useEffect(() => {
-    const legacy = transactionPersistence.legacy;
-    if (!legacy || !account) return;
-    let live = true;
-    void readTransactionOnChain(legacy.hash).then((observed) => {
-      if (!live) return;
-      const recovered = recoverLegacyPendingCreate(legacy, observed, account, CHAIN_ID);
-      if (!recovered) return;
-      const storage = transactionStorage();
-      const saved = storePendingTransaction(storage, recovered);
-      const records = upsertPendingRecord(recordsRef.current, recovered);
-      recordsRef.current = records;
-      if (saved && storage) {
-        try { storage.removeItem("unmet.pending-create-transaction"); } catch { /* preserve the recovered in-memory record */ }
-      }
-      const refreshedLegacy = saved ? readLegacyPendingCreate(storage) : { record: legacy, available: Boolean(storage), invalid: false };
-      setTransactionPersistence((current) => ({
-        ...current,
-        records,
-        legacy: refreshedLegacy.record,
-        warning: saved ? (refreshedLegacy.invalid ? current.warning : null) : "Transaction recovery storage is unavailable. Pending details may be lost if this tab reloads",
-      }));
-    }).catch(() => undefined);
-    return () => { live = false; };
-  }, [account, transactionPersistence.legacy]);
 
   const loadSupport = useCallback(async (
     demandId: bigint,
@@ -463,14 +446,14 @@ export default function App() {
   const synchronizeMarket = useCallback(async (): Promise<void> => {
     const cursor = marketSyncCursorRef.current;
     if (
-      !DEMAND_CONTRACT || !cursor || marketPollInFlightRef.current || boardLoadingRef.current || busyRef.current
+      !selectedDeployment || !cursor || marketPollInFlightRef.current || boardLoadingRef.current || busyRef.current
       || activeActionLocksRef.current.size > 0 || document.visibilityState !== "visible"
     ) return;
 
     const generation = marketSyncGenerationRef.current;
     marketPollInFlightRef.current = true;
     try {
-      const result = await synchronizeMarketBoard(getPublic(), DEMAND_CONTRACT, boardRef.current, cursor);
+      const result = await synchronizeMarketBoard(getPublic(selectedDeployment), selectedDeployment, boardRef.current, cursor);
       if (
         generation !== marketSyncGenerationRef.current || boardLoadingRef.current || busyRef.current
         || activeActionLocksRef.current.size > 0
@@ -702,11 +685,12 @@ export default function App() {
     }
     const originatingSession = captureWalletSession(account);
     if (!originatingSession) return { kind: "failed", message: "Connect your wallet before continuing" };
-    const lockKey = `${account?.toLowerCase() ?? "disconnected"}:${CHAIN_ID}:${actionId}`;
+    if (!selectedDeployment) return { kind: "failed", message: "The demand deployment is not configured" };
+    const lockKey = `${account.toLowerCase()}:${CHAIN_ID}:${selectedDeployment.contract.toLowerCase()}:${actionId}`;
     const storagePending = account
-      ? findPendingTransaction(readPendingTransactions(transactionStorage()).records, account, CHAIN_ID, actionId)
+      ? findPendingTransaction(readPendingTransactions(transactionStorage()).records, account, CHAIN_ID, selectedDeployment.contract, actionId)
       : null;
-    const inMemoryPending = account ? findPendingTransaction(recordsRef.current, account, CHAIN_ID, actionId) : null;
+    const inMemoryPending = account ? findPendingTransaction(recordsRef.current, account, CHAIN_ID, selectedDeployment.contract, actionId) : null;
     const existingPending = storagePending ?? inMemoryPending;
     if (existingPending) {
       if (actionId === CREATE_DEMAND_ACTION_ID && existingPending.stage !== "action") {
@@ -741,9 +725,9 @@ export default function App() {
             creator: account,
             capability: normalizeCapability(createdDemand.capability),
             specification: createdDemand.specification.trim(),
-            maxPrice: parseUsd0(createdDemand.maxPrice),
+            maxPrice: parseTokenAmount(createdDemand.maxPrice),
             expectedCalls: BigInt(createdDemand.expectedCalls),
-            initialCommitment: parseUsd0(createdDemand.commitment),
+            initialCommitment: parseTokenAmount(createdDemand.commitment),
           },
         }
         : undefined;
@@ -802,12 +786,12 @@ export default function App() {
     if (!account || account.toLowerCase() !== record.wallet.toLowerCase() || activeWalletIdentityRef.current !== record.wallet.toLowerCase()) {
       return { kind: "failed", message: "Connect the wallet that sent this transaction before verifying it" };
     }
-    if (!chainOk || record.chainId !== CHAIN_ID) {
+    if (!chainOk || record.chainId !== CHAIN_ID || record.contract.toLowerCase() !== selectedDeployment?.contract.toLowerCase()) {
       return { kind: "failed", message: `Switch to X Layer ${CHAIN_ID} before verifying this transaction` };
     }
     const originatingSession = captureWalletSession(record.wallet);
     if (!originatingSession) return { kind: "failed", message: "Connect the wallet that sent this transaction before verifying it" };
-    const lockKey = `${record.wallet.toLowerCase()}:${record.chainId}:${record.actionId}`;
+    const lockKey = `${record.wallet.toLowerCase()}:${record.chainId}:${record.contract.toLowerCase()}:${record.actionId}`;
     if (activeActionLocksRef.current.has(lockKey)) {
       return { kind: "failed", message: "This transaction is already being checked" };
     }
@@ -825,7 +809,7 @@ export default function App() {
     try {
       const onUpdate = createTransactionUpdateHandler(displayLabel, record.actionId, record.verification, record);
       if (record.stage === "approval") {
-        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate, originatingSession);
+        const hash = await verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, record.contract, onUpdate, originatingSession);
         if (activeWalletIdentityRef.current === record.wallet.toLowerCase()) {
           const action = record.actionId === CREATE_DEMAND_ACTION_ID ? "demand" : "support";
           setStatus(`${displayLabel} token approval confirmed. No ${action} was submitted`);
@@ -834,7 +818,7 @@ export default function App() {
       }
 
       const readback = await afterConfirmedTransaction(
-        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, onUpdate, originatingSession),
+        () => verifyTransaction(record.stage, record.hash, record.intent, record.wallet, record.chainId, record.contract, onUpdate, originatingSession),
         (hash) => {
           confirmedHash = hash;
           setLastTx(hash);
@@ -988,7 +972,7 @@ export function MarketRoute() {
       loading={boardLoading && board.length === 0}
       loadError={boardLoadError && board.length === 0}
       selectedId={selectedId}
-      contractConfigured={Boolean(DEMAND_CONTRACT)}
+      contractConfigured={Boolean(selectedDeployment)}
       detailFrom={ROUTES.market.href}
     />
   );
@@ -1001,7 +985,7 @@ export function CreateDemandRoute() {
       account={account}
       busy={busy}
       disconnecting={disconnecting}
-      contractConfigured={Boolean(DEMAND_CONTRACT)}
+      contractConfigured={Boolean(selectedDeployment)}
       walletStatus={walletStatus}
       pendingTransaction={pendingCreate}
       onConnect={connect}
@@ -1014,7 +998,7 @@ export function CreateDemandRoute() {
 
 export function AnalyticsRoute() {
   const { board, boardLoading, boardLoadError } = useOutletContext<AppOutletContext>();
-  return <AnalyticsDashboard board={board} loading={boardLoading} loadError={boardLoadError} contractConfigured={Boolean(DEMAND_CONTRACT)} />;
+  return <AnalyticsDashboard board={board} loading={boardLoading} loadError={boardLoadError} contractConfigured={Boolean(selectedDeployment)} />;
 }
 
 type DemandDetailLoad =
@@ -1026,15 +1010,16 @@ type DemandDetailLoad =
   | { kind: "ready"; demand: DemandView };
 
 export function DemandDetailRoute() {
-  const { demandId: rawDemandId } = useParams();
-  const demandId = parseDemandId(rawDemandId);
+  const params = useParams();
+  const identity = parseDemandRoute(params.chainId, params.contract, params.demandId);
+  const demandId = identity && identity.chainId === CHAIN_ID && identity.contract === DEMAND_CONTRACT?.toLowerCase() ? identity.demandId : null;
   const location = useLocation();
   const navigate = useNavigate();
   const { board, boardLoading, boardLoadError, refreshBoard, account, support, supportState, busy, run, blockedActionIds } = useOutletContext<AppOutletContext>();
   const demand = demandId === null ? undefined : board.find((candidate) => candidate.demandId === demandId);
   const detail: DemandDetailLoad = demandId === null
     ? { kind: "invalid" }
-    : !DEMAND_CONTRACT
+    : !selectedDeployment
       ? { kind: "not-configured" }
       : demand
         ? { kind: "ready", demand }
@@ -1133,7 +1118,7 @@ function DemandBoard({ board, loading, loadError, selectedId, contractConfigured
           <h1>What the market needs</h1>
           <p className="workflow-summary">Requests backed by real escrow</p>
         </div>
-        <span className="unit">USD₮0</span>
+        <span className="unit">{ESCROW_SYMBOL}</span>
       </div>
       {loading ? (
         <div className="market-loading">
@@ -1324,7 +1309,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
             <p className="market-card-description">{specification}</p>
             <div className="market-card-escrow">
               <span className="market-card-metric-label">Escrow</span>
-              <p><strong>{formatUsd0(demand.committed)}</strong><span>USD₮0</span></p>
+              <p><strong>{formatTokenAmount(demand.committed)}</strong><span>{ESCROW_SYMBOL}</span></p>
             </div>
             <dl className="market-card-metrics">
               <div>
@@ -1341,7 +1326,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
               </div>
               <div>
                 <dt>Max / call</dt>
-                <dd>{formatUsd0(demand.maxUnitPrice)} <small>USD₮0</small></dd>
+                <dd>{formatTokenAmount(demand.maxUnitPrice)} <small>{ESCROW_SYMBOL}</small></dd>
               </div>
             </dl>
           </div>
@@ -1381,6 +1366,11 @@ function DemandDetail({
   const [supportCalls, setSupportCalls] = useState("1000");
   const [serviceUrl, setServiceUrl] = useState("");
   const [evidence, setEvidence] = useState("");
+  const [payTo, setPayTo] = useState("");
+  const [paymentNetwork, setPaymentNetwork] = useState(validationNetworks[0] ?? "");
+  const [method, setMethod] = useState<"GET" | "POST">("GET");
+  const [query, setQuery] = useState("[]");
+  const [body, setBody] = useState("{}");
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("keydown", onKeyDown);
@@ -1452,10 +1442,10 @@ function DemandDetail({
               </CardHeader>
               <CardContent>
                 <dl className="demand-detail-facts">
-                  <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} <span>USD₮0</span></dd></div>
+                  <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatTokenAmount(demand.committed)} <span>{ESCROW_SYMBOL}</span></dd></div>
                   <div><dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd></div>
                   <div><dt>Expected calls</dt><dd>{demand.expectedCalls.toString()}</dd></div>
-                  <div><dt>Max unit price</dt><dd>{formatUsd0(demand.maxUnitPrice)} <span>USD₮0</span></dd></div>
+                  <div><dt>Max unit price</dt><dd>{formatTokenAmount(demand.maxUnitPrice)} <span>{ESCROW_SYMBOL}</span></dd></div>
                   <div><dt>Status</dt><dd><Badge className="market-status-badge demand-detail-status" data-status={state} variant="secondary" size="lg">{state}</Badge></dd></div>
                 </dl>
               </CardContent>
@@ -1472,9 +1462,9 @@ function DemandDetail({
               </CardHeader>
               <CardContent>
                 <dl className="demand-detail-facts">
-                  <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatUsd0(demand.committed)} <span>USD₮0</span></dd></div>
+                  <div className="demand-detail-escrow"><dt>Current escrow</dt><dd>{formatTokenAmount(demand.committed)} <span>{ESCROW_SYMBOL}</span></dd></div>
                   <div><dt>Supporting wallets</dt><dd>{demand.supporterCount}</dd></div>
-                  <div><dt>Your commitment</dt><dd>{account ? <>{formatUsd0(support.commitment)} <span>USD₮0</span></> : "connect wallet"}</dd></div>
+                  <div><dt>Your commitment</dt><dd>{account ? <>{formatTokenAmount(support.commitment)} <span>{ESCROW_SYMBOL}</span></> : "connect wallet"}</dd></div>
                   {account && supportState === "loading" && <div><dt>Wallet position</dt><dd role="status">Loading your onchain position…</dd></div>}
                   {account && supportState === "error" && <div><dt>Wallet position</dt><dd role="alert">Could not read your position. Refresh the chain view before voting or refunding</dd></div>}
                 </dl>
@@ -1487,7 +1477,7 @@ function DemandDetail({
                 </CardHeader>
                 <CardContent>
                   <div className="demand-detail-form">
-                    <label htmlFor="demand-support-amount">Amount (USD₮0)
+                    <label htmlFor="demand-support-amount">Amount ({ESCROW_SYMBOL})
                       <Input id="demand-support-amount" value={supportAmount} onChange={(event) => setSupportAmount(event.currentTarget.value)} className="demand-detail-input" />
                     </label>
                     <label htmlFor="demand-support-calls">Expected calls
@@ -1505,7 +1495,7 @@ function DemandDetail({
                   <CardDescription className="demand-detail-card-description">Your eligible commitment can be returned</CardDescription>
                 </CardHeader>
                 <CardContent className="demand-detail-actions">
-                  <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate, session) => refundDemand(demand.demandId, onUpdate, session))}>Refund {formatUsd0(support.commitment)} USD₮0</Button>
+                  <Button type="button" variant="destructive" className="demand-detail-action" disabled={busy || !account || actionBlocked("refund")} onClick={() => void run("refund", `refund:${demand.demandId}`, (onUpdate, session) => refundDemand(demand.demandId, onUpdate, session))}>Refund {formatTokenAmount(support.commitment)} {ESCROW_SYMBOL}</Button>
                 </CardContent>
               </Card>
             )}
@@ -1536,7 +1526,25 @@ function DemandDetail({
                     <label htmlFor="proposal-evidence">Evidence</label>
                     <Textarea id="proposal-evidence" aria-describedby="proposal-evidence-help" value={evidence} onChange={(event) => setEvidence(event.currentTarget.value)} className="demand-detail-input" />
                     <p className="demand-detail-help" id="proposal-evidence-help">Proof that the service fulfills this request</p>
-                    <Button type="button" className="demand-detail-action" disabled={busy || !account || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate, session) => submitService(demand.demandId, serviceUrl, evidence, onUpdate, session))}>Submit Service Proposal</Button>
+                    <label htmlFor="proposal-pay-to">Authorized payment receiver
+                      <Input id="proposal-pay-to" value={payTo || account || ""} onChange={(event) => setPayTo(event.currentTarget.value)} />
+                    </label>
+                    <label htmlFor="proposal-network">Payment network
+                      <select id="proposal-network" value={paymentNetwork} onChange={(event) => setPaymentNetwork(event.currentTarget.value)}>{validationNetworks.map(network => <option key={network} value={network}>{network}</option>)}</select>
+                    </label>
+                    <label htmlFor="proposal-method">Request method
+                      <select id="proposal-method" value={method} onChange={(event) => setMethod(event.currentTarget.value === "POST" ? "POST" : "GET")}><option>GET</option><option>POST</option></select>
+                    </label>
+                    <label htmlFor="proposal-query">Query pairs (JSON array)
+                      <Textarea id="proposal-query" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+                    </label>
+                    {method === "POST" && <label htmlFor="proposal-body">JSON body
+                      <Textarea id="proposal-body" value={body} onChange={(event) => setBody(event.currentTarget.value)} />
+                    </label>}
+                    <Button type="button" className="demand-detail-action" disabled={busy || !account || !paymentNetwork || actionBlocked("submit")} onClick={() => void run("submit", `submit:${demand.demandId}`, (onUpdate, session) => {
+                      const request = parseRequestMetadata(method, query, body);
+                      return submitService(demand.demandId, serviceUrl, evidence, payTo || account || "", paymentNetwork, request, onUpdate, session);
+                    })}>Submit Service Proposal</Button>
                   </div>
                 </CardContent>
               ) : null}
@@ -1548,15 +1556,15 @@ function DemandDetail({
                 </CardHeader>
                 <CardContent>
                   <dl className="demand-detail-facts">
-                    <div><dt>Review snapshot</dt><dd>{formatUsd0(demand.reviewCommitted)} <span>USD₮0</span></dd></div>
+                    <div><dt>Review snapshot</dt><dd>{formatTokenAmount(demand.reviewCommitted)} <span>{ESCROW_SYMBOL}</span></dd></div>
                     <div><dt>Review end</dt><dd>{demand.reviewEndsAt === 0n ? "—" : iso(demand.reviewEndsAt)}</dd></div>
                     <div><dt>Approval progress</dt><dd>
-                      {formatUsd0(demand.approvalWeight)} / {formatUsd0(demand.approvalRequired)} <span>USD₮0</span>
+                      {formatTokenAmount(demand.approvalWeight)} / {formatTokenAmount(demand.approvalRequired)} <span>{ESCROW_SYMBOL}</span>
                       <div className="demand-detail-progress" role="progressbar" aria-label="Approval progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: percent + "%" }} /></div>
                       <span className="demand-detail-muted">Only approver funds settle</span>
                     </dd></div>
                     <div><dt>Rejection progress</dt><dd>
-                      {formatUsd0(demand.rejectionWeight)} / {formatUsd0(demand.rejectionThreshold)} <span>USD₮0</span>
+                      {formatTokenAmount(demand.rejectionWeight)} / {formatTokenAmount(demand.rejectionThreshold)} <span>{ESCROW_SYMBOL}</span>
                       <div className="demand-detail-progress rejection" role="progressbar" aria-label="Rejection progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rejectionPercent}><span style={{ width: rejectionPercent + "%" }} /></div>
                     </dd></div>
                   </dl>
