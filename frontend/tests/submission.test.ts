@@ -17,6 +17,8 @@ let resultMode = "PASS", sends = 0, signs = 0, requests = 0, nonceReads = 0;
 let submittedData: Hex | undefined;
 let walletChange = false, changeDuringSign = false, nonceStale = false, badReadback = false;
 let walletChain = "0x7a0", changeChainBeforeBroadcast = false;
+let expireDuringNonceRead = false;
+const originalNow = Date.now;
 const evidenceHash = keccak256(stringToHex("evidence"));
 const paymentHash = `0x${"2".repeat(64)}` as Hex, policyHash = `0x${"3".repeat(64)}` as Hex;
 
@@ -48,6 +50,7 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 18545, async fetch(req) 
       if (decoded.functionName === "submissionNonce") {
         nonceReads++;
         if (changeChainBeforeBroadcast && nonceReads === 3) walletChain = "0x1";
+        if (expireDuringNonceRead && nonceReads === 3) Date.now = () => originalNow() + 121_000;
         result = encodeFunctionResult({ abi: DEMAND_ABI, functionName: "submissionNonce", result: sends || (nonceStale && nonceReads > 1) ? 1n : 0n });
       }
       else if (decoded.functionName === "verifier") result = encodeFunctionResult({ abi: DEMAND_ABI, functionName: "verifier", result: signer.address });
@@ -60,7 +63,7 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 18545, async fetch(req) 
   return Response.json({ jsonrpc: "2.0", id: rpc.id, result });
 } });
 afterAll(() => { server.stop(true); Reflect.deleteProperty(globalThis, "window"); });
-afterEach(() => { setReownWalletProvider(null); resultMode = "PASS"; sends = 0; signs = 0; requests = 0; nonceReads = 0; submittedData = undefined; walletChange = false; changeDuringSign = false; nonceStale = false; badReadback = false; walletChain = "0x7a0"; changeChainBeforeBroadcast = false; });
+afterEach(() => { setReownWalletProvider(null); resultMode = "PASS"; sends = 0; signs = 0; requests = 0; nonceReads = 0; submittedData = undefined; walletChange = false; changeDuringSign = false; nonceStale = false; badReadback = false; walletChain = "0x7a0"; changeChainBeforeBroadcast = false; expireDuringNonceRead = false; Date.now = originalNow; });
 function connect() { setReownWalletProvider({ request: async ({ method, params }: { method: string; params?: readonly unknown[] }) => {
   if (method === "eth_accounts") return [builder];
   if (method === "eth_chainId") return walletChain;
@@ -85,6 +88,7 @@ describe("canonical submission", () => {
   });
   test("wallet change during typed signature discards authorization", async () => { changeDuringSign = true; connect(); await expect(submit()).rejects.toThrow("WALLET_CHANGED"); expect(signs).toBe(1); expect(sends).toBe(0); expect(requests).toBe(0); });
   test("chain change immediately before broadcast discards PASS", async () => { changeChainBeforeBroadcast = true; connect(); await expect(submit()).rejects.toThrow("CHAIN_WRONG_NETWORK"); expect(sends).toBe(0); expect(requests).toBe(1); });
+  test("expiry during final nonce read prevents broadcast", async () => { expireDuringNonceRead = true; connect(); await expect(submit()).rejects.toThrow("VALIDATION_EXPIRED"); expect(sends).toBe(0); expect(requests).toBe(1); });
   test("wallet change and stale nonce never broadcast", async () => {
     walletChange = true; connect(); await expect(submit()).rejects.toThrow(); expect(sends).toBe(0); expect(requests).toBe(1);
     walletChange = false; nonceStale = true; nonceReads = 0; connect(); await expect(submit()).rejects.toThrow("VALIDATION_NONCE_STALE"); expect(sends).toBe(0); expect(requests).toBe(2);

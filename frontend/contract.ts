@@ -652,8 +652,8 @@ export async function submitService(demandId: bigint, serviceUrl: string, eviden
     if (update.state === "confirmed") confirmedUpdate = update;
     else onUpdate?.(update);
   }, async () => {
-    if (BigInt(Math.floor(Date.now() / 1000)) >= pass.attestation.expiresAt) throw new Error("VALIDATION_EXPIRED");
     if (await client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "submissionNonce", args: [demandId] }) + 1n !== nonce) throw new Error("VALIDATION_NONCE_STALE");
+    if (BigInt(Math.floor(Date.now() / 1000)) >= pass.attestation.expiresAt) throw new Error("VALIDATION_EXPIRED");
   }, deployment);
   try {
     await verifySubmission(deployment, account, demandId, input.serviceUrl, evidenceHash, pass.attestation);
