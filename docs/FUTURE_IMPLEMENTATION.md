@@ -1555,7 +1555,7 @@ G0.4 implements the non-upgradeable attestation-gated escrow and contract tests.
 
 G0.5 covers canonical AgentDemand frontend/backend, indexer and deployment-tool integration: ABI consumers, validation/submission flow, event indexing and multi-deployment identity. Existing TypeScript consumers still use the experimental ABI until that gate; they must not be pointed at the canonical contract before integration is complete.
 
-`backend/admin.ts` still targets the removed experimental contract/artifact and encodes its six-argument constructor. Its lazy artifact read is not a build dependency. A canonical build now emits `out/AgentDemand.sol/AgentDemand.json` at the same pathname, but requires eight constructor arguments. That command must not be used for canonical AgentDemand; do not substitute canonical bytecode into the experimental deployment flow. Canonical deployment tooling and configuration require G0.5 integration and separate deployment approval.
+`backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` locally with `DEPLOYMENT_TOOLING_UNAVAILABLE`, before key, RPC, artifact or transaction work. The obsolete six-argument deployment flow has been removed; read-only `inspect` is unchanged. No current repository command may deploy canonical AgentDemand. Canonical deployment tooling and configuration require G0.5 integration and separate deployment approval.
 
 Historical deployment records remain evidence of earlier experiments. They do not establish support for the experimental predecessor or authorize any blockchain action.
 

@@ -53,7 +53,7 @@ Contract tests must cover at minimum:
 - pull refunds and double-refund prevention
 - token accounting invariant
 
-Contract deployment and signed-payment procedures below require separate explicit authorization. They are not contributor smoke checks. Use [CONTRIBUTING](../CONTRIBUTING.md) for local environment loading, offline checks and Docker validation; use [SELF_HOSTING](SELF_HOSTING.md) and [PAYMENT_RECOVERY](PAYMENT_RECOVERY.md) for current Compose operations.
+Canonical deployment tooling is disabled until G0.5. Future contract deployment and signed-payment procedures require separate explicit authorization. They are not contributor smoke checks. Use [CONTRIBUTING](../CONTRIBUTING.md) for local environment loading, offline checks and Docker validation; use [SELF_HOSTING](SELF_HOSTING.md) and [PAYMENT_RECOVERY](PAYMENT_RECOVERY.md) for current Compose operations.
 
 ## 4. X Layer Testnet
 
@@ -69,36 +69,13 @@ Use the official OnchainOS `payment quote` flow. Review the actual network, asse
 
 The currently documented buyer example expects test USD₮0, but the live Mock Merchant may return different terms. Record the raw response and inspect the returned token on X Layer Testnet before payment. If the token is not available from an official testnet faucet or the domain metadata does not match the on-chain token, do not pay that challenge; continue independent UNMET contract and seller checks. See [OKX_PAYMENT_DEBUG.md](OKX_PAYMENT_DEBUG.md) for the reproduced `USDC_TEST` / EIP-712 version mismatch.
 
-Use a separate private ignored `.env.deploy` file, loaded explicitly with Bun; never pass its key to runtime containers. Example fields:
+### 4.2 Canonical AgentDemand deployment is disabled
 
-```text
-CHAIN_ID=1952
-XLAYER_RPC_URL=https://testrpc.xlayer.tech/terigon
-PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c
-UNMET_TREASURY=0x...
-DEPLOYER_PRIVATE_KEY=0x...
-```
+Canonical AgentDemand deployment tooling is disabled and deferred to G0.5. No current repository command may deploy canonical AgentDemand. Any future deployment still requires separate owner authorization.
 
-Historical experimental deployment procedure: the deploy command below targets the removed experimental contract/artifact and encodes its six-argument constructor. The canonical build now emits `out/AgentDemand.sol/AgentDemand.json` at the same pathname, but requires eight constructor arguments. This command must not be used for canonical AgentDemand. Canonical deployment tooling is deferred to G0.5 and requires separate deployment approval. Do not substitute canonical bytecode into this experimental deployment flow.
+`backend/admin.ts deploy-testnet` and `backend/admin.ts deploy-mainnet` terminate locally with `DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5`. `ALLOW_MAINNET_DEPLOY=1` does not enable deployment. The obsolete six-argument deployment flow has been removed; no replacement procedure is provided here.
 
-Deploy:
-
-```bash
-bun --env-file=.env.deploy run backend/admin.ts deploy-testnet
-```
-
-Record:
-- deployment tx hash
-- contract address
-- deployment block
-- constructor readback
-
-Then configure both:
-
-```text
-DEMAND_CONTRACT=0x...
-VITE_DEMAND_CONTRACT=0x...
-```
+Read-only inspection of an already configured deployment remains available.
 
 Inspect:
 
@@ -217,15 +194,7 @@ For payment incidents, follow [Payment recovery](PAYMENT_RECOVERY.md). Preserve 
 Mainnet is chain `196`; its USD₮0 address is:
 `0x779ded0c9e1022225f8e0630b35a9b54be713736`.
 
-Production x402 billing is configured for this network, but that does **not** move the demand market or authorize a mainnet contract deployment, and does not imply a current public deployment or OKX.AI listing approval. Keep core `CHAIN_ID=1952`, `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, the existing contract, and frontend chain on Testnet. A future demand-market migration requires its own explicit scope, authorization, and full verification. Only for that separate release, after every Testnet + x402 + browser check above passes:
-
-```bash
-export ALLOW_MAINNET_DEPLOY=1
-# switch CHAIN_ID/RPC/token and re-check treasury/deployer
-bun --env-file=.env.deploy run backend/admin.ts deploy-mainnet
-```
-
-Start with tiny values. Repeat full receipt/state/balance verification.
+Production x402 billing is configured for this network, but that does **not** move the demand market or authorize a mainnet contract deployment, and does not imply a current public deployment or OKX.AI listing approval. Keep core `CHAIN_ID=1952`, `PAYMENT_TOKEN=0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c`, the existing contract, and frontend chain on Testnet. A future demand-market migration requires its own explicit scope, authorization, and full verification. Canonical deployment tooling remains disabled until G0.5; no current repository command may deploy canonical AgentDemand on Mainnet. The disabled `deploy-mainnet` command still rejects when `ALLOW_MAINNET_DEPLOY=1`.
 
 ## 10. Incident behavior
 

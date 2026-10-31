@@ -30,6 +30,12 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `INVALID_STATUS` | unsupported status filter | see API.md |
 | `NOT_FOUND` | route does not exist | use documented route |
 
+## Contract CLI
+
+| Code | Context | Recovery |
+| --- | --- | --- |
+| `DEPLOYMENT_TOOLING_UNAVAILABLE` | `deploy-testnet` and `deploy-mainnet` exit locally before deployment work | Canonical AgentDemand deployment tooling is deferred to G0.5 and requires separate owner authorization; read-only `inspect` remains available. |
+
 ## Self-hosted API operations
 
 | Code | HTTP / context | Recovery |

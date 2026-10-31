@@ -56,7 +56,7 @@ UNMET/
 
 Keep root manifests, lockfile, Compose, environment template and ignore files at root. Workspace manifests/configuration, Vite HTML entrypoints and the browser race fixture stay in their functional locations.
 
-Foundry runs from `backend/`, where source and tests are siblings. Its dependencies are ignored under `backend/lib/`; `admin.ts` resolves build artifacts under `backend/out/`. Preserve those paths. Asset attribution stays at `frontend/public/avatars/ATTRIBUTION.md` beside its SVGs; `.hallmark` records are historical evidence.
+Foundry runs from `backend/`, where source and tests are siblings. Its dependencies are ignored under `backend/lib/`; build artifacts are written under `backend/out/`. Preserve those paths. Asset attribution stays at `frontend/public/avatars/ATTRIBUTION.md` beside its SVGs; `.hallmark` records are historical evidence.
 
 ## System architecture
 

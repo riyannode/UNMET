@@ -488,3 +488,16 @@ for (const phase of ["execution failure", "verification", "settlement"] as const
     });
   });
 }
+
+test.each(["deploy-testnet", "deploy-mainnet"])("deployment command %s is unavailable locally", (command) => {
+  for (const env of [{}, { ALLOW_MAINNET_DEPLOY: "1" }]) {
+    const child = Bun.spawnSync([process.execPath, "run", "--no-env-file", "--no-install", "backend/admin.ts", command], {
+      cwd: new URL("..", import.meta.url).pathname, env, stdout: "pipe", stderr: "pipe",
+    });
+    expect(child.exitCode).toBe(1);
+    expect(child.stdout.toString()).toBe("");
+    expect(child.stderr.toString().split("\n")).toContain(
+      "error: DEPLOYMENT_TOOLING_UNAVAILABLE: canonical AgentDemand deployment is deferred to G0.5",
+    );
+  }
+});
