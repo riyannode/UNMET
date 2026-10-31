@@ -17,6 +17,19 @@ contract MockUSD is ERC20 {
     }
 }
 
+contract BlockedUSD is MockUSD {
+    address public immutable blocked;
+
+    constructor(address blocked_) {
+        blocked = blocked_;
+    }
+
+    function _update(address from, address to, uint256 amount) internal override {
+        require(to != blocked, "blocked");
+        super._update(from, to, amount);
+    }
+}
+
 contract HashHarness is AgentDemand {
     constructor(address token, address treasury, address verifier, address admin)
         AgentDemand(token, treasury, 200, 6000, 10_000, 1 days, verifier, admin)
@@ -229,7 +242,7 @@ contract AgentDemandTest is Test {
         assertEq(d.committed, 100_000);
         assertEq(d.supporterCount, 3);
         assertEq(d.expectedCalls, 26_500);
-        (uint96 amount, uint64 calls,,) = demand.getSupport(id, bob);
+        (uint96 amount, uint256 calls,,) = demand.getSupport(id, bob);
         assertEq(amount, 30_000);
         assertEq(calls, 1_000);
         assertEq(demand.totalEscrowed(), 100_000);
@@ -255,10 +268,10 @@ contract AgentDemandTest is Test {
         uint256 id = _create(alice, 50_000);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(alice);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         vm.prank(alice);
         vm.expectRevert(AgentDemand.ConflictingVote.selector);
-        demand.approveService(id);
+        demand.approveService(id, 1);
     }
 
     function test_MathematicalRejectionAllowsEarlyReopen() public {
@@ -271,7 +284,7 @@ contract AgentDemandTest is Test {
 
         // 60k approval required; >40k rejection makes quorum impossible.
         vm.prank(alice);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         (uint256 weight, uint256 threshold, bool rejected) = demand.rejectionProgress(id);
         assertEq(weight, 50_000);
         assertEq(threshold, 40_001);
@@ -290,7 +303,7 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 20_000, 1);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id); // 50k < fixed 60k
+        demand.approveService(id, 1); // 50k < fixed 60k
         vm.warp(block.timestamp + 8 days);
         vm.prank(carol);
         demand.refund(id);
@@ -309,9 +322,9 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 20_000, 500);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(bob);
-        demand.approveService(id);
+        demand.approveService(id, 1);
 
         uint256 builderBefore = token.balanceOf(builder);
         uint256 treasuryBefore = token.balanceOf(treasury);
@@ -344,7 +357,7 @@ contract AgentDemandTest is Test {
         // Alice never approves, so Alice's 40k must never be paid to Bob.
         _submit(bob, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(bob);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(bob);
         demand.finalize(id);
 
@@ -359,7 +372,7 @@ contract AgentDemandTest is Test {
         uint256 id = _create(alice, 60_000);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         demand.finalize(id);
         assertFalse(demand.isRefundable(id, alice));
     }
@@ -370,7 +383,7 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 50_000, 1);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev1"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         uint256 firstNonce = demand.submissionNonce(id);
 
         vm.warp(block.timestamp + REVIEW + 1);
@@ -414,7 +427,7 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 50_000, 1);
         _submit(builder, id, "https://svc.example/kyb", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id); // 50k < 60k
+        demand.approveService(id, 1); // 50k < 60k
         vm.warp(block.timestamp + 8 days);
         vm.prank(alice);
         demand.refund(id);
@@ -573,7 +586,7 @@ contract AgentDemandTest is Test {
         vm.prank(builder);
         demand.submitService(id, "https://svc.example/kyb", keccak256("ev"), old, oldSig);
         vm.prank(alice);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         uint64 deadline = demand.getDemand(id).deadline;
         vm.prank(verifierAdmin);
         demand.setVerifier(vm.addr(0x5678));
@@ -599,7 +612,7 @@ contract AgentDemandTest is Test {
         (,,, bool rejected) = demand.getSupport(id, alice);
         assertFalse(rejected);
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 2);
         demand.finalize(id);
         assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Fulfilled));
     }
@@ -639,7 +652,7 @@ contract AgentDemandTest is Test {
         target.createDemand(CAP, SPEC, 20_000, 1, _deadline(), 50_000);
         assertEq(target.nextDemandId(), 1);
         assertEq(target.totalEscrowed(), 0);
-        bad.configure(address(target), abi.encodeCall(target.approveService, (1)), false);
+        bad.configure(address(target), abi.encodeCall(target.approveService, (1, 1)), false);
         vm.prank(alice);
         target.createDemand(CAP, SPEC, 20_000, 1, _deadline(), 50_000);
         assertTrue(bad.attempted());
@@ -690,7 +703,7 @@ contract AgentDemandTest is Test {
         vm.prank(builder);
         target.submitService(1, "url", keccak256("ev"), a, abi.encodePacked(r, sigS, v));
         vm.prank(alice);
-        target.approveService(1);
+        target.approveService(1, 1);
         bad.configure(address(target), abi.encodeCall(target.finalize, (1)), true);
         vm.expectRevert(AgentDemand.UnsupportedToken.selector);
         target.finalize(1);
@@ -716,7 +729,7 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, remaining, 1);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         uint256 beforeBuilder = token.balanceOf(builder);
         uint256 beforeTreasury = token.balanceOf(treasury);
         demand.finalize(id);
@@ -735,7 +748,7 @@ contract AgentDemandTest is Test {
         uint256 id = demand.createDemand(CAP, SPEC, 20_000, 1, uint64(block.timestamp + 1 hours), 50_000);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         vm.warp(block.timestamp + 1 hours);
         assertLt(block.timestamp, demand.getDemand(id).reviewEndsAt);
         vm.prank(alice);
@@ -776,7 +789,7 @@ contract AgentDemandTest is Test {
         vm.prank(builder);
         demand.submitService(id, "url", keccak256("ev"), first, sig);
         vm.prank(alice);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         demand.reopen(id);
         vm.prank(builder);
         vm.expectRevert(AgentDemand.InvalidAttestation.selector);
@@ -807,7 +820,7 @@ contract AgentDemandTest is Test {
             _submit(builder, id, "url", keccak256("ev"));
             assertEq(demand.submissionNonce(id), i + 1);
             vm.prank(alice);
-            demand.rejectService(id);
+            demand.rejectService(id, i + 1);
             demand.reopen(id);
             assertEq(demand.submissionNonce(id), i + 1);
         }
@@ -822,7 +835,7 @@ contract AgentDemandTest is Test {
         vm.expectRevert(AgentDemand.QuorumNotReached.selector);
         demand.finalize(id);
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         assertEq(demand.approvalWeight(id), 60_000);
         uint256 beforeBuilder = token.balanceOf(builder);
         uint256 beforeTreasury = token.balanceOf(treasury);
@@ -845,7 +858,7 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 40_000, 1);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         AgentDemand.Demand memory beforeRotation = demand.getDemand(id);
         vm.expectEmit(true, true, false, true, address(demand));
         emit VerifierRotated(verifier, carol);
@@ -981,10 +994,10 @@ contract AgentDemandTest is Test {
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(verifier);
         vm.expectRevert(AgentDemand.NotSupporter.selector);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(verifierAdmin);
         vm.expectRevert(AgentDemand.NotSupporter.selector);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(verifierAdmin);
         vm.expectRevert(AgentDemand.QuorumNotReached.selector);
         demand.finalize(id);
@@ -1031,7 +1044,7 @@ contract AgentDemandTest is Test {
         uint256 id = demand.createDemand(CAP, SPEC, 20_000, 1, uint64(block.timestamp + 1 hours), 50_000);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         vm.warp(block.timestamp + 1 hours);
         vm.expectRevert(AgentDemand.DeadlinePassed.selector);
         demand.reopen(id);
@@ -1045,9 +1058,9 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 40_001, 1);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(bob);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         assertEq(demand.approvalWeight(id), 59_999);
         assertEq(demand.getDemand(id).approvalRequired, 60_000);
         vm.expectRevert(AgentDemand.QuorumNotReached.selector);
@@ -1060,18 +1073,18 @@ contract AgentDemandTest is Test {
         demand.supportDemand(id, 50_000, 1);
         _submit(builder, id, "url", keccak256("ev"));
         vm.prank(alice);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(alice);
         vm.expectRevert(AgentDemand.AlreadyApproved.selector);
-        demand.approveService(id);
+        demand.approveService(id, 1);
         vm.prank(alice);
         vm.expectRevert(AgentDemand.ConflictingVote.selector);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         vm.prank(bob);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         vm.prank(bob);
         vm.expectRevert(AgentDemand.AlreadyRejected.selector);
-        demand.rejectService(id);
+        demand.rejectService(id, 1);
         assertEq(demand.approvalWeight(id), 50_000);
         assertEq(demand.rejectionWeight(id), 50_000);
     }
@@ -1092,5 +1105,213 @@ contract AgentDemandTest is Test {
         vm.prank(alice);
         demand.refund(id);
         assertEq(demand.totalEscrowed(), 0);
+    }
+
+    function test_CumulativeCallsExceedUint64() public {
+        vm.prank(alice);
+        uint256 id = demand.createDemand(CAP, SPEC, 20_000, type(uint64).max, _deadline(), MIN_COMMIT);
+        vm.prank(alice);
+        demand.supportDemand(id, MIN_COMMIT, type(uint64).max);
+        vm.prank(bob);
+        demand.supportDemand(id, MIN_COMMIT, type(uint64).max);
+        assertEq(demand.expectedCallsOf(id, alice), uint256(type(uint64).max) * 2);
+        assertEq(demand.getDemand(id).expectedCalls, uint256(type(uint64).max) * 3);
+        uint256 bobBalance = token.balanceOf(bob);
+        vm.prank(bob);
+        vm.expectRevert(AgentDemand.InvalidExpectedCalls.selector);
+        demand.supportDemand(id, MIN_COMMIT, 0);
+        assertEq(demand.commitmentOf(id, bob), MIN_COMMIT);
+        assertEq(demand.expectedCallsOf(id, bob), type(uint64).max);
+        assertEq(demand.getDemand(id).committed, 3 * MIN_COMMIT);
+        assertEq(demand.getDemand(id).expectedCalls, uint256(type(uint64).max) * 3);
+        assertEq(demand.getDemand(id).supporterCount, 2);
+        assertEq(token.balanceOf(bob), bobBalance);
+        assertEq(token.balanceOf(address(demand)), 3 * MIN_COMMIT);
+        assertEq(demand.totalEscrowed(), 3 * MIN_COMMIT);
+
+        CallbackUSD bad = new CallbackUSD();
+        demand =
+            new AgentDemand(address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        bad.mint(alice, 100_000);
+        bad.mint(bob, 100_000);
+        vm.prank(alice);
+        bad.approve(address(demand), type(uint256).max);
+        vm.prank(bob);
+        bad.approve(address(demand), type(uint256).max);
+        vm.prank(alice);
+        id = demand.createDemand(CAP, SPEC, 20_000, type(uint64).max, _deadline(), MIN_COMMIT);
+        bad.configure(address(0), "", true);
+        vm.prank(bob);
+        vm.expectRevert(AgentDemand.UnsupportedToken.selector);
+        demand.supportDemand(id, MIN_COMMIT, type(uint64).max);
+        assertEq(demand.commitmentOf(id, bob), 0);
+        assertEq(demand.expectedCallsOf(id, bob), 0);
+        assertEq(demand.getDemand(id).committed, MIN_COMMIT);
+        assertEq(demand.getDemand(id).expectedCalls, type(uint64).max);
+        assertEq(demand.getDemand(id).supporterCount, 1);
+        assertEq(bad.balanceOf(bob), 100_000);
+        assertEq(bad.balanceOf(address(demand)), MIN_COMMIT);
+        assertEq(demand.totalEscrowed(), MIN_COMMIT);
+    }
+
+    function test_StaleVoteBytesCannotVoteOnNextSubmission() public {
+        uint256 id = _create(alice, 50_000);
+        vm.prank(bob);
+        demand.supportDemand(id, 50_000, 1);
+        _submit(builder, id, "url1", keccak256("ev1"));
+        bytes memory oldApprove = abi.encodeCall(demand.approveService, (id, 1));
+        bytes memory oldReject = abi.encodeCall(demand.rejectService, (id, 1));
+        vm.prank(bob);
+        demand.rejectService(id, 1);
+        demand.reopen(id);
+        _submit(bob, id, "url2", keccak256("ev2"));
+        vm.prank(alice);
+        (bool ok, bytes memory result) = address(demand).call(oldApprove);
+        assertFalse(ok);
+        assertEq(bytes4(result), AgentDemand.SubmissionNonceMismatch.selector);
+        vm.prank(alice);
+        (ok, result) = address(demand).call(oldReject);
+        assertFalse(ok);
+        assertEq(bytes4(result), AgentDemand.SubmissionNonceMismatch.selector);
+        assertEq(demand.approvalWeight(id), 0);
+        assertEq(demand.rejectionWeight(id), 0);
+        uint256 snapshot = vm.snapshotState();
+        vm.prank(alice);
+        demand.rejectService(id, 2);
+        assertEq(demand.rejectionWeight(id), 50_000);
+        vm.revertToState(snapshot);
+        vm.prank(alice);
+        demand.approveService(id, 2);
+        assertEq(demand.approvalWeight(id), 50_000);
+    }
+
+    function test_CancelSettlementGraceAndRefunds() public {
+        uint256 id = _create(alice, 60_000);
+        vm.prank(bob);
+        demand.supportDemand(id, 40_000, 1);
+        _submit(builder, id, "url", keccak256("ev"));
+        vm.expectRevert(AgentDemand.QuorumNotReached.selector);
+        demand.cancelSettlement(id);
+        vm.prank(alice);
+        demand.approveService(id, 1);
+        uint256 boundary = uint256(demand.getDemand(id).reviewEndsAt) + 7 days;
+        vm.warp(boundary - 1);
+        vm.expectRevert(AgentDemand.SettlementGraceActive.selector);
+        demand.cancelSettlement(id);
+        uint256 snapshot = vm.snapshotState();
+        demand.finalize(id);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
+        demand.cancelSettlement(id);
+        vm.revertToState(snapshot);
+        vm.warp(boundary);
+        vm.expectRevert(AgentDemand.SettlementGraceExpired.selector);
+        demand.finalize(id);
+        uint256 atBoundary = vm.snapshotState();
+        vm.warp(boundary + 1);
+        vm.expectRevert(AgentDemand.SettlementGraceExpired.selector);
+        demand.finalize(id);
+        demand.cancelSettlement(id);
+        vm.revertToState(atBoundary);
+        vm.prank(carol);
+        demand.cancelSettlement(id);
+        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Cancelled));
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
+        demand.cancelSettlement(id);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
+        demand.finalize(id);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
+        demand.reopen(id);
+        vm.prank(alice);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
+        demand.supportDemand(id, MIN_COMMIT, 1);
+        AgentDemand.ValidationAttestation memory empty;
+        vm.prank(builder);
+        vm.expectRevert(AgentDemand.InvalidStatus.selector);
+        demand.submitService(id, "url", keccak256("ev"), empty, "");
+        _create(carol, MIN_COMMIT);
+        uint256 replacement = demand.activeDemandByKey(_key());
+        vm.prank(alice);
+        demand.refund(id);
+        vm.prank(alice);
+        vm.expectRevert(AgentDemand.NothingToRefund.selector);
+        demand.refund(id);
+        vm.warp(boundary + 1);
+        vm.prank(bob);
+        demand.refund(id);
+        assertEq(uint8(demand.getDemand(id).status), uint8(AgentDemand.Status.Cancelled));
+        assertEq(demand.activeDemandByKey(_key()), replacement);
+        assertGe(token.balanceOf(address(demand)), demand.totalEscrowed());
+    }
+
+    function test_BlockedBuilderAndTreasuryAllowCancellation() public {
+        for (uint256 i; i < 2; ++i) {
+            address blocked = i == 0 ? builder : treasury;
+            BlockedUSD bad = new BlockedUSD(blocked);
+            demand = new AgentDemand(
+                address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin
+            );
+            bad.mint(alice, 100_000);
+            bad.mint(bob, 100_000);
+            vm.prank(alice);
+            bad.approve(address(demand), type(uint256).max);
+            vm.prank(bob);
+            bad.approve(address(demand), type(uint256).max);
+            uint256 id = _create(alice, 60_000);
+            vm.prank(bob);
+            demand.supportDemand(id, 40_000, 1);
+            _submit(builder, id, "url", keccak256("ev"));
+            vm.prank(alice);
+            demand.approveService(id, 1);
+            vm.expectRevert();
+            demand.finalize(id);
+            assertEq(demand.getDemand(id).committed, 100_000);
+            assertEq(bad.balanceOf(builder), 0);
+            assertEq(bad.balanceOf(treasury), 0);
+            assertEq(bad.balanceOf(address(demand)), 100_000);
+            assertEq(demand.totalEscrowed(), 100_000);
+            vm.expectRevert();
+            demand.finalize(id);
+            vm.warp(uint256(demand.getDemand(id).reviewEndsAt) + 7 days);
+            demand.cancelSettlement(id);
+            vm.prank(alice);
+            demand.refund(id);
+            assertEq(bad.balanceOf(alice), 100_000);
+            assertEq(demand.totalEscrowed(), 40_000);
+            assertEq(bad.balanceOf(address(demand)), 40_000);
+            vm.prank(bob);
+            demand.refund(id);
+            assertEq(bad.balanceOf(bob), 100_000);
+            assertEq(demand.totalEscrowed(), 0);
+            assertEq(bad.balanceOf(address(demand)), 0);
+        }
+    }
+
+    function test_CancelledRefundRollbackAndReentrancy() public {
+        CallbackUSD bad = new CallbackUSD();
+        demand =
+            new AgentDemand(address(bad), treasury, FEE_BPS, QUORUM_BPS, MIN_COMMIT, REVIEW, verifier, verifierAdmin);
+        bad.mint(alice, 100_000);
+        vm.prank(alice);
+        bad.approve(address(demand), type(uint256).max);
+        uint256 id = _create(alice, 60_000);
+        _submit(builder, id, "url", keccak256("ev"));
+        vm.prank(alice);
+        demand.approveService(id, 1);
+        vm.warp(uint256(demand.getDemand(id).reviewEndsAt) + 7 days);
+        demand.cancelSettlement(id);
+        bad.configure(address(demand), abi.encodeCall(demand.refund, (id)), true);
+        vm.prank(alice);
+        vm.expectRevert();
+        demand.refund(id);
+        assertEq(demand.commitmentOf(id, alice), 60_000);
+        assertEq(demand.totalEscrowed(), 60_000);
+        assertEq(bad.balanceOf(address(demand)), 60_000);
+        bad.configure(address(demand), abi.encodeCall(demand.refund, (id)), false);
+        vm.prank(alice);
+        demand.refund(id);
+        assertTrue(bad.attempted());
+        assertFalse(bad.succeeded());
+        assertEq(demand.totalEscrowed(), 0);
+        assertEq(bad.balanceOf(address(demand)), 0);
     }
 }

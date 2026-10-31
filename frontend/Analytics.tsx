@@ -13,6 +13,7 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: "#ae5e4d",
   FULFILLED: "#7b9d58",
   CLOSED: "#7b8768",
+  CANCELLED: "#7b8768",
   UNKNOWN: "#98a18b",
 };
 

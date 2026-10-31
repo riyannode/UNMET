@@ -13,6 +13,7 @@ import {
   toBytes,
   type Address,
   type Hash,
+  type Hex,
   type Log,
   type PublicClient,
 } from "viem";
@@ -92,6 +93,7 @@ import { AGENT_DEMAND_ABI as DEMAND_ABI, ERC20_ABI } from "../shared/abi.ts";
 
 export type DemandView = {
   demandId: bigint;
+  submissionNonce: bigint;
   creator: Address;
   builder: Address;
   maxUnitPrice: bigint;
@@ -281,17 +283,18 @@ async function ensureChain(deployment: EscrowDeployment, session?: WalletSession
   await assertWalletSession({ ...currentSession, account }, account, deployment.chainId);
 }
 
-function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
+function statusName(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "CANCELLED" | "UNKNOWN" {
   if (status === 0) return "OPEN";
   if (status === 1) return "SUBMITTED";
   if (status === 2) return "FULFILLED";
   if (status === 3) return "CLOSED";
+  if (status === 4) return "CANCELLED";
   return "UNKNOWN";
 }
 
 export function effectiveStatus(demand: DemandView, now = BigInt(Math.floor(Date.now() / 1000))): string {
   const base = statusName(demand.status);
-  if (base === "FULFILLED" || base === "CLOSED") return base;
+  if (base === "FULFILLED" || base === "CLOSED" || base === "CANCELLED") return base;
   if (base === "SUBMITTED" && demand.quorumReached) return "READY";
   if (now >= demand.deadline) {
     if (base === "OPEN") return "EXPIRED";
@@ -301,24 +304,26 @@ export function effectiveStatus(demand: DemandView, now = BigInt(Math.floor(Date
   return base;
 }
 
-async function readDemandWithClient(
+export async function readDemandWithClient(
   client: PublicClient,
   demandId: bigint,
   blockNumber?: bigint,
   contract: Address = requireContract(),
 ): Promise<DemandView> {
-  const atBlock = blockNumber === undefined ? {} : { blockNumber };
-  const [raw, progress, rejection] = await Promise.all([
+  const atBlock = { blockNumber: blockNumber ?? await client.getBlockNumber() };
+  const [raw, nonce, progress, rejection] = await Promise.all([
     client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "getDemand", args: [demandId], ...atBlock }),
+    client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "submissionNonce", args: [demandId], ...atBlock }),
     client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "approvalProgress", args: [demandId], ...atBlock }),
     client.readContract({ address: contract, abi: DEMAND_ABI, functionName: "rejectionProgress", args: [demandId], ...atBlock }),
   ]);
-  const d = raw as Omit<DemandView, "demandId" | "approvalWeight" | "quorumReached" | "rejectionWeight" | "rejectionThreshold" | "candidateRejected">;
+  const d = raw as Omit<DemandView, "demandId" | "submissionNonce" | "approvalWeight" | "quorumReached" | "rejectionWeight" | "rejectionThreshold" | "candidateRejected">;
   const p = progress as readonly [bigint, bigint, boolean];
   const r = rejection as readonly [bigint, bigint, boolean];
   return {
     ...d,
     demandId,
+    submissionNonce: nonce,
     supporterCount: Number(d.supporterCount),
     status: Number(d.status),
     approvalWeight: p[0],
@@ -502,7 +507,7 @@ async function wait(
 
 async function writeDemand(
   account: Address,
-  functionName: "createDemand" | "supportDemand" | "submitService" | "approveService" | "rejectService" | "finalize" | "reopen" | "refund",
+  functionName: "createDemand" | "supportDemand" | "submitService" | "approveService" | "rejectService" | "finalize" | "cancelSettlement" | "reopen" | "refund",
   args: readonly unknown[],
   session: WalletSession,
   stage: TransactionStage = "action",
@@ -649,20 +654,25 @@ export async function submitService(demandId: bigint, serviceUrl: string, eviden
   return hash;
 }
 
-export async function approveService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+export async function approveService(demandId: bigint, nonce: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
   const deployment = selectedDeployment;
   const { account, session } = await requireAccount(deployment, originatingSession);
-  return writeDemand(account, "approveService", [demandId], session, "action", onUpdate, undefined, deployment);
+  return writeDemand(account, "approveService", [demandId, nonce], session, "action", onUpdate, undefined, deployment);
 }
-export async function rejectService(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+export async function rejectService(demandId: bigint, nonce: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
   const deployment = selectedDeployment;
   const { account, session } = await requireAccount(deployment, originatingSession);
-  return writeDemand(account, "rejectService", [demandId], session, "action", onUpdate, undefined, deployment);
+  return writeDemand(account, "rejectService", [demandId, nonce], session, "action", onUpdate, undefined, deployment);
 }
 export async function finalizeDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
   const deployment = selectedDeployment;
   const { account, session } = await requireAccount(deployment, originatingSession);
   return writeDemand(account, "finalize", [demandId], session, "action", onUpdate, undefined, deployment);
+}
+export async function cancelSettlement(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
+  const deployment = selectedDeployment;
+  const { account, session } = await requireAccount(deployment, originatingSession);
+  return writeDemand(account, "cancelSettlement", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 export async function reopenDemand(demandId: bigint, onUpdate?: TransactionUpdateHandler, originatingSession?: WalletSession): Promise<Hash> {
   const deployment = selectedDeployment;
@@ -675,6 +685,16 @@ export async function refundDemand(demandId: bigint, onUpdate?: TransactionUpdat
   return writeDemand(account, "refund", [demandId], session, "action", onUpdate, undefined, deployment);
 }
 
+export function validateVoteIntent(data: Hex, actionId?: string): void {
+  const decoded = decodeFunctionData({ abi: DEMAND_ABI, data });
+  if (decoded?.functionName === "approveService" || decoded?.functionName === "rejectService") {
+    const action = decoded.functionName === "approveService" ? "approve" : "reject";
+    if (actionId !== `${action}:${decoded.args[0]}:${decoded.args[1]}`) throw new Error("TRANSACTION_INTENT_MISMATCH");
+  } else if (actionId?.startsWith("approve:") || actionId?.startsWith("reject:")) {
+    throw new Error("TRANSACTION_INTENT_MISMATCH");
+  }
+}
+
 export async function verifyTransaction(
   stage: TransactionStage,
   hash: Hash,
@@ -684,6 +704,7 @@ export async function verifyTransaction(
   expectedContract: Address,
   onUpdate?: TransactionUpdateHandler,
   originatingSession?: WalletSession,
+  actionId?: string,
 ): Promise<Hash> {
   const session = await requireWalletSession(originatingSession ?? captureWalletSession(expectedWallet) ?? undefined);
   if (expectedChainId !== CHAIN_ID) throw new Error("CHAIN_WRONG_NETWORK");
@@ -696,6 +717,7 @@ export async function verifyTransaction(
     if (decoded.functionName !== "approve" || decoded.args[0].toLowerCase() !== deployment.contract.toLowerCase()) throw new Error("TRANSACTION_INTENT_MISMATCH");
   } else if (intent.to.toLowerCase() !== deployment.contract.toLowerCase()) throw new Error("TRANSACTION_INTENT_MISMATCH");
   const decoded = stage === "action" ? decodeFunctionData({ abi: DEMAND_ABI, data: intent.data }) : null;
+  if (stage === "action") validateVoteIntent(intent.data, actionId);
   let confirmedUpdate: Parameters<TransactionUpdateHandler>[0] | undefined;
   const transactionHash = await wait(hash, intent, stage, expectedWallet, expectedChainId, update => {
     if (decoded?.functionName === "submitService" && update.state === "confirmed") confirmedUpdate = update;

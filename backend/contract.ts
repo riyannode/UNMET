@@ -149,11 +149,12 @@ export async function readRejectionProgress(client: PublicClient, contract: Addr
   }) as readonly [bigint, bigint, boolean];
 }
 
-export function statusLabel(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "UNKNOWN" {
+export function statusLabel(status: number): "OPEN" | "SUBMITTED" | "FULFILLED" | "CLOSED" | "CANCELLED" | "UNKNOWN" {
   if (status === 0) return "OPEN";
   if (status === 1) return "SUBMITTED";
   if (status === 2) return "FULFILLED";
   if (status === 3) return "CLOSED";
+  if (status === 4) return "CANCELLED";
   return "UNKNOWN";
 }
 

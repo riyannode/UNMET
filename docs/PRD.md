@@ -109,7 +109,7 @@ If any derived layer disagrees with chain state, chain state wins.
 Canonical file/name: `backend/AgentDemand.sol` / `AgentDemand`. The earlier implementation was experimental; historical deployment evidence does not establish a deployment of the canonical contract.
 
 Non-upgradeable. Immutable token, treasury, fee, quorum, min commitment and review period for MVP.
-Stored lifecycle states are `Open`, `Submitted`, `Fulfilled`, and `Closed`. Candidate rejection is tracked as review progress and a derived `REJECTED` status; it is not a separate stored state.
+Stored lifecycle states are `Open`, `Submitted`, `Fulfilled`, `Closed`, and `Cancelled`. Candidate rejection is tracked as review progress and a derived `REJECTED` status; it is not a separate stored state.
 
 Required actions:
 - `createDemand`
@@ -118,6 +118,7 @@ Required actions:
 - `approveService`
 - `rejectService`
 - `finalize`
+- `cancelSettlement`
 - `reopen`
 - `refund`
 - `getDemand`
@@ -154,7 +155,7 @@ No new support is allowed during review. Each supporter's weight is its pre-subm
 
 ### Fulfillment
 
-Anyone may finalize after the fixed approval quorum is reached. State is finalized before token transfers. Only `approvalWeight` is settled: the builder receives the approved amount less its 2% fee, and the treasury receives the fee. Funds from non-approvers are excluded and remain refundable. Builder payout plus fee therefore equals the approved amount, not the original review snapshot or total committed pool.
+Anyone may finalize after the fixed approval quorum is reached and before seven days after review end. At or after that boundary anyone may cancel settlement; all remaining supporters can individually refund, and Cancelled remains terminal. Votes specify the intended submission nonce. State is finalized before token transfers. Only `approvalWeight` is settled: the builder receives the approved amount less its 2% fee, and the treasury receives the fee. Funds from non-approvers are excluded and remain refundable. Builder payout plus fee therefore equals the approved amount, not the original review snapshot or total committed pool.
 
 ### Failed review
 
@@ -162,7 +163,7 @@ If rejection weight makes quorum impossible, anyone can reopen while the demand 
 
 ### Refund
 
-Refunds are pull-based and available only when `isRefundable()` is true. This includes non-approver commitments remaining after fulfillment and supporter commitments after a demand expires or an unapproved review ends. Each supporter can withdraw only their own remaining commitment; there is no global refund loop. A refund decreases `committed` and `totalEscrowed`, and clears that wallet's own commitment and expected calls. Aggregate `supporterCount` and `expectedCalls` remain historical. When the last escrow entitlement is refunded from a non-fulfilled demand, state becomes `Closed`; a `Fulfilled` demand remains `Fulfilled` after its final eligible non-approver refund.
+Refunds are pull-based and available only when `isRefundable()` is true. This includes non-approver commitments remaining after fulfillment and supporter commitments after a demand expires or an unapproved review ends. Each supporter can withdraw only their own remaining commitment; there is no global refund loop. A refund decreases `committed` and `totalEscrowed`, and clears that wallet's own commitment and expected calls. Aggregate `supporterCount` and `expectedCalls` remain historical. When the last escrow entitlement is refunded from an expired unfulfilled demand, state becomes `Closed`; a `Cancelled` demand remains `Cancelled`, a `Fulfilled` demand remains `Fulfilled` after its final eligible non-approver refund.
 
 Expired exact demand may be replaced without waiting for every old supporter to refund; old-demand cleanup must not clear a newer active replacement.
 

@@ -1,6 +1,6 @@
 import { effectiveStatus, type DemandView } from "./contract";
 
-const STATUS_ORDER = ["OPEN", "SUBMITTED", "READY", "EXPIRED", "REJECTED", "FULFILLED", "CLOSED", "UNKNOWN"];
+const STATUS_ORDER = ["OPEN", "SUBMITTED", "READY", "EXPIRED", "REJECTED", "FULFILLED", "CLOSED", "CANCELLED", "UNKNOWN"];
 
 type AnalyticsStatusCount = { status: string; count: number };
 

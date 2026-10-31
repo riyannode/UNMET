@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { encodeFunctionData, type Address, type Hash, type Hex } from "viem";
-import { approveService, captureWalletSession, createDemand, ERC20_ABI, setReownWalletProvider, supportDemand, verifyTransaction } from "../contract";
+import { decodeFunctionData, encodeFunctionData, type Address, type Hash, type Hex } from "viem";
+import { approveService, rejectService, validateVoteIntent, DEMAND_ABI, captureWalletSession, createDemand, ERC20_ABI, setReownWalletProvider, supportDemand, verifyTransaction } from "../contract";
 import { errorMessage } from "../errors";
 import {
   isTransactionIntentMatch,
@@ -162,6 +162,19 @@ function validCreateInput() {
     commitment: "20",
   };
 }
+
+describe("vote intent", () => {
+  test("binds encoded votes to their proposal nonce during recovery", () => {
+    for (const [functionName, action] of [["approveService", "approve"], ["rejectService", "reject"]] as const) {
+      const data = encodeFunctionData({ abi: DEMAND_ABI, functionName, args: [1n, 2n] });
+      expect(() => validateVoteIntent(data, `${action}:1:2`)).not.toThrow();
+      expect(() => validateVoteIntent(data, `${action}:1:1`)).toThrow("TRANSACTION_INTENT_MISMATCH");
+      expect(() => validateVoteIntent(data, `${action}:1`)).toThrow("TRANSACTION_INTENT_MISMATCH");
+      const oldData = encodeFunctionData({ abi: [{type:"function", name:functionName, stateMutability:"nonpayable", inputs:[{name:"demandId",type:"uint256"}], outputs:[]}], functionName, args:[1n] });
+      expect(() => validateVoteIntent(oldData, `${action}:1:2`)).toThrow();
+    }
+  });
+});
 
 describe("transaction lifecycle", () => {
   test("reports broadcast before receipt and confirms with the receipt hash", async () => {
@@ -635,6 +648,38 @@ describe("transaction lifecycle", () => {
     ]);
   });
 
+  test("writes the intended proposal nonce in both vote transactions", async () => {
+    const calls: Hex[] = [];
+    const base = testProvider();
+    const provider = {
+      request: async (request: { method: string; params?: readonly unknown[] }) => {
+        if (request.method === "eth_sendTransaction") {
+          const tx = request.params?.[0] as { data: Hex };
+          calls.push(tx.data);
+          return transactionHash;
+        }
+        return base.request(request);
+      },
+    };
+    setReownWalletProvider(provider, wallet);
+    await approveService(1n, 7n);
+    await rejectService(1n, 8n);
+    expect(decodeFunctionData({ abi: DEMAND_ABI, data: calls[0] })).toMatchObject({ functionName: "approveService", args: [1n, 7n] });
+    expect(decodeFunctionData({ abi: DEMAND_ABI, data: calls[1] })).toMatchObject({ functionName: "rejectService", args: [1n, 8n] });
+  });
+
+  test("recovery rejects mismatched and obsolete vote intent before receipt or submission", async () => {
+    const signing: string[] = [];
+    setReownWalletProvider(testProvider(() => [wallet], () => "0x7a0", signing), wallet);
+    const current = encodeFunctionData({ abi: DEMAND_ABI, functionName: "approveService", args: [1n, 2n] });
+    const old = encodeFunctionData({ abi: [{type:"function", name:"approveService", stateMutability:"nonpayable", inputs:[{name:"demandId",type:"uint256"}], outputs:[]}], functionName:"approveService", args:[1n] });
+    for (const data of [current, old]) {
+      await expect(verifyTransaction("action", originalHash, { to, data, value: 0n }, wallet, 1952, to, undefined, undefined, "approve:1:1")).rejects.toThrow();
+    }
+    expect(receiptReads).toBe(0);
+    expect(signing).toEqual([]);
+  });
+
   test("continues monitoring and records an already-broadcast transaction after wallet changes", async () => {
     const signingRequests: string[] = [];
     const updates: Array<{ state: string; hash: Hash }> = [];
@@ -642,7 +687,7 @@ describe("transaction lifecycle", () => {
     const providerA = testProvider(() => [wallet], () => "0x7a0", signingRequests);
     setReownWalletProvider(providerA);
     const session = captureWalletSession(wallet);
-    const result = await approveService(1n, ({ state, hash }) => {
+    const result = await approveService(1n, 1n, ({ state, hash }) => {
       updates.push({ state, hash });
       if (state === "broadcast") setReownWalletProvider(providerB);
     }, session ?? undefined);
@@ -666,7 +711,7 @@ describe("transaction lifecycle", () => {
       return "0x7a0";
     }, signingRequests);
     setReownWalletProvider(provider);
-    const pending = approveService(1n);
+    const pending = approveService(1n, 1n);
     await chainStarted.promise;
     setReownWalletProvider(testProvider(() => [otherWallet]));
     chainRead.resolve("0x7a0");
@@ -710,7 +755,7 @@ describe("transaction lifecycle", () => {
       },
     };
     setReownWalletProvider(provider, wallet);
-    const pending = approveService(1n);
+    const pending = approveService(1n, 1n);
     await fallbackStarted.promise;
     setReownWalletProvider(testProvider(), otherWallet);
     fallbackGate.resolve();

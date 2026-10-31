@@ -135,7 +135,7 @@ All fields are optional; `{}` uses defaults. Body must be a JSON object, with no
 Rules:
 - `minBounty`: non-negative decimal string, maximum configured escrow-token decimals
 - `minSupporters`: uint32-safe integer, default `1`
-- `status`: `open | submitted | ready | rejected | expired | fulfilled | closed`, case-insensitive (default: `open`)
+- `status`: `open | submitted | ready | rejected | expired | fulfilled | closed | cancelled`, case-insensitive (default: `open`)
 - `sort`: `bounty | supporters | calls | deadline | score`
 - `limit`: integer `1..50`, default `10`
 
@@ -219,7 +219,7 @@ All existing opportunity fields and request defaults are preserved. Additions ar
 | --- | --- |
 | `escrowPerExpectedCall` | `currentEscrowAtomic / expectedCalls`, integer division rounded down, then formatted with the configured token decimals. `null` when expected calls is zero. Units: **market tokens per historically expected call**, not service price, revenue, cost coverage or payout. Values below one atomic unit become zero formatted to the configured decimals. |
 | `timeRemainingSeconds` | `max(deadlineUnix - evaluationUnix, 0)`, exact decimal integer string. Still available for deadlines outside the ISO date range. |
-| `review` | `null` unless the underlying contract status is SUBMITTED, including derived READY, REJECTED or EXPIRED states. It is also null for FULFILLED and CLOSED. |
+| `review` | `null` unless the underlying contract status is SUBMITTED, including derived READY, REJECTED or EXPIRED states. It is also null for FULFILLED, CLOSED and CANCELLED. |
 | `review.approvalGap` | `max(approvalRequiredAtomic - approvalWeightAtomic, 0)`, formatted as market tokens with the configured decimals. Zero does not prove settlement occurred. |
 | `review.rejectionHeadroom` | `max(rejectionThresholdAtomic - rejectionWeightAtomic, 0)`, formatted as market tokens with the configured decimals: additional rejection weight that would block the candidate. |
 | `review.reviewTimeRemainingSeconds` | `max(reviewEndsAtUnix - evaluationUnix, 0)`, exact decimal integer string. |
@@ -234,12 +234,13 @@ Open proposal availability, at-most-one-day deadline urgency, candidate/review s
 
 ## Derived status
 
-Stored contract states are `OPEN`, `SUBMITTED`, `FULFILLED`, `CLOSED`.
+Stored contract states are `OPEN`, `SUBMITTED`, `FULFILLED`, `CLOSED`, `CANCELLED`.
 
 API/UI additionally derive:
 - `READY`: submitted and fixed approval quorum reached
 - `REJECTED`: enough rejection weight makes approval quorum mathematically impossible
 - `EXPIRED`: deadline passed and no successful path is pending
+- `CANCELLED`: quorum-approved settlement was cancelled at or after seven days from review end; all remaining supporters may refund.
 - `CLOSED`: all refundable escrow has been withdrawn from a non-fulfilled demand; `FULFILLED` remains `FULFILLED` after eligible non-approver refunds, including the final refund.
 
 During review, `rejectService` records a supporter's pre-submission commitment as rejection weight. A supporter can approve or reject once for the current submission nonce, but cannot do both. `rejectionWeight >= reviewCommitted - approvalRequired + 1` marks the candidate rejected and permits immediate reopen while the demand deadline is active. Reopening emits `SubmissionRejected`, clears the candidate and review vote progress, and returns the demand to `OPEN`.

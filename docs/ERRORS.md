@@ -163,7 +163,10 @@ Wallet transaction recovery also distinguishes `broadcast`, `confirmed`, `revert
 | `AlreadyApproved` | supporter already approved this submission nonce |
 | `AlreadyRejected` | supporter already rejected this submission nonce |
 | `ConflictingVote` | supporter tried to approve and reject the same submission |
-| `QuorumNotReached` | finalize attempted below fixed threshold |
+| `QuorumNotReached` | settlement or cancellation attempted below fixed threshold |
+| `SubmissionNonceMismatch` | vote targets a different proposal nonce |
+| `SettlementGraceExpired` | finalization attempted at or after the settlement grace boundary |
+| `SettlementGraceActive` | cancellation attempted before the settlement grace boundary |
 | `NothingToRefund` | caller has no currently refundable commitment |
 | `InvalidEvidence` | zero evidence hash |
 | `InvalidAttestation` | attestation binding, time interval or canonical current-verifier signature is invalid; nonce is not consumed |

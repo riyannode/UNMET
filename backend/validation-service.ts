@@ -14,7 +14,7 @@ export const validationReadAbi = [
     { name: "creator", type: "address" }, { name: "builder", type: "address" },
     { name: "maxUnitPrice", type: "uint96" }, { name: "committed", type: "uint128" },
     { name: "reviewCommitted", type: "uint128" }, { name: "approvalRequired", type: "uint128" },
-    { name: "expectedCalls", type: "uint64" }, { name: "deadline", type: "uint64" },
+    { name: "expectedCalls", type: "uint256" }, { name: "deadline", type: "uint64" },
     { name: "reviewEndsAt", type: "uint64" }, { name: "supporterCount", type: "uint32" },
     { name: "status", type: "uint8" }, { name: "capability", type: "string" },
     { name: "specification", type: "string" }, { name: "serviceUrl", type: "string" },
