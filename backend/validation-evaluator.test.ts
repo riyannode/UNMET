@@ -73,7 +73,7 @@ describe("validation evaluator", () => {
   });
   test("Mainnet USDC denomination rejects stablecoin and network equivalence", () => {
     expect(policy.demandPriceAsset).toEqual({ network: "eip155:196", asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", decimals: 6 });
-    for (const asset of ["0x779ded0c9e1022225f8e0630b35a9b54be713736", "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", "0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3"]) {
+    for (const asset of ["0x779ded0c9e1022225f8e0630b35a9b54be713736", "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", "0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3", "0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d"]) {
       expect(() => run([{ ...offer, asset }])).toThrow("UNSUPPORTED_PRICE_COMPARISON");
       expect(run([{ ...offer, asset }, offer]).selectedOfferIndex).toBe(1);
     }

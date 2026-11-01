@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import fixture from "./fixtures/validation.json";
 import gate0Policy from "../docs/gate0-testnet-policy.json";
 import { SERVICE_PRICE_ASSET } from "../shared/service-price";
@@ -21,7 +22,22 @@ test("published Gate-0 deployment resolves the reviewed Mainnet USDC policy", ()
   const resolved = resolvePolicy(config, gate0Policy.escrowChainId, gate0Policy.escrowContract, "eip155:196");
   expect<unknown>(resolved?.policy).toEqual(gate0Policy);
   expect(gate0Policy.demandPriceAsset).toEqual(SERVICE_PRICE_ASSET);
-  expect(resolved && validationPolicyId(resolved.policy)).toBe("0x7e74b01782c3851842b7520000058814e32eb3bfce82872e09b08e2f6faa6fd4");
+  expect(resolved && validationPolicyId(resolved.policy)).toBe("0xadd7277f7b08fa5cb3e56d045ff684567d708451e01dcd1ff36f9c6254c2d783");
+  expect(resolvePolicy(config, "1952", "0x57bdd53eaabda18c81afea1dfcac30b15bd58e99", "eip155:196")).toBeUndefined();
+});
+test("acceptance environment binds faucet escrow separately from Mainnet service prices", () => {
+  const env = new Map(readFileSync(new URL("../.env.example", import.meta.url), "utf8").split("\n")
+    .filter(line => line && !line.startsWith("#")).map(line => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+  expect(env.get("CHAIN_ID")).toBe(gate0Policy.escrowChainId);
+  expect(env.get("VITE_CHAIN_ID")).toBe(gate0Policy.escrowChainId);
+  expect(env.get("DEMAND_DEPLOY_BLOCK")).toBe("45074702");
+  for (const prefix of ["", "VITE_"]) {
+    expect(env.get(`${prefix}DEMAND_CONTRACT`)).toBe(gate0Policy.escrowContract);
+    expect(env.get(`${prefix}PAYMENT_TOKEN`)).toBe("0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d");
+    expect(env.get(`${prefix}PAYMENT_TOKEN_SYMBOL`)).toBe("USDC_TEST");
+    expect(env.get(`${prefix}PAYMENT_TOKEN_DECIMALS`)).toBe("6");
+    expect(env.get(`${prefix}PAYMENT_TOKEN`)).not.toBe(SERVICE_PRICE_ASSET.asset);
+  }
 });
 test("explicit deployment resolves only its exact enabled profile and hashes public fields", () => {
   const config = parse(input());

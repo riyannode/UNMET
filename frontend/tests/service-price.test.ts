@@ -5,7 +5,7 @@ import { SERVICE_PRICE_ASSET, SERVICE_PRICE_SYMBOL, formatServicePrice, parseSer
 test("Mainnet USDC service price keeps its own asset identity and precision", () => {
   expect(SERVICE_PRICE_ASSET).toEqual({ network: "eip155:196", asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", decimals: 6 });
   expect(SERVICE_PRICE_SYMBOL).toBe("USDC");
-  expect(SERVICE_PRICE_ASSET.asset).not.toBe("0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3");
+  expect(SERVICE_PRICE_ASSET.asset).not.toBe("0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d");
   expect(parseServicePrice("0.000001")).toBe(1n);
   expect(formatServicePrice(1234567n)).toBe("1.234567");
   expect(() => parseServicePrice("0.0000001")).toThrow();

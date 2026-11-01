@@ -1,7 +1,7 @@
 {
   "schemaVersion": "unmet-validation-policy-v2",
   "escrowChainId": "1952",
-  "escrowContract": "0x57bdd53eaabda18c81afea1dfcac30b15bd58e99",
+  "escrowContract": "0x4411c49f8a3efcc671a1b11e651cc82abeadace5",
   "profile": {
     "id": "okx-xlayer-mainnet",
     "enabled": true,
