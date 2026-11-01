@@ -14,7 +14,7 @@
     "@base-ui/react": "^1.9.0",
     "@reown/appkit": "^1.8.24",
     "@reown/appkit-adapter-ethers": "^1.8.24",
-    "ajv": "8.17.1",
+    "ajv": "8.18.0",
     "animejs": "^4.5.0",
     "canonicalize": "5.1.0",
     "class-variance-authority": "^0.7.1",
