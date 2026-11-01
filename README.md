@@ -18,7 +18,7 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 | Native `bun:sqlite` | Self-hosted x402 operation/idempotency and settlement records; **not the escrow database** |
 | Caddy + Docker Compose | Static frontend, reverse proxy and persistent payment volume |
 
-AgentDemand is the canonical escrow source. G0.4 does not deploy it or change live addresses. Existing frontend/backend and deployment tooling await canonical AgentDemand G0.5 integration; see [Architecture](docs/ARCHITECTURE.md#canonical-attestation).
+AgentDemand is the canonical escrow source. The current Testnet acceptance deployment and canonical frontend/backend integration use the attestation-gated AgentDemand flow described in [Architecture](docs/ARCHITECTURE.md#canonical-attestation). Gate-0 local acceptance is complete; target-host/VPS G0.6 verification remains a separate release gate.
 
 The chain index can be rebuilt. Payment records must survive restarts. The supported hosted path uses one Bun API replica with persistent SQLite behind Caddy. See [Architecture](docs/ARCHITECTURE.md). The active public site is [unmetxyz.my.id](https://unmetxyz.my.id). Deployment details and current operations live in [Self-hosting](docs/SELF_HOSTING.md) and [Runbook](docs/RUNBOOK.md).
 
