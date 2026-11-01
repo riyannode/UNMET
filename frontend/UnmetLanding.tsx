@@ -14,6 +14,7 @@ import { ROUTES } from "./routing.ts";
 import UnmetNavigation, { MiniBars, RollText } from "./UnmetNavigation.tsx";
 import MagicRings from "./MagicRings.tsx";
 import UnmetHowItWorks from "./UnmetHowItWorks.tsx";
+import FaqMiddleSimple from "./components/ui/faq-middle-simple.tsx";
 import UnmetFooter from "./UnmetFooter.tsx";
 import { useTheme } from "./theme.ts";
 import "./unmet-landing.css";
@@ -496,36 +497,6 @@ export default function UnmetLanding() {
               <MiniBars />
             </Link>
 
-            <div className="unmet-marquee" aria-label="UNMET ecosystem">
-              <div className="unmet-marquee-track jr-animate-marquee">
-                {MARQUEE_ITEMS.map((item) => (
-                  <span className="unmet-ecosystem-mark" key={"a-" + item.id}>
-                    {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
-                      <span className="unmet-ecosystem-token">
-                        <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
-                        <span>{item.label}</span>
-                      </span>
-                    ) : item.logo ? (
-                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
-                    ) : item.label}
-                  </span>
-                ))}
-              </div>
-              <div className="unmet-marquee-track jr-animate-marquee" aria-hidden="true">
-                {MARQUEE_ITEMS.map((item) => (
-                  <span className="unmet-ecosystem-mark" key={"b-" + item.id}>
-                    {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
-                      <span className="unmet-ecosystem-token">
-                        <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
-                        <span>{item.label}</span>
-                      </span>
-                    ) : item.logo ? (
-                      <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
-                    ) : item.label}
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
 
           <div className="unmet-right">
@@ -660,6 +631,37 @@ export default function UnmetLanding() {
       <img src="/images/unmet-market-infrastructure.png" alt="" width="2172" height="724" loading="lazy" />
     </div>
     <UnmetHowItWorks />
+    <div className="unmet-marquee" aria-label="UNMET ecosystem">
+      <div className="unmet-marquee-track jr-animate-marquee">
+        {MARQUEE_ITEMS.map((item) => (
+          <span className="unmet-ecosystem-mark" key={"a-" + item.id}>
+            {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
+              <span className="unmet-ecosystem-token">
+                <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
+                <span>{item.label}</span>
+              </span>
+            ) : item.logo ? (
+              <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
+            ) : item.label}
+          </span>
+        ))}
+      </div>
+      <div className="unmet-marquee-track jr-animate-marquee" aria-hidden="true">
+        {MARQUEE_ITEMS.map((item) => (
+          <span className="unmet-ecosystem-mark" key={"b-" + item.id}>
+            {(item.id === "usdc" || item.id === "usdg") && item.logo ? (
+              <span className="unmet-ecosystem-token">
+                <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={item.logo} alt="" />
+                <span>{item.label}</span>
+              </span>
+            ) : item.logo ? (
+              <img className={"unmet-ecosystem-logo unmet-logo-" + item.id} src={theme === "dark" && item.darkLogo ? item.darkLogo : item.logo} alt={item.label} />
+            ) : item.label}
+          </span>
+        ))}
+      </div>
+    </div>
+    <FaqMiddleSimple />
     <UnmetFooter />
     </>
   );
