@@ -36,6 +36,16 @@
 		root * /srv
 		file_server
 	}
+	handle /v1/x402/validate {
+		reverse_proxy {$VALIDATION_UPSTREAM:api:8787} {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Request-ID ""
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 90s
+			}
+		}
+	}
 	@api path /v1 /v1/* /health /ready /live
 	handle @api {
 		reverse_proxy api:8787 {

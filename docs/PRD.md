@@ -45,7 +45,7 @@ A funded demand signal is stronger than a poll, Discord request, failed search, 
 ## Users
 
 ### Requester/supporter agent
-Creates or supports a capability with the selected deployment's escrow token and expected usage. The current product is USDC-first on X Layer Testnet (`1952`); the canonical contract must be separately deployed before writes are available.
+Creates or supports a capability with the selected deployment's escrow token and expected usage. The reviewed protocol acceptance deployment uses faucet `USDC_TEST` on X Layer Testnet (`1952`), pinned by `.env.example` and the public Gate-0 policy. It does not establish Circle native-USDC acceptance.
 
 ### Builder
 Finds funded gaps and produces a reusable service matching the requirement.
@@ -62,10 +62,12 @@ A public funded demand record contains:
 - expected calls
 - deadline
 - supporting wallet count
-- committed escrow bounty (configured USDC deployment)
+- committed escrow bounty (configured token; USDC_TEST for Testnet acceptance)
 - candidate service/evidence when submitted
 - fixed review threshold
 - lifecycle state
+
+`maxUnitPrice` is the maximum Mainnet USDC price per service call: `eip155:196` / `0xb6ceceab302e2e4948951ee7843fc24e92933061`, six decimals. It is independent from faucet USDC_TEST escrow collateral on chain 1952. Compare only exact network/contract/decimal identities; no stablecoin parity, bridge equivalence or conversion is implied.
 
 The system must say “supporting wallets,” not “unique users.”
 

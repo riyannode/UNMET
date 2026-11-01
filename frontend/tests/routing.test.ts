@@ -105,10 +105,10 @@ test("approved proposal describes settlement and cancelled refund eligibility", 
       account: address, busy: false, close: () => {}, closeLabel: "Close", run: async () => { throw new Error("unexpected transaction"); }, blockedActionIds: [],
     }));
     const active = render(1, false);
-    assert.match(active, /Approved \u00b7 commitment eligible for settlement/);
+    assert.match(active, /Approval recorded \u00b7 commitment eligible for settlement/);
     assert.doesNotMatch(active, /Settlement cancelled/);
     const cancelled = render(4, true);
-    assert.doesNotMatch(cancelled, /Approved \u00b7 commitment eligible for settlement/);
+    assert.doesNotMatch(cancelled, /Approval recorded \u00b7 commitment eligible for settlement/);
     assert.match(cancelled, /Settlement cancelled \u00b7 remaining commitment refundable/);
     assert.doesNotMatch(render(4, false, 0n), /remaining commitment refundable/);
   `;

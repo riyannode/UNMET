@@ -213,7 +213,6 @@ body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: clip; backgro
 .unmet-workspace-content :focus-visible { outline: 2px solid var(--signal-glow); outline-offset: 3px; }
 .unmet-workspace-content a { color: var(--signal-primary); text-underline-offset: 3px; }
 .unmet-workspace-content button, .unmet-workspace-content input, .unmet-workspace-content textarea { font: inherit; }
-.unmet-workspace-content button { color: inherit; }
 .unmet-workspace-content button:disabled { opacity: .48; cursor: not-allowed; }
 .unmet-workspace-content button:not(:disabled) { cursor: pointer; }
 .unmet-workspace-content code, .unmet-workspace-content .number { font-family: var(--mono); font-variant-numeric: tabular-nums; }

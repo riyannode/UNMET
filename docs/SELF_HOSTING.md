@@ -1,5 +1,60 @@
 # Self-hosting unmet
 
+## Gate-0 validator and signer
+
+The opt-in `compose.validation.yaml` overlay extends the same API/web images with one reusable validation image, run as two separate services. Use this topology locally and on a later approved VPS; target-host security still needs independent validation.
+
+```bash
+UNMET_ENV_FILE=.env.gate0-local # Use the reviewed private environment file on each host.
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml build
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml up -d --no-build --force-recreate --wait
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
+```
+
+Set `IMAGE_TAG` to the reviewed source plus a packaging revision. Local-only port overrides can publish only `127.0.0.1:18080:8080`; the base configuration also maps its configured HTTPS port. Do not reuse unrelated Compose projects or volumes.
+
+For every four-service operation, retain both Compose files, the same project name, private environment file and any host-specific `-f` overrides. Follow [update, rollback and stop](#update-rollback-and-stop) for the complete lifecycle. Whenever web is replaced, validator must also be recreated: it shares web's network namespace. The four-service `up --force-recreate` procedure deliberately recreates all four containers, including that pair, while preserving named volumes.
+
+The four services have these boundaries:
+
+| Service | Network / ingress | Private storage |
+| --- | --- | --- |
+| web | Only published ingress; Caddy serves frontend and proxies normal API traffic | Existing Caddy data/config volumes |
+| api | Application bridge, no published port | Its own durable payment volume and read-only OKX credential file |
+| validator | `network_mode: service:web`; unchanged `127.0.0.1:3001` listener | Read-only validator configuration, auth token and signer socket volume; no key or payment database |
+| signer | `network_mode: none`; authenticated Unix socket only | Read-only signer configuration, key and auth token; writable socket volume |
+
+Caddy routes exactly `/v1/x402/validate` to loopback only when the overlay sets `VALIDATION_UPSTREAM`. Without the overlay, that path retains the API upstream. Ordinary API routes still use `api:8787`. No internal service publishes a host port.
+
+All runtimes use read-only roots, dropped capabilities and `no-new-privileges`. Validator runs as `10001:1000`; signer as `1000:1000`. The image initializes the socket directory as owner/group `1000:1000`, mode `2770`; signer uses umask `007`. Validator mounts that volume read-only. Bind-mounted file ownership/modes must allow the configured container identities to read them; local Compose mounts preserve host ownership rather than remapping secrets.
+
+Keep these files outside the repository and build context, inside a mode-700 parent directory:
+
+| Compose input | Contents / host permissions |
+| --- | --- |
+| `OKX_CREDENTIALS_FILE` | Mode 600, UID 1000; JSON containing exactly nonempty `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE` strings |
+| `VALIDATION_CONFIG_FILE` | Mode 640, group 1000; parsed by `parseValidationConfig` |
+| `SIGNER_CONFIG_FILE` | Mode 600, UID 1000; exact signer deployment/policy allowlist and container file paths |
+| `SIGNER_AUTH_TOKEN_FILE` | Mode 640, group 1000; 64–256 lowercase hexadecimal bytes, no newline |
+| `SIGNER_PRIVATE_KEY_FILE` | Mode 600, UID 1000; raw verifier key, mounted only in signer |
+
+The overlay removes the three OKX secret environment values and uses `OKX_CREDENTIALS_PATH=/run/secrets/okx-credentials.json`. The API entrypoint loads them for initialization, then removes them from `process.env` in `finally`. The official facilitator retains its private credentials in process memory to authenticate requests. Missing or conflicting credential sources fail closed. The base two-service environment-based startup remains supported. No secret is a build argument or a `VITE_*` input.
+
+Validator configuration must use `/run/unmet-signer/signer.sock` and `/run/secrets/signer-auth.token`. Signer configuration must use those same paths plus `/run/secrets/operator.key`. Bind one exact lowercase escrow chain/contract/verifier and exact `validationPolicyId`; never use a wildcard. Its policy is SHA-256/JCS of the public envelope, excluding RPC URLs and secrets.
+
+For the separately approved local deployment on chain 1952 at `0x4411c49f8a3efcc671a1b11e651cc82abeadace5`, the owner selected Mainnet `eip155:196` / USDC `0xb6ceceab302e2e4948951ee7843fc24e92933061` / 6 decimals as the service-price denomination in [Future Implementation §4.6](FUTURE_IMPLEMENTATION.md#46-price-denomination-policy). Testnet faucet `USDC_TEST` (`0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d`, six decimals) is escrow collateral only; it is not Circle native USDC. The approved local profile uses x402 v2 `exact`, EIP-3009 with its standard default, `authorization` with its standard default, token domain `USDC` / `2`, builder-authorized nonzero receivers, same-asset integer comparison, and an owner-approved 300-second maximum payment authorization timeout. USD₮0, USDG, Permit2, other flows and other networks are not enabled. The separate 900-second attestation lifetime is unchanged.
+
+Evidence: [Circle's native USDC on X Layer listing](https://www.circle.com/blog/now-available-native-usdc-cctp-on-x-layer), [EVM exact EIP-3009 method/default](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md), and [x402 v2 authorization-flow default](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md#61-asset-transfer-methods-and-payment-flow-models). Read-only Mainnet calls verified chain 196, token bytecode, name, six decimals, and the `DOMAIN_SEPARATOR` reconstructed from `USDC` / `2` / chain / address. The installed official `@okxweb3/x402-core` 0.1.0 uses `https://web3.okx.com`; profile facilitator metadata identifies that public base URL only. The denomination and timeout are explicit owner decisions. They are not derived from a synthetic vector or Demand Intelligence billing.
+
+The public [Gate-0 Testnet policy envelope](gate0-testnet-policy.json) records the exact approved deployment/profile without RPC URLs, file paths or secrets. Its SHA-256/JCS `validationPolicyId` is `0xadd7277f7b08fa5cb3e56d045ff684567d708451e01dcd1ff36f9c6254c2d783`. Use its `demandPriceAsset` and `profile` unchanged when preparing the private validator config, adding the separately reviewed RPC URLs; the signer must allow only that exact deployment/policy tuple. Changing any public policy field requires review and a recomputed ID.
+
+Build frontend with `VITE_VALIDATION_URL=/v1/x402/validate` and only the configured policy's networks after runtime readiness is proven. A builder endpoint must be public HTTPS and expose a compatible unpaid x402 challenge. PASS does not prove future payment settlement or service quality. Never use a private/local endpoint as passing evidence.
+
+Healthchecks probe the validator's malformed-request rejection and the signer's unauthenticated rejection. These are liveness probes, not proof of a valid builder PASS. Independently verify chain/configuration, socket authentication, exact policy scope and failure paths. Recreate validator whenever web is recreated, because its network namespace belongs to web. A stale Unix socket after an abnormal exit must be investigated with signer stopped; do not blindly delete a live socket or change its permissions to world-writable.
+
+For a later VPS, retain these images and topology. Change domain/origin, TLS, secret paths/ownership, and reviewed management-address denylist. Independently verify ingress firewall rules, namespace/mount separation, host/metadata/management denial, and egress controls outside the validator process; explicitly permit reviewed DNS/RPC control paths and checked public HTTPS targets. The application bridge is not an egress firewall. Local acceptance does not establish target-host G0.6 readiness or authorize VPS deployment.
+
 One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
@@ -17,6 +72,8 @@ Start with at least 2 CPU cores / 2 GiB RAM and additional build headroom; this 
 Obtain your own OKX API key, secret, passphrase, API fee recipient address, RPC access/quota, intended deployed demand/token addresses, and Reown project with your localhost/domain origins allowed. No deployment key is needed.
 
 ## Configure and start
+
+The following commands start the base API/web stack only. Gate-0 deployments must instead use the [four-service procedure](#gate-0-validator-and-signer), including its lifecycle commands.
 
 ~~~bash
 git clone https://github.com/riyannode/UNMET.git
@@ -47,7 +104,7 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | CHAIN_ID | Public, default 1952 | Demand chain; X Layer presets 1952/196, or explicit custom chain metadata |
 | XLAYER_RPC_URL | Required API runtime | HTTP(S) RPC; may contain a private provider credential; never reuse it as a public build input |
 | DEMAND_CONTRACT, PAYMENT_TOKEN | Required for market runtime, public addresses | Reviewed canonical contract and immutable token on the same chain; no experimental address fallback |
-| PAYMENT_TOKEN_SYMBOL, PAYMENT_TOKEN_DECIMALS | Public escrow metadata | USDC-first template; explicit decimals checked against token; independent of x402 billing |
+| PAYMENT_TOKEN_SYMBOL, PAYMENT_TOKEN_DECIMALS | Public escrow metadata | Faucet USDC_TEST acceptance token; explicit decimals checked against token; independent of x402 billing |
 | CHAIN_NAME, CHAIN_EXPLORER_URL, CHAIN_NATIVE_NAME, CHAIN_NATIVE_SYMBOL, CHAIN_NATIVE_DECIMALS | Required for custom chains | Chain metadata bound to the deployment; use matching VITE_ inputs for browser builds |
 | DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Existing metadata; index rebuild reads current contract state |
 | X402_CHAIN_ID | Required API runtime | **Must be 196 in production containers**, independently of Testnet market 1952 |
@@ -68,7 +125,7 @@ VITE_* values are embedded in public JavaScript at build time: rebuild web after
 
 Docker host/daemon administrators can inspect runtime environment values. Docker is not a secret vault. Restrict file permissions, daemon/socket access, backups and log access. If credentials leak, revoke/rotate them through the provider, replace private configuration and recreate api; rotation is an operator action.
 
-The template selects Testnet USDC and Mainnet x402 billing. The canonical AgentDemand address remains blank, so it is not an active market deployment. It does not authorize payment. Testnet 1952 retains its existing challenge configuration, while durable paid acceptance is currently Mainnet-only; Compose preserves the production X402_CHAIN_ID=196 invariant.
+The template pins the reviewed faucet-supported Testnet AgentDemand at `0x4411c49f8a3efcc671a1b11e651cc82abeadace5`, deployment block `45074702`, and escrow `USDC_TEST` at `0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d` with six decimals; see [deployment evidence](ARCHITECTURE.md#faucet-supported-testnet-acceptance-deployment). It retains independent Mainnet x402 billing and does not authorize payment or wallet actions. Testnet 1952 retains its existing challenge configuration, while durable paid acceptance is currently Mainnet-only; Compose preserves the production X402_CHAIN_ID=196 invariant.
 
 Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`, unpaid requests retain the official 402 challenge, but submitted payment headers fail with `503 PAYMENT_STORAGE_UNAVAILABLE`; `/ready` also fails closed. Mainnet responses are released after the official facilitator reports strict success and `X402_RPC_URL` confirms a matching successful canonical L2 inclusion. This check does not wait for safe/finalized or L1 finality.
 
@@ -183,21 +240,46 @@ Local validation changes no DNS, production certificates or production configura
 
 Record the current commit/image tag before updating. Retain known-good images with an explicit tag and matching private configuration securely. Never commit .env.
 
+These commands manage the canonical four-service Gate-0 stack on local and VPS hosts. Set `UNMET_ENV_FILE` to that host's reviewed private environment file; retain the same project name and any extra host-specific Compose overrides on every command. Do not fall back to base Compose only. A base API/web installation without Gate-0 may omit the validation overlay; that is not the four-service lifecycle.
+
 ~~~bash
+UNMET_ENV_FILE=.env.gate0-local
 git fetch origin
 read -r -p 'Reviewed release commit: ' release_commit
 git switch --detach "$release_commit"
-# Set IMAGE_TAG to that reviewed commit in .env; preserve other settings.
-docker compose build --pull
-docker compose up -d --no-build
-docker compose ps
+# Set IMAGE_TAG to that reviewed commit in the selected environment file.
+# Preserve its other settings and the matching private mounted configuration.
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml build --pull
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml up -d --no-build --force-recreate --wait
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
 ~~~
 
 After update or rollback, repeat the [health and unpaid verification](#health-smoke-checks-and-logs) against the actual configured origin. Use the automated smoke script only for a local HTTP origin with its configured port; use the manual curl checks for public HTTPS.
 
-Rollback: restore the previous reviewed source/config combination, set IMAGE_TAG to its retained known-good tag, then run docker compose up -d --no-build. If missing, rebuild that commit first. Public frontend settings must match its build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
+Rollback: restore the previous reviewed four-service source/config combination and set IMAGE_TAG to its retained known-good tag. If the images are missing, rebuild that commit with the merged-file build command above. Then recreate all four services, including web and validator together:
 
-Use docker compose stop for graceful stop, or docker compose down to remove this stack's containers/network. **Do not remove volumes** during update/rollback: retain certificates and private configuration. API drains for 20 seconds, then closes remaining connections and exits nonzero; Compose allows 25 seconds. Do not assume an interrupted paid request was unsettled.
+~~~bash
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml up -d --no-build --force-recreate --wait
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
+~~~
+
+Never complete a web replacement without recreating validator, even when its image/configuration is unchanged. Otherwise it can retain the previous web network namespace and Caddy cannot reach its loopback listener. Public frontend settings must match the selected build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
+
+For a graceful stop, manage all four services with the same merged configuration:
+
+~~~bash
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml stop
+~~~
+
+Alternatively, remove this stack's containers/network while retaining its named volumes:
+
+~~~bash
+docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml down
+~~~
+
+**Do not remove volumes** during update, rollback or shutdown: retain payment, Caddy and signer-socket volumes, plus private configuration. API drains for 20 seconds, then closes remaining connections and exits nonzero; Compose allows 25 seconds. Do not assume an interrupted paid request was unsettled.
 
 ## Troubleshooting and scaling
 

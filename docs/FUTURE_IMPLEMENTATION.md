@@ -651,13 +651,15 @@ Do not silently assume stablecoin parity.
 
 Gate 0 permits same-asset comparison only. Asset identity is the pair (payment network, token contract address), never a token symbol or a bridge-equivalence claim.
 
-For the initial profile, maxUnitPrice retains the frontend's six-decimal USD₮0 price unit. Its payment denomination is eip155:196 / 0x779ded0c9e1022225f8e0630b35a9b54be713736 / 6 decimals. This labels the service-price constraint; it does not equate the Testnet escrow token with the Mainnet token or change escrow accounting.
+For the initial profile, maxUnitPrice means the maximum Mainnet USDC price per service call. Its payment denomination is eip155:196 / 0xb6ceceab302e2e4948951ee7843fc24e92933061 / 6 decimals. This labels the service-price constraint; it does not equate Testnet faucet USDC_TEST escrow collateral with the different Mainnet USDC contract or change escrow accounting. Service-price configuration, types, parsing and formatting remain separate from escrow metadata even though both assets currently use six decimals; Testnet escrow displays USDC_TEST and service price displays USDC.
 
 Trusted configuration must pin this demand price denomination to each approved (escrowChainId, escrowContract). The validation service reads maxUnitPrice onchain and obtains its denomination from that configuration. A request cannot choose or override either value, and a profile update must not reinterpret existing demand prices.
 
 An offer is comparable only when its network, asset address, and verified decimals match the demand price denomination. Compare the atomic integer amount directly with maxUnitPrice using exact integer arithmetic: amount <= maxUnitPrice. Reject invalid, negative, fractional, out-of-range, or inconsistent amounts. Do not round or use floating point.
 
-For this initial denomination, USDC, USDG, another network's token, and any other different asset remain unsupported comparisons, even if independently supported by OKX. Such an offer cannot qualify for PASS. Return UNSUPPORTED_PRICE_COMPARISON when no offer is eligible because its denomination differs; do not apply a conversion rate, oracle, or stablecoin-parity assumption.
+For this initial denomination, USD₮0, USDG, Testnet USDC_TEST or native Testnet USDC, another network's token, and any other different asset remain unsupported comparisons, even if independently supported by OKX. Such an offer cannot qualify for PASS. Return UNSUPPORTED_PRICE_COMPARISON when no offer is eligible because its denomination differs; do not apply a conversion rate, oracle, bridge equivalence, symbol-based identity, or stablecoin-parity assumption.
+
+The owner approved this initial denomination change while the canonical Testnet deployment had nextDemandId = 1 and totalEscrowed = 0. AgentDemand stores an unlabeled uint96 price and does not embed the old asset identity, so this configuration/consumer correction requires no contract redeployment or storage migration. It does not change the independent three-offer /v1/opportunities billing surface. Separately, the owner authorized replacement of the empty Testnet escrow deployment to use the actual faucet USDC_TEST token; [deployment evidence](ARCHITECTURE.md#faucet-supported-testnet-acceptance-deployment) records that token/deployment change. Its Mainnet-USDC demandPriceAsset and payment profile remain unchanged.
 
 Every enabled profile must declare its price denomination and comparison policy. Missing or unverified configuration prevents PASS. Future comparison policies require separate review and must preserve the meaning of existing demand economics.
 
@@ -951,10 +953,10 @@ SHA-256 digests above are bytes32 values represented as lowercase 0x-prefixed he
 requestHash: 0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8
 
 ```json
-{"requestHash":"0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8","resource":{"url":"https://example.com/weather"},"schemaVersion":"unmet-payment-requirements-v2","selected":{"amount":"10000","asset":"0x779ded0c9e1022225f8e0630b35a9b54be713736","extra":{"assetTransferMethod":"eip3009","name":"USD₮0","paymentFlow":"authorization","version":"1"},"maxTimeoutSeconds":60,"network":"eip155:196","payTo":"0x0000000000000000000000000000000000000001","scheme":"exact"},"x402Version":2}
+{"requestHash":"0x300a359dba184b381483e10749404aeb8918e6f27983cc8001c27c4929d4eec8","resource":{"url":"https://example.com/weather"},"schemaVersion":"unmet-payment-requirements-v2","selected":{"amount":"10000","asset":"0xb6ceceab302e2e4948951ee7843fc24e92933061","extra":{"assetTransferMethod":"eip3009","name":"USDC","paymentFlow":"authorization","version":"2"},"maxTimeoutSeconds":60,"network":"eip155:196","payTo":"0x0000000000000000000000000000000000000001","scheme":"exact"},"x402Version":2}
 ```
 
-paymentRequirementsHash: 0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49
+paymentRequirementsHash: 0x35d0ef922c10706fc672cca52efad2beba01abde0a0666c26194e39436ab6429
 
 ### Literal Policy and EIP-712 Vectors
 
@@ -983,7 +985,7 @@ The fixture gives its synthetic eip3009 entry an authorization default; its perm
     ],
     "assets": [
       {
-        "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        "asset": "0xb6ceceab302e2e4948951ee7843fc24e92933061",
         "decimals": 6,
         "enabled": true,
         "defaultTransferMethod": null,
@@ -996,8 +998,8 @@ The fixture gives its synthetic eip3009 entry an authorization default; its perm
             ],
             "defaultPaymentFlow": "authorization",
             "tokenDomain": {
-              "name": "USD₮0",
-              "version": "1"
+              "name": "USDC",
+              "version": "2"
             },
             "permit2Contract": null,
             "settlementSpender": null
@@ -1029,13 +1031,13 @@ The fixture gives its synthetic eip3009 entry an authorization default; its perm
   },
   "demandPriceAsset": {
     "network": "eip155:196",
-    "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+    "asset": "0xb6ceceab302e2e4948951ee7843fc24e92933061",
     "decimals": 6
   }
 }
 ```
 
-Expected validationPolicyId: `0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691`.
+Expected validationPolicyId: `0xd4912a160c0e5d590126a59f5a80d9cd1cce3a57340e2b0c88ca47a1b687b355`.
 
 #### B. BuilderValidationAuthorization
 
@@ -1088,9 +1090,9 @@ Expected validationPolicyId: `0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960
     "builderWallet": "0x2222222222222222222222222222222222222222",
     "serviceUrlHash": "0xeebff726b9796bc70b7b17226d7f6fe9d11fb311d21a7eb11662c45cb2283e81",
     "evidenceHash": "0xef49c6e023e5910e309c7ce7e15902489f2828504016ac4f765edb049e757d48",
-    "paymentRequirementsHash": "0xce3247c6f8737f0713bb03c15354865a14ead04210ca05d7578752d095175d49",
+    "paymentRequirementsHash": "0x35d0ef922c10706fc672cca52efad2beba01abde0a0666c26194e39436ab6429",
     "submissionNonce": "1",
-    "validationPolicyId": "0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960b88e902cfbd2a691",
+    "validationPolicyId": "0xd4912a160c0e5d590126a59f5a80d9cd1cce3a57340e2b0c88ca47a1b687b355",
     "issuedAt": "1792886400",
     "expiresAt": "1792887300"
   }
@@ -1101,8 +1103,8 @@ Expected validationPolicyId: `0xe0067e7f39455d7a4b9587fa4b197a61d0e2aaf308650960
 | --- | --- |
 | typeHash | `0x67beb001f81b85e71e91091bf36753e1a578fbec204642b1bee40134161f22dd` |
 | domainSeparator | `0x5f4cb5a0f9b354d673e444109a9e548a6103bf9b43c23fc3a00f329c0e2fb42a` |
-| structHash | `0x57d9261a3e04d73fc8c39e6d110b718b839c7816a76830d61ac2ff951e53927d` |
-| digest | `0x2917ee6a3d428ef2088a6f96d9873f46dbba4cf3da8c9cd75a3b0dd2ec284301` |
+| structHash | `0x03adf1ef61eedf783fe7f8c9cb36d935142f0df0671ad9f196f5f979c5428376` |
+| digest | `0xc27d9c2c45c47967b9db10a8b859e73a16d819caad89939b6a803760d0d92dab` |
 
 For both EIP-712 vectors, digest = keccak256(0x1901 || domainSeparator || structHash), concatenating raw bytes rather than hex text. The URL preimage is https://example.com/weather; the evidence preimage is unmet-codec-fixture; paymentNetworkHash hashes the UTF-8 string eip155:196. requestHash and paymentRequirementsHash are the earlier literal fixtures. demandId deliberately exceeds the JavaScript safe-integer range and must remain a string until parsed as uint256.
 

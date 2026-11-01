@@ -1,9 +1,44 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import fixture from "./fixtures/validation.json";
+import gate0Policy from "../docs/gate0-testnet-policy.json";
+import { SERVICE_PRICE_ASSET } from "../shared/service-price";
 import { parseValidationConfig, resolvePolicy, validationPolicyId } from "./validation-config";
 
 const input = () => ({ maxInFlight: 2, managementAddresses: [], signerSocketPath:"/tmp/signer.sock", signerAuthTokenPath:"/tmp/token", deployments: [{ escrowChainId: fixture.policy.escrowChainId, escrowContract: fixture.policy.escrowContract, escrowRpcUrl: "https://rpc.example/", verifier:"0x1111111111111111111111111111111111111111", demandPriceAsset: fixture.policy.demandPriceAsset, paymentProfiles: [{ ...structuredClone(fixture.policy.profile), paymentRpcUrl: "https://payment.example/" }] }] });
 const parse = (value: unknown) => parseValidationConfig(new TextEncoder().encode(JSON.stringify(value)));
+test("published Gate-0 deployment resolves the reviewed Mainnet USDC policy", () => {
+  const config = parse({
+    ...input(),
+    deployments: [{
+      escrowChainId: gate0Policy.escrowChainId,
+      escrowContract: gate0Policy.escrowContract,
+      escrowRpcUrl: "https://rpc.example/",
+      verifier: "0x00000a43df0bf634a1a917e61192344961152f4e",
+      demandPriceAsset: gate0Policy.demandPriceAsset,
+      paymentProfiles: [{ ...gate0Policy.profile, paymentRpcUrl: "https://payment.example/" }],
+    }],
+  });
+  const resolved = resolvePolicy(config, gate0Policy.escrowChainId, gate0Policy.escrowContract, "eip155:196");
+  expect<unknown>(resolved?.policy).toEqual(gate0Policy);
+  expect(gate0Policy.demandPriceAsset).toEqual(SERVICE_PRICE_ASSET);
+  expect(resolved && validationPolicyId(resolved.policy)).toBe("0xadd7277f7b08fa5cb3e56d045ff684567d708451e01dcd1ff36f9c6254c2d783");
+  expect(resolvePolicy(config, "1952", "0x57bdd53eaabda18c81afea1dfcac30b15bd58e99", "eip155:196")).toBeUndefined();
+});
+test("acceptance environment binds faucet escrow separately from Mainnet service prices", () => {
+  const env = new Map(readFileSync(new URL("../.env.example", import.meta.url), "utf8").split("\n")
+    .filter(line => line && !line.startsWith("#")).map(line => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+  expect(env.get("CHAIN_ID")).toBe(gate0Policy.escrowChainId);
+  expect(env.get("VITE_CHAIN_ID")).toBe(gate0Policy.escrowChainId);
+  expect(env.get("DEMAND_DEPLOY_BLOCK")).toBe("45074702");
+  for (const prefix of ["", "VITE_"]) {
+    expect(env.get(`${prefix}DEMAND_CONTRACT`)).toBe(gate0Policy.escrowContract);
+    expect(env.get(`${prefix}PAYMENT_TOKEN`)).toBe("0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d");
+    expect(env.get(`${prefix}PAYMENT_TOKEN_SYMBOL`)).toBe("USDC_TEST");
+    expect(env.get(`${prefix}PAYMENT_TOKEN_DECIMALS`)).toBe("6");
+    expect(env.get(`${prefix}PAYMENT_TOKEN`)).not.toBe(SERVICE_PRICE_ASSET.asset);
+  }
+});
 test("explicit deployment resolves only its exact enabled profile and hashes public fields", () => {
   const config = parse(input());
   const resolved = resolvePolicy(config, fixture.policy.escrowChainId, fixture.policy.escrowContract, fixture.policy.profile.network);

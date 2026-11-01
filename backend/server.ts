@@ -27,6 +27,7 @@ import {
 } from "./contract.ts";
 
 import { deploymentKey, parseEscrowAmount, type EscrowDeployment } from "../shared/deployment.ts";
+import { SERVICE_PRICE_ASSET } from "../shared/service-price.ts";
 
 const cfg = loadConfig();
 const operations = loadOperationalConfig();
@@ -353,7 +354,7 @@ function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint, decima
     reviewCommitted: formatAmount(entry.data.reviewCommitted, decimals),
     supporters: Number(entry.data.supporterCount),
     expectedCalls: entry.data.expectedCalls.toString(),
-    maxUnitPrice: formatAmount(entry.data.maxUnitPrice, decimals),
+    maxUnitPrice: formatAmount(entry.data.maxUnitPrice, SERVICE_PRICE_ASSET.decimals),
     deadline: isoFromUnix(entry.data.deadline),
     status: effectiveStatus(entry, nowUnix),
     creator: entry.data.creator,

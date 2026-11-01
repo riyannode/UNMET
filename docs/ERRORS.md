@@ -6,6 +6,7 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 
 | Code | Meaning | Recovery |
 | --- | --- | --- |
+| `CONFIG_INVALID: OKX_CREDENTIALS_PATH` | Credential file is unreadable, incomplete, malformed, or mixed with credential environment values | Mount the reviewed three-field JSON file read-only and remove the three secret environment inputs |
 | `CHAIN_CONTRACT_UNCONFIGURED` | Selected contract or token configuration is incomplete | Configure a reviewed deployment and token |
 | `CHAIN_RPC_UNAVAILABLE` | RPC or configured contract unavailable | verify RPC, chain ID, address and bytecode |
 | `CHAIN_WRONG_NETWORK` | wallet is not on the configured demand-market network | switch/add X Layer Testnet chain `1952`; the x402 API billing rail's Mainnet `196` does not change the wallet network for demand-market actions |

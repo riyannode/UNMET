@@ -29,7 +29,7 @@ The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, che
 
 ## Independent network contexts
 
-The demand market selects one deployment: chain, contract, RPC, deployment block, chain metadata and escrow-token address/symbol/decimals. The USDC-first template retains X Layer Testnet (`1952`), with no canonical AgentDemand address configured. Activation verifies RPC chain, contract bytecode, immutable `token()` and token decimals. Custom chain metadata supports future deployments without changing wallet identity. One contract holds one immutable exact-transfer ERC-20; token symbols do not prove compatibility.
+The demand market selects one deployment: chain, contract, RPC, deployment block, chain metadata and escrow-token address/symbol/decimals. The reviewed acceptance configuration uses faucet `USDC_TEST` on X Layer Testnet (`1952`), with the AgentDemand identity pinned in `.env.example` and the public Gate-0 policy. Activation verifies RPC chain, contract bytecode, immutable `token()` and token decimals. Custom chain metadata supports future deployments without changing wallet identity. One contract holds one immutable exact-transfer ERC-20; token symbols do not prove compatibility.
 
 Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`) and advertises three fixed native EIP-3009 assets. `X402_RPC_URL` independently confirms Mainnet settlement receipts; it is never sourced from the market Testnet RPC. This payment setting is never used by `backend/contract.ts` or demand-market clients.
 
@@ -214,6 +214,32 @@ These differences explain why `AgentDemand` uses a demand-level escrow and commi
 
 One possible future composition would match a funded UNMET demand to a provider, then use an ERC-8183-compatible job escrow downstream for that provider's execution. `AgentDemand` could remain the demand-aggregation and commitment-consensus layer. UNMET does not implement this integration today.
 
-## USDC template provenance
+## Historical native-USDC template provenance
 
 The [Circle address list](https://developers.circle.com/stablecoins/usdc-contract-addresses) and [X Layer native-USDC announcement](https://www.circle.com/blog/now-available-native-usdc-cctp-on-x-layer) identify Testnet USDC as `0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3`. On 2026-10-31, read-only calls to `https://testrpc.xlayer.tech/terigon` reported chain ID `1952`; at block `44951534`, the token had 1,798 bytes of code, `decimals() = 6` and `symbol() = USDC`. This establishes the template token address/metadata, not a canonical AgentDemand deployment, exact-transfer acceptance test, paid settlement or production readiness. The runtime repeats the configured token/decimal binding checks when a deployment is used.
+
+
+## Faucet-supported Testnet acceptance deployment
+
+On 2026-11-01, the owner authorized one replacement AgentDemand on chain `1952` because the actual faucet balance was a different ERC-20 from the historical native-USDC template. This deployment is protocol acceptance using faucet `USDC_TEST`, not evidence of Circle native-USDC behavior.
+
+| Identity | Verified value |
+| --- | --- |
+| AgentDemand | `0x4411C49F8a3Efcc671A1b11E651Cc82AbeAdace5` |
+| Deployment transaction | [`0x7a2f9d92e2b376966d085c3846357f2ed86f596f4e4748a00e00a349aa61dab3`](https://www.oklink.com/x-layer-testnet/tx/0x7a2f9d92e2b376966d085c3846357f2ed86f596f4e4748a00e00a349aa61dab3) |
+| Deployment block / gas used | `45074702` / `3789178` |
+| Deployed source / unchanged contract-ABI baseline | `e960a04b94ed85d8392c4107cd635cfe24728dd8` / `b16354a6ae427a75df278702a56af1712bd0a4b7` |
+| Escrow token | `0xcB8BF24c6cE16Ad21D707c9505421a17f2bec79D` |
+| Token name / symbol / decimals | `USDC_TEST` / `USDC_TEST` / `6` |
+| Deployer / treasury / verifier / verifierAdmin | `0x00000A43Df0bf634a1A917e61192344961152F4e` for all four Testnet roles |
+| feeBps / quorumBps / minCommitment | `200` / `6000` / `10000` |
+| reviewPeriod / SETTLEMENT_GRACE | `86400` / `604800` |
+| Initial nextDemandId / totalEscrowed | `1` / `0` at deployment block |
+
+Faucet receipt [`0x30b095098eb79fef3dc75739736aed54dd8a6dda5469a82d0238c0916016c195`](https://www.oklink.com/x-layer-testnet/tx/0x30b095098eb79fef3dc75739736aed54dd8a6dda5469a82d0238c0916016c195), block `45073416`, contains a Transfer log emitted by `0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d`: faucet `0xf6d088123a3c17e6047ae9338b8cf072ad448907` sent `10000000` atomics to `0xaa68e429319d065ce9fd5842497a8dbec786075a`. The owner's pinned readback was `20000000` atomics (20 USDC_TEST). Identity comes from the receipt/log and RPC bytecode/metadata/balance, not its symbol.
+
+The [verified proxy](https://www.oklink.com/x-layer-testnet/token/0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d?tab=contract) is AdminUpgradeabilityProxy; its active [verified implementation](https://www.oklink.com/x-layer-testnet/address/0xc436aa964fc921cd29ff7dd9221390d45658b721/contract) is FiatTokenV2_2 (`0xc436aa964fc921cd29ff7dd9221390d45658b721`). Read-only state-override `eth_call` simulations passed standard approve/allowance, transfer and transferFrom with true returns, exact sender/receiver deltas, allowance decrement and unchanged total supply. Owner, operator and predicted escrow were not blacklisted; the token was not paused. These simulations persisted no transfer or allowance changes. Public RPC denied debug_traceCall (403), so no trace-based callback claim is made. Upgrade, mint, pause and blacklist authority remain with token administrators; the implementation/state must be rechecked if they change. This bounded compatibility evidence supports Testnet acceptance, not unrestricted token guarantees.
+
+The old AgentDemand `0x57bdd53eaabda18c81afea1dfcac30b15bd58e99` with token `0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3` remains onchain and is no longer the active acceptance reference. Immediately before replacement at block `45074697`, and again afterward, it read `nextDemandId = 1`, `totalEscrowed = 0`; no transaction was sent to it.
+
+The [public policy](gate0-testnet-policy.json) now binds the replacement escrow address. Its validationPolicyId changed from `0x7e74b01782c3851842b7520000058814e32eb3bfce82872e09b08e2f6faa6fd4` to `0xadd7277f7b08fa5cb3e56d045ff684567d708451e01dcd1ff36f9c6254c2d783` by canonical JCS/SHA-256 recomputation. The signer allows only the new exact deployment/policy tuple. Mainnet `eip155:196` USDC demandPriceAsset, the approved payment profile, the 300-second authorization timeout, the 900-second attestation bound and independent three-offer intelligence billing are unchanged. Existing browser records are deployment-scoped; old approvals/pending records do not migrate to this address. No create/support/submit/vote/finalize/refund action was part of replacement acceptance.

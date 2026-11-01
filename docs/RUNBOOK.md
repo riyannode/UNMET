@@ -1,5 +1,13 @@
 # Production runbook
 
+For the four-service Gate-0 runtime, use the canonical [validation overlay procedure](SELF_HOSTING.md#gate-0-validator-and-signer). Use the same overlay/images for local and later VPS deployments, with reviewed host-specific configuration. Do not enable frontend validation until validator and signer readiness and the exact deployment/policy bindings pass independent checks.
+
+For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands` to describe the configured deployment. POST `{}` as JSON to `/v1/x402/validate` must return `400 INVALID_REQUEST`; unsupported deployment/network requests must fail closed. Probe the signer through its authenticated Unix socket without issuing a synthetic attestation for a live demand. Unpaid `/v1/opportunities` smoke must return 402 without payment proof. Wallet protocol actions are separate owner tests.
+
+Use both `compose.yaml` and `compose.validation.yaml` for every Gate-0 build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the exact [four-service lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web and validator together so validator joins the current web network namespace.
+
+Leave an explicitly requested local preview running until its owner requests closure. Restart only task-owned services for outage probes and verify their health afterward. Never leave validator in the previous namespace after replacing web. Preserve persistent volumes and unrelated projects.
+
 All command blocks start at the repository root unless they explicitly change directory. Deployment and signed-payment procedures require their own authorization.
 
 ## 1. Toolchain

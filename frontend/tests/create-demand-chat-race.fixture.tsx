@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { MemoryRouter } from "react-router";
 import type { Address, Hash, Hex } from "viem";
 import { CreateDemandChat, type CreateDemandRunOutcome } from "../CreateDemandChat";
+import { transactionErrorNotice, transactionNotice } from "../transaction-copy";
 
 const walletA = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const walletB = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -49,8 +50,8 @@ function Harness() {
 
       checkpoint = "suspending wallet B while wallet A refresh is pending";
       findButton("Create & Fund Demand")?.click();
-      await waitFor(() => Boolean(findButton("Refresh / verify market")));
-      findButton("Refresh / verify market")?.click();
+      await waitFor(() => Boolean(findButton("Refresh data")));
+      findButton("Refresh data")?.click();
       await waitFor(() => refreshResolvers.current.length === 1);
       await waitFor(() => [...document.querySelectorAll("button")].some((button) => button.textContent?.includes("Verifying")));
       startTransition(() => {
@@ -59,8 +60,8 @@ function Harness() {
       });
       await waitFor(() => Number(document.documentElement.dataset.walletBRenders ?? "0") > 0);
       refreshResolvers.current[0]?.([]);
-      const refreshedOnA = await waitFor(() => document.body.innerText.includes("Market data refreshed. No transaction was submitted"), 500);
-      const refreshButtonEnabled = findButton("Refresh / verify market")?.disabled === false;
+      const refreshedOnA = await waitFor(() => document.body.innerText.includes("Market data refreshed. No new transaction was sent."), 500);
+      const refreshButtonEnabled = findButton("Refresh data")?.disabled === false;
       resolveSuspense?.();
       setSuspend(false);
       await waitFor(() => document.querySelector("[data-testid='committed-wallet']")?.getAttribute("data-wallet") === walletB);
@@ -81,12 +82,12 @@ function Harness() {
       findButton("Create & Fund Demand")?.click();
       checkpoint = "waiting for wallet B create to start";
       await waitFor(() => createResolvers.current.length === 2);
-      createResolvers.current[0]?.({ kind: "failed", message: "stale wallet A create result" });
+      createResolvers.current[0]?.({ kind: "failed", message: "stale wallet A create result", notice: { title: "stale wallet A create result", description: "Stale session fixture", tone: "error" } });
       await new Promise((resolve) => window.setTimeout(resolve, 50));
-      const createStillPending = findButton("Waiting for wallet or X Layer…")?.disabled === true
+      const createStillPending = findButton("Preparing your request")?.disabled === true
         && !document.body.innerText.includes("stale wallet A create result");
       createResolvers.current[1]?.(confirmedOutcome());
-      await waitFor(() => document.body.innerText.includes("Transaction confirmed on X Layer"));
+      await waitFor(() => document.body.innerText.includes("Transaction confirmed"));
 
       checkpoint = "testing verify across A -> disconnected -> B";
       flushSync(() => { setPendingEnabled(true); setAccount(walletA); });
@@ -104,19 +105,22 @@ function Harness() {
       findButton("Verify existing transaction")?.click();
       checkpoint = "waiting for wallet B verification";
       await waitFor(() => verifyResolvers.current.length === 2);
-      verifyResolvers.current[0]?.({ kind: "failed", message: "stale wallet A verify result" });
+      verifyResolvers.current[0]?.({ kind: "failed", message: "stale wallet A verify result", notice: { title: "stale wallet A verify result", description: "Stale session fixture", tone: "error" } });
       await new Promise((resolve) => window.setTimeout(resolve, 50));
-      const verifyStillPending = findButton("Checking transaction...")?.disabled === true
+      const verifyStillPending = findButton("Checking existing transaction")?.disabled === true
         && !document.body.innerText.includes("stale wallet A verify result");
-      verifyResolvers.current[1]?.({ kind: "failed", message: "wallet B verify result" });
-      await waitFor(() => document.body.innerText.includes("wallet B verify result"));
+      verifyResolvers.current[1]?.({ kind: "failed", message: "wallet B verify result", notice: transactionNotice("unknown") });
+      await waitFor(() => findButton("Verify existing transaction")?.disabled === false);
+      const verificationRemainsBlocked = !findButton("Create & Fund Demand")
+        && document.body.innerText.includes("Do not submit again.")
+        && !document.querySelector(".create-demand-outcome-success");
 
       checkpoint = "testing refresh across A -> disconnected -> B";
       flushSync(() => { setPendingEnabled(false); setAccount(walletA); });
       await waitFor(() => Boolean(findButton("Create & Fund Demand")));
       findButton("Create & Fund Demand")?.click();
-      await waitFor(() => createCalls.current === 4 && Boolean(findButton("Refresh / verify market")));
-      findButton("Refresh / verify market")?.click();
+      await waitFor(() => createCalls.current === 4 && Boolean(findButton("Refresh data")));
+      findButton("Refresh data")?.click();
       await waitFor(() => refreshResolvers.current.length === 2);
       flushSync(() => setAccount(null));
       await waitFor(() => document.querySelector("[data-testid='committed-wallet']")?.getAttribute("data-wallet") === "disconnected");
@@ -136,22 +140,68 @@ function Harness() {
       await waitFor(() => document.querySelector("[data-testid='committed-wallet']")?.getAttribute("data-wallet") === walletA);
       findButton("Create & Fund Demand")?.click();
       await waitFor(() => createResolvers.current.length === 4);
-      createResolvers.current[2]?.({ kind: "failed", message: "stale disconnected wallet A create result" });
+      createResolvers.current[2]?.({ kind: "failed", message: "stale disconnected wallet A create result", notice: { title: "stale disconnected wallet A create result", description: "Stale session fixture", tone: "error" } });
       await new Promise((resolve) => window.setTimeout(resolve, 50));
-      const reconnectedCreateStillPending = findButton("Waiting for wallet or X Layer…")?.disabled === true
+      const reconnectedCreateStillPending = findButton("Preparing your request")?.disabled === true
         && !document.body.innerText.includes("stale disconnected wallet A create result");
       createResolvers.current[3]?.(confirmedOutcome());
-      await waitFor(() => document.body.innerText.includes("Transaction confirmed on X Layer"));
+      await waitFor(() => document.body.innerText.includes("Transaction confirmed"));
 
       const draftPreserved = document.body.innerText.includes("Vendor KYB API")
         && document.body.innerText.includes("Verify business registration and return a structured result")
         && document.body.innerText.includes("Max price")
         && document.body.innerText.includes("1,000 calls");
-      const refreshIsolated = !document.body.innerText.includes("Market data refreshed. No transaction was submitted");
+      const refreshIsolated = !document.body.innerText.includes("Market data refreshed. No new transaction was sent.");
+      checkpoint = "testing cancellation after token approval";
+      flushSync(() => setAccount(walletB));
+      await waitFor(() => Boolean(findButton("Create & Fund Demand")));
+      const cancelledCreate = createResolvers.current.length;
+      findButton("Create & Fund Demand")?.click();
+      await waitFor(() => createResolvers.current.length === cancelledCreate + 1);
+      createResolvers.current[cancelledCreate]?.({
+        kind: "failed", message: "WALLET_REJECTED",
+        notice: transactionErrorNotice({ code: 4001 }, { actionId: "create-demand", approvalCompleted: true }),
+      });
+      await waitFor(() => document.body.innerText.includes("Cancelled in wallet"));
+      const approvalCancellationClear = document.body.innerText.includes("Token approval completed. The demand transaction was not sent.")
+        && !document.body.innerText.includes("No transaction was sent.");
+
+      checkpoint = "testing unknown transaction and successful recovery copy";
+      const unknownCreate = createResolvers.current.length;
+      findButton("Create & Fund Demand")?.click();
+      await waitFor(() => createResolvers.current.length === unknownCreate + 1);
+      createResolvers.current[unknownCreate]?.({ kind: "unknown", stage: "demand", hash: confirmedOutcome().hash, intent, message: "RPC timeout must not render" });
+      await waitFor(() => Boolean(findButton("Verify existing transaction")));
+      const unknownClear = document.body.innerText.includes("Transaction not verified yet")
+        && document.body.innerText.includes("Do not submit again.")
+        && !document.body.innerText.includes("RPC timeout")
+        && !document.querySelector(".create-demand-outcome-success")
+        && !findButton("Create & Fund Demand");
+      const recovered = verifyResolvers.current.length;
+      findButton("Verify existing transaction")?.click();
+      await waitFor(() => verifyResolvers.current.length === recovered + 1);
+      verifyResolvers.current[recovered]?.(confirmedOutcome());
+      await waitFor(() => Boolean(findButton("Refresh data")));
+      const recoveryClear = document.body.innerText.includes("Transaction confirmed")
+        && !findButton("Verify existing transaction");
+
+      checkpoint = "testing confirmed transaction with unavailable market data";
+      flushSync(() => setAccount(walletA));
+      await waitFor(() => Boolean(findButton("Create & Fund Demand")));
+      const refreshFailure = createResolvers.current.length;
+      findButton("Create & Fund Demand")?.click();
+      await waitFor(() => createResolvers.current.length === refreshFailure + 1);
+      createResolvers.current[refreshFailure]?.({ kind: "readback-failed", hash: confirmedOutcome().hash });
+      await waitFor(() => document.body.innerText.includes("Latest demand data is unavailable. Refresh before continuing."));
+      const confirmedRefreshClear = document.body.innerText.includes("Transaction confirmed")
+        && !document.body.innerText.includes("Transaction failed")
+        && !document.querySelector(".create-demand-outcome-error");
+
       const passed = refreshedOnA && refreshButtonEnabled && createStillPending && verifyStillPending
-        && reconnectedCreateStillPending && draftPreserved && refreshIsolated;
+        && reconnectedCreateStillPending && draftPreserved && refreshIsolated && verificationRemainsBlocked
+        && approvalCancellationClear && unknownClear && recoveryClear && confirmedRefreshClear;
       setResult(passed
-        ? "PASS: real CreateDemandChat covered suspended rendering, create/verify/refresh session isolation, A→disconnected→A renewal, and draft preservation"
+        ? "PASS: real CreateDemandChat covered suspended rendering, create/verify/refresh session isolation, A→disconnected→A renewal, draft preservation, approval cancellation, unknown/recovery copy, and confirmed refresh failure"
         : `FAIL: suspended refresh=${refreshedOnA}, refresh unlocked=${refreshButtonEnabled}, create isolated=${createStillPending}, verify isolated=${verifyStillPending}, reconnect isolation=${reconnectedCreateStillPending}, draft preserved=${draftPreserved}, refresh isolated=${refreshIsolated}`);
     } catch (error) {
       refreshResolvers.current.forEach((resolve) => resolve([]));
@@ -198,7 +248,7 @@ function Harness() {
   );
 }
 
-function confirmedOutcome(): CreateDemandRunOutcome {
+function confirmedOutcome(): Extract<CreateDemandRunOutcome, { kind: "confirmed" }> {
   return { kind: "confirmed", hash: `0x${"1".repeat(64)}` as Hash, demandId: null };
 }
 

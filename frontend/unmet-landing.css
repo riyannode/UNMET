@@ -321,7 +321,7 @@
   align-items: center;
   padding: 0 14px;
   border-radius: 10px;
-  color: #192800;
+  color: inherit;
   font-size: 18px;
   font-weight: 600;
 }
@@ -445,11 +445,28 @@
 
 .unmet-marquee {
   display: flex;
-  max-width: 521px;
-  margin-top: 36px;
+  width: min(calc(100% - 48px), 1200px);
+  margin: 148px auto 148px;
+  font-family: "Inter Tight", sans-serif;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
   mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+.unmet-how:has(+ .unmet-marquee) {
+  padding-bottom: 0;
+}
+
+@media (min-width: 768px) {
+  .unmet-marquee {
+    margin-top: 180px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .unmet-marquee {
+    margin-top: 212px;
+  }
 }
 
 .unmet-marquee-track {
@@ -458,8 +475,8 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-around;
-  gap: 34px;
-  padding-right: 34px;
+  gap: clamp(34px, 4vw, 64px);
+  padding-right: clamp(34px, 4vw, 64px);
 }
 
 .unmet-ecosystem-mark {

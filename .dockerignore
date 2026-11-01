@@ -18,6 +18,7 @@
 **/*.key
 **/*CRED*
 **/*credential*
+!backend/runtime-credentials.ts
 work
 outputs
 .npmrc
