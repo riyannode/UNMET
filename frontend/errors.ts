@@ -1,4 +1,35 @@
+export class ValidationResponseError extends Error {
+  constructor(readonly status: "FAIL" | "UNAVAILABLE", readonly code = "") {
+    super("VALIDATION_FAILED");
+  }
+}
+
+export function validationResponseError(result: unknown, httpStatus: number): ValidationResponseError {
+  const body = typeof result === "object" && result !== null ? result : null;
+  const status = body && "status" in body && (body.status === "FAIL" || body.status === "UNAVAILABLE")
+    ? body.status : httpStatus >= 500 ? "UNAVAILABLE" : "FAIL";
+  const code = body && "code" in body && typeof body.code === "string" ? body.code : "";
+  return new ValidationResponseError(status, code);
+}
+
+export function isWalletRejection(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  while (typeof error === "object" && error !== null && !seen.has(error)) {
+    seen.add(error);
+    if (("code" in error && (error.code === 4001 || error.code === "4001"))
+      || ("name" in error && error.name === "UserRejectedRequestError")) return true;
+    error = "cause" in error ? error.cause : null;
+  }
+  return error === "WALLET_REJECTED";
+}
+
+export function errorCode(error: unknown): string | undefined {
+  const message = typeof error === "string" ? error : error instanceof Error ? error.message : "";
+  return message.match(/(WALLET_[A-Z_]+|CHAIN_[A-Z_]+|DEMAND_[A-Z_]+|SUPPORT_[A-Z_]+|SUBMISSION_[A-Z_]+|VALIDATION_[A-Z_]+|DEPLOYMENT_[A-Z_]+|TRANSACTION_[A-Z_]+)/)?.[1];
+}
+
 export function errorMessage(error: unknown): string {
+  if (isWalletRejection(error)) return "WALLET_REJECTED";
   const message = typeof error === "string"
     ? error.trim()
     : typeof error === "object" && error !== null
@@ -11,13 +42,8 @@ export function errorMessage(error: unknown): string {
       : "";
     return code ? "INTERNAL_ERROR (" + code + ")" : "INTERNAL_ERROR";
   }
-  const known = message.match(/(WALLET_[A-Z_]+|CHAIN_[A-Z_]+|DEMAND_[A-Z_]+|SUPPORT_[A-Z_]+|SUBMISSION_[A-Z_]+|VALIDATION_[A-Z_]+|DEPLOYMENT_[A-Z_]+|TRANSACTION_[A-Z_]+)/)?.[1];
+  const known = errorCode(message);
   if (known === "DEMAND_INVALID_CAPABILITY") return "Use letters and numbers separated by spaces or hyphens, with no punctuation (64 characters max)";
-  if (known === "VALIDATION_UNAVAILABLE") return "Service validation is not configured or unavailable";
-  if (known === "VALIDATION_FAILED" || known === "VALIDATION_INVALID_PASS" || known === "VALIDATION_INVALID_SIGNATURE") return "Service validation failed. Review the request and try again";
-  if (known === "VALIDATION_INVALID_REQUEST" || known === "VALIDATION_INVALID_PAYTO") return "Check the validation request and payment receiver";
-  if (known === "VALIDATION_EXPIRED" || known === "VALIDATION_NONCE_STALE") return "Validation expired or the proposal changed. Validate again before submitting";
-  if (known === "SUBMISSION_READBACK_FAILED") return "The transaction was confirmed but the proposal could not be verified. Check the pending transaction before retrying";
   return known ?? message.slice(0, 180);
 }
 

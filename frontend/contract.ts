@@ -1,3 +1,4 @@
+import { ValidationResponseError, validationResponseError } from "./errors";
 import {
   createPublicClient,
   createWalletClient,
@@ -630,9 +631,9 @@ export async function submitService(demandId: bigint, serviceUrl: string, eviden
     schemaVersion: "unmet-x402-validation-v1", escrowChainId: String(deployment.chainId), escrowContract: deployment.contract.toLowerCase(), demandId: String(demandId), submissionNonce: String(nonce), builderWallet: account.toLowerCase(), authorizedPayTo: input.payTo.toLowerCase(), serviceUrl: input.serviceUrl, evidenceHash, paymentNetwork: network, request, builderAuthorization: { issuedAt: String(issuedAt), expiresAt: String(expiresAt), signature: signature.toLowerCase() },
   });
   if (new TextEncoder().encode(requestBody).length > 32768 || !/^0x(?:[0-9a-f]{2}){1,4096}$/.test(signature.toLowerCase())) throw new Error("VALIDATION_INVALID_REQUEST");
-  const response = await fetch(endpointUrl, { method: "POST", credentials: "omit", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30000), body: requestBody });
-  const result: unknown = await response.json();
-  if (!response.ok || !result || typeof result !== "object" || !("status" in result) || result.status !== "PASS") throw new Error("VALIDATION_FAILED");
+  const response = await fetch(endpointUrl, { method: "POST", credentials: "omit", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30000), body: requestBody }).catch(() => { throw new ValidationResponseError("UNAVAILABLE"); });
+  const result: unknown = await response.json().catch(() => { throw new ValidationResponseError(response.status >= 500 ? "UNAVAILABLE" : "FAIL"); });
+  if (!response.ok || !result || typeof result !== "object" || !("status" in result) || result.status !== "PASS") throw validationResponseError(result, response.status);
   const verifier = await client.readContract({ address: deployment.contract, abi: DEMAND_ABI, functionName: "verifier" });
   const pass = await validatePass(result, input, verifier, BigInt(Math.floor(Date.now() / 1000)), expiresAt);
   await assertWalletSession(session, account);
