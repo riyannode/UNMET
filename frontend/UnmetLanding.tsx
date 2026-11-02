@@ -250,20 +250,18 @@ function ProblemSection() {
 
   useEffect(() => {
     const section = sectionRef.current;
-    if (!section) return;
+    if (!section || reducedMotion) return;
 
     const cells = section.querySelectorAll<HTMLElement>("[data-problem-cell]");
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.classList.add("is-visible");
-        observer.unobserve(entry.target);
+        entry.target.classList.toggle("is-visible", entry.isIntersecting);
       }
-    }, { threshold: 0 });
+    }, { rootMargin: "80px 0px", threshold: 0.01 });
 
     cells.forEach((cell) => observer.observe(cell));
     return () => observer.disconnect();
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <section id="problem" className="unmet-problem" ref={sectionRef}>
@@ -297,18 +295,20 @@ function ProblemSection() {
               className="unmet-problem-cell"
               data-problem-cell
               key={item.icon}
-              style={{ "--problem-enter-delay": String(index * 0.1) + "s" } as CSSProperties}
+              style={{ "--problem-enter-delay": String(Math.min(index * 0.1, 0.1)) + "s" } as CSSProperties}
             >
-              <div className="unmet-problem-icon-tile">
-                <span className="unmet-problem-icon">
-                  <span className={"unmet-problem-icon-motion unmet-problem-icon-" + item.animation}>
-                    <ProblemIcon name={item.icon} />
+              <div className="unmet-problem-cell-content">
+                <div className="unmet-problem-icon-tile">
+                  <span className="unmet-problem-icon">
+                    <span className={"unmet-problem-icon-motion unmet-problem-icon-" + item.animation}>
+                      <ProblemIcon name={item.icon} />
+                    </span>
                   </span>
-                </span>
-              </div>
-              <div className="unmet-problem-copy">
-                <h3>{item.title}</h3>
-                <p>{item.description}</p>
+                </div>
+                <div className="unmet-problem-copy">
+                  <h3>{item.title}</h3>
+                  <p>{item.description}</p>
+                </div>
               </div>
               <span className="unmet-problem-accent" aria-hidden="true" />
             </article>
