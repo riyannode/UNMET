@@ -1393,8 +1393,16 @@ html[data-theme="dark"] .unmet-mobile-menu .unmet-mobile-cta { background: var(-
 html[data-theme="dark"] .unmet-primary-cta .unmet-roll-bottom,
 html[data-theme="dark"] .unmet-book .unmet-roll-bottom,
 html[data-theme="dark"] .unmet-mobile-menu .unmet-mobile-cta .unmet-roll-bottom { color: var(--unmet-theme-accent-text); }
-html[data-theme="dark"] .unmet-primary-cta:hover { background: #26351b !important; color: var(--unmet-theme-accent) !important; }
-html[data-theme="dark"] .unmet-primary-cta:hover .unmet-roll-bottom { color: var(--unmet-theme-accent); }
+html[data-theme="dark"] .unmet-primary-cta:hover,
+html[data-theme="dark"] .unmet-book:hover {
+  background: #26351b !important;
+  color: var(--unmet-theme-accent) !important;
+}
+
+html[data-theme="dark"] .unmet-primary-cta:hover .unmet-roll-bottom,
+html[data-theme="dark"] .unmet-book:hover .unmet-roll-bottom {
+  color: var(--unmet-theme-accent);
+}
 html[data-theme="dark"] .unmet-chat-card,
 html[data-theme="dark"] .unmet-message-window,
 html[data-theme="dark"] .unmet-switcher { border-color: var(--unmet-theme-border); background: var(--unmet-theme-surface); }
