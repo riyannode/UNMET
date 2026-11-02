@@ -55,6 +55,55 @@ Healthchecks probe the validator's malformed-request rejection and the signer's 
 
 For a later VPS, retain these images and topology. Change domain/origin, TLS, secret paths/ownership, and reviewed management-address denylist. Independently verify ingress firewall rules, namespace/mount separation, host/metadata/management denial, and egress controls outside the validator process; explicitly permit reviewed DNS/RPC control paths and checked public HTTPS targets. The application bridge is not an egress firewall. Local acceptance does not establish target-host G0.6 readiness or authorize VPS deployment.
 
+### Persistent egress on the reviewed VPS
+
+[The repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) is installed as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`. It enforces the **shared web/validator boundary**, not a per-process boundary: both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
+
+The reviewed production topology pins IPv4 sources `172.30.80.2` and `172.18.0.3`. Exact TCP exceptions for API `172.30.80.3:8787` and HOROI `172.18.0.2:3000` precede private/reserved/metadata denies; `43.156.68.254` is denied as the VPS public management address. Ingress replies, related traffic and public TCP HTTPS/443 remain allowed. Validator loopback and Docker DNS remain local; API egress is outside this policy and signer retains `network_mode: none`. Both reviewed bridge interfaces have IPv6 disabled: this IPv4 policy does not establish IPv6 protection. Review any IP, topology, port, dependency or IPv6 change before applying it elsewhere.
+
+#### Install or update
+
+This procedure targets the existing approved UFW host. Obtain the required operational approval and recovery access before mutation; a UFW reload can affect unrelated services. Record UFW, SSH, unrelated firewall tables/services and application health first. Securely back up the previous owned policy, `/etc/ufw/after.init` (including ownership, mode and existing cases/license), and the owned runtime table, recording whether each existed. Prepare and review rollback before proceeding; keep these host-specific backups outside Git.
+
+From the reviewed checkout, install the policy as root with mode `0600` and check it before reload:
+
+```bash
+sudo install -o root -g root -m 0600 ops/firewall/unmet-egress.nft /etc/ufw/unmet-egress.nft
+sudo nft --check --file /etc/ufw/unmet-egress.nft
+```
+
+Integrate only these commands into the existing `/etc/ufw/after.init` case arms; do not replace the hook or its other cases/license. Keep it executable and preserve its existing error handling. The `start` arm must stop on a failed check/load:
+
+```sh
+# Inside the existing start) arm:
+/usr/sbin/nft --check --file /etc/ufw/unmet-egress.nft || exit 1
+/usr/sbin/nft --file /etc/ufw/unmet-egress.nft || exit 1
+printf 'UNMET_EGRESS bridge policy loaded\n'
+
+# Inside the existing status) arm:
+/usr/sbin/nft list table bridge unmet_egress || exit 1
+```
+
+The file atomically adds/deletes/recreates its own table, so repeated loads are idempotent; it has no saved counter values and never flushes the host ruleset. Use the existing UFW lifecycle, with no new service or firewall framework:
+
+```bash
+sudo ufw reload
+systemctl is-active ufw
+sudo ufw status
+sudo nft list tables
+sudo nft list table bridge unmet_egress
+```
+
+Verify the checks below directly after reload, then after the [canonical four-service recreation](#update-rollback-and-stop), which recreates web and validator together using both Compose files. Do not manually reapply nft rules after recreation. On 2026-11-02, this reviewed host passed UFW reload, canonical web/validator recreation and reboot autoload through the existing UFW hook, with required paths and deny counters verified after each and no manual reapplication after recreation or reboot. Repeat this acceptance for future deployments; these results apply only to the tested host and topology.
+
+The one-time migration from historical `unmet-g06.nft` / `bridge unmet_g06` must load and verify the canonical table before deleting the superseded owned table. Remove the old file only after required-path and deny probes succeed. Normal updates use only the canonical names.
+
+#### Verify and roll back
+
+Require exactly one `bridge unmet_egress` table with **2 sets, 2 chains and 9 rules**. Verify SSH, public ingress, API, HOROI, Docker DNS, RPC, public HTTPS, validator and signer health; compare unrelated host services/firewall state with the baseline. Test all nine deny classes: metadata, host private addresses, Docker gateway, reserved addresses, HOROI wrong port, API wrong port, VPS public management, public HTTP/80 and unapproved external DNS/53. Include direct UDP DNS and require increasing host deny counters, not only connection timeouts. Repeat after recreation and the separately approved reboot. Use unpaid/read-only probes; no paid or onchain writes.
+
+For rollback, restore the saved owned policy and hook with their original permissions, syntax-check and atomically apply the saved policy **before** retiring any superseded owned table. Verify recovery traffic, required paths, denies and unrelated state; confirm persistence through the restored UFW hook. On first install, absence of a prior policy is not a normal rollback that permits deleting protection: retain the reviewed fallback or maintenance boundary until protection is restored. Never flush the host ruleset, remove persistent volumes or use a namespace policy loader during normal deployment; any namespace fallback is confined to the reviewed emergency rollback.
+
 One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.

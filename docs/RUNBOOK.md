@@ -6,6 +6,8 @@ For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands`
 
 Use both `compose.yaml` and `compose.validation.yaml` for every Gate-0 build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the exact [four-service lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web and validator together so validator joins the current web network namespace.
 
+On the reviewed VPS, [persistent host egress](SELF_HOSTING.md#persistent-egress-on-the-reviewed-vps) is loaded by the existing UFW hook. Check UFW status and `sudo nft list table bridge unmet_egress` before/after deployment, then verify required traffic and deny counters. Keep both pinned web addresses and exact internal exceptions. Do not manually reapply a namespace policy after normal recreation or reboot; retain the namespace fallback only in the reviewed emergency rollback.
+
 Leave an explicitly requested local preview running until its owner requests closure. Restart only task-owned services for outage probes and verify their health afterward. Never leave validator in the previous namespace after replacing web. Preserve persistent volumes and unrelated projects.
 
 All command blocks start at the repository root unless they explicitly change directory. Deployment and signed-payment procedures require their own authorization.
