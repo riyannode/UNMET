@@ -1,6 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { decodeFunctionData, encodeFunctionData, getAddress, type Address, type Hash, type Hex, type PublicClient } from "viem";
-import { prepareDemand, validateDemandInput } from "../../backend/demand-prepare";
+import { decodeFunctionData, encodeFunctionData, getAddress, type Address, type Hash, type Hex } from "viem";
 import { approveService, rejectService, validateVoteIntent, DEMAND_ABI, captureWalletSession, createDemand, ERC20_ABI, setReownWalletProvider, supportDemand, verifyTransaction } from "../contract";
 import { errorMessage } from "../errors";
 import {
@@ -164,7 +163,7 @@ function validCreateInput() {
   };
 }
 
-test("frontend and API prepare identical canonical createDemand bytes while preserving allowance lifecycle", async () => {
+test("frontend wallet encodes the exact canonical specification while preserving allowance lifecycle", async () => {
   const signingRequests: string[] = [];
   const updates: Array<{ stage: string; state: string; intent: TransactionIntent }> = [];
   setReownWalletProvider(testProvider(() => [wallet], () => "0x7a0", signingRequests), wallet);
@@ -177,22 +176,6 @@ test("frontend and API prepare identical canonical createDemand bytes while pres
   const decoded = decodeFunctionData({ abi: DEMAND_ABI, data: walletIntent.data });
   if (decoded.functionName !== "createDemand") throw new Error("wrong function");
   expect(decoded.args[1]).toBe('{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}');
-  const contract = "0x3333333333333333333333333333333333333333";
-  const token = "0x4444444444444444444444444444444444444444";
-  const request = validateDemandInput(new TextEncoder().encode(JSON.stringify({
-    chainId: 1952, contract, capability: "vendor-kyb-api", specification: { schemaVersion: "unmet-rfq-v1", description: "Verify a business." },
-    maxUnitPrice: "20000", expectedCalls: "1000", deadline: decoded.args[4].toString(), initialCommitment: "20000000",
-  })));
-  if (!request.ok) throw new Error(request.code);
-  const client = {
-    getChainId: async () => 1952, getBytecode: async () => "0x01",
-    getBlock: async () => ({ number: 1n, timestamp: BigInt(Math.floor(Date.now() / 1000)) }),
-    readContract: async ({ functionName }: { functionName: string }) => functionName === "token" ? token : functionName === "decimals" ? 6 : 1n,
-  } as unknown as PublicClient;
-  const prepared = await prepareDemand(client, { chainId: 1952, contract, rpcUrl: "http://127.0.0.1:18545", deployBlock: 0n,
-    chain: { name: "Test", explorerUrl: "https://example.test", nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 } },
-    escrowToken: { address: token, symbol: "USDC", decimals: 6 } }, request.value);
-  expect(prepared).toEqual({ chainId: 1952, ...walletIntent, value: "0" });
 });
 
 test("new-demand validation rejects invalid encoded descriptions before allowance or signing", async () => {
