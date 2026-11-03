@@ -8,9 +8,9 @@ export default function UnmetFooter() {
         <nav className="unmet-footer-directory" aria-label="Footer navigation">
           <div className="unmet-footer-group">
             <h3>Explore</h3>
-            <a href="#unmet-landing">Home</a>
-            <a href="#problem">Problem</a>
-            <a href="#how-it-works">How It Works</a>
+            <a href="/">Home</a>
+            <a href="/#problem">Problem</a>
+            <a href="/#how-it-works">How It Works</a>
           </div>
           <div className="unmet-footer-group">
             <h3>Resources</h3>

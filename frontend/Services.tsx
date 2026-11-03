@@ -11,6 +11,7 @@ import { CHAIN_ID, DEMAND_CONTRACT } from "./contract.ts";
 import { parseDemandId, parseDemandRoute, ROUTES, serviceHref } from "./routing.ts";
 import { specificationDescription } from "../shared/rfq.ts";
 import UnmetNavigation from "./UnmetNavigation.tsx";
+import UnmetFooter from "./UnmetFooter.tsx";
 import "./unmet-landing.css";
 import "./services.css";
 
@@ -66,7 +67,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
   const search = query.trim().toLowerCase();
   const filtered = result.state === "ready" ? result.services.filter((item) =>
     [item.capability, specificationDescription(item.specification), item.demandId].some((value) => value.toLowerCase().includes(search))) : [];
-  return <div className="unmet-landing services-page"><UnmetNavigation /><main className="services-content">
+  return <><div className="unmet-landing services-page"><UnmetNavigation /><main className="services-content">
     {detail ? <>
       <Link className="services-back" to={ROUTES.services.href}><ArrowLeft size={16} aria-hidden="true" /> Back to Services</Link>
       {(invalid || result.state !== "ready") && <h1>Service</h1>}
@@ -121,5 +122,5 @@ export default function Services({ detail = false }: { detail?: boolean }) {
         </div>
       </div>
     </>}
-  </main></div>;
+  </main></div><UnmetFooter /></>;
 }

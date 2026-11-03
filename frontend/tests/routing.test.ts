@@ -4,6 +4,7 @@ import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
 import { ReuiAppShell } from "../components/examples/c-sidebar-1";
 import UnmetNavigation, { RollText } from "../UnmetNavigation";
+import UnmetFooter from "../UnmetFooter";
 import { demandHref, serviceHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
 
 const contract = "0x1111111111111111111111111111111111111111";
@@ -13,6 +14,14 @@ const routeObjects = Object.entries(ROUTES).flatMap(([id, route]) =>
 );
 
 describe("app routes", () => {
+  test("shared footer renders public navigation links", () => {
+    const footer = renderToStaticMarkup(createElement(UnmetFooter));
+    for (const [label, href] of [["Home", "/"], ["Problem", "/#problem"], ["How It Works", "/#how-it-works"], ["Documentation", "/docs"]]) {
+      expect(footer).toContain(`<a href="${href}">${label}</a>`);
+    }
+    expect(footer).toContain('<a href="https://x.com/Unmetxyz" target="_blank" rel="noopener noreferrer">X</a>');
+    expect(footer).toContain("<span>GitHub</span>");
+  });
   test.each([
     ["/", "landing"],
     ["/market", "market"],

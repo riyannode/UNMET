@@ -19,13 +19,20 @@ function check(condition: unknown, message: string) { if (!condition) throw new 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 50));
 async function navigate(id: string) { document.getElementById(id)?.click(); await tick(); }
 async function reply(body: unknown, status = 200) { const request = pending.shift(); check(request, "missing request"); request!.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })); await tick(); }
+function footer() {
+  const element = root.querySelector(".services-page + .unmet-footer");
+  check(element && root.querySelectorAll(".unmet-footer").length === 1, "one footer after services page");
+  return element!.innerHTML;
+}
 void (async () => {
   try {
     check(contract, "Set VITE_DEMAND_CONTRACT and VITE_PAYMENT_TOKEN for fixture");
     createRoot(root).render(<MemoryRouter initialEntries={["/services"]}><Harness /></MemoryRouter>);
     await tick(); check(root.textContent?.includes("Loading services") && root.querySelector(".services-search") && root.querySelector(".services-rail") && root.querySelectorAll(".service-skeleton").length === 3, "loading shell");
+    const listFooter = footer();
     await reply({ ...envelope, services: [] }); check(root.textContent?.includes("No fulfilled services"), "empty");
     await navigate("detail"); check(root.textContent?.includes("Loading services"), "detail loading");
+    check(footer() === listFooter, "same footer on detail");
     await reply({}, 503); check(root.textContent?.includes("unavailable") && !root.textContent.includes("not found"), "503");
     await navigate("other"); await reply({}, 404); check(root.textContent?.includes("not found"), "404");
     await navigate("detail"); await reply({ ...envelope, service });

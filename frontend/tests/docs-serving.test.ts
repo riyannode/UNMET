@@ -86,6 +86,7 @@ describe("Vite documentation MPA", () => {
       const html = await response.text();
       expect(html).toContain("Introduction · UNMET Docs");
       expect(html).toContain('id="docs-navigation"');
+      expect(html.match(/id="docs-footer"/g)).toHaveLength(1);
       expect(html).toContain('<main id="docs-content" tabindex="-1"');
       expect(html).toContain('href="#docs-content"');
       expect(html).toContain('href="/docs/api/payments/"');
@@ -119,6 +120,8 @@ describe("Vite documentation MPA", () => {
     const htmlPages = new Map(await Promise.all(approved.map(async (route) =>
       [route, await readFile(path.join(directory, docsFile(route)), "utf8")] as const)));
     for (const [route, html] of htmlPages) {
+      expect(html.match(/id="docs-footer"/g)).toHaveLength(1);
+      expect(html).toMatch(/<\/div>\s*<div id="docs-footer"><\/div>\s*<\/body>/);
       expect(html.match(/<h1>/g)?.length).toBe(1);
       expect(html).not.toMatch(/github\.com|AGENTS\.md|FUTURE_IMPLEMENTATION\.md|PAYMENT_RECOVERY\.md/);
       expect(html).not.toContain("<!--docs-");
@@ -171,6 +174,7 @@ describe("Vite documentation MPA", () => {
         const html = await response.text();
         expect(html).toContain(`rel="canonical" href="https://unmetxyz.my.id${route}"`);
         expect(html).toContain('class="docs-article"');
+        expect(html.match(/id="docs-footer"/g)).toHaveLength(1);
         expect(html).not.toContain('<div id="root"></div>');
         const head = await fetch(base + alias, { method: "HEAD" });
         expect(head.status).toBe(200);
