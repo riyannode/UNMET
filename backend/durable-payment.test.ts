@@ -79,9 +79,10 @@ async function fixture(run: (ctx: {
   confirmationBudgetMs?: number; onDiagnostic?: (event: Record<string, unknown>) => void;
   indexState?: DemandIndexState;
   now?: () => number;
+  storeNow?: () => number;
 } = {}) {
   const dir = mkdtempSync(tmpdir() + "/unmet-durable-");
-  const path = dir + "/payments.sqlite", store = new PaymentStore(path);
+  const path = dir + "/payments.sqlite", store = new PaymentStore(path, 100_000, options.storeNow);
   const calls = { verify: 0, settle: 0, status: 0 };
   const official: Official = {
     getSupported: async () => ({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }], extensions: [], signers: {} }),
@@ -921,6 +922,7 @@ test("reconciliation selects hash-bearing records beyond permanent hashless ambi
 });
 
 test("failed status queries rotate so later recoverable records are not starved", async () => {
+  let time = 1_000;
   await fixture(async ({ store }) => {
     for (let i = 0; i < 21; i++) {
       const row = store.reserve({
@@ -937,7 +939,7 @@ test("failed status queries rotate so later recoverable records are not starved"
     } };
     expect((await reconcilePayments(store, client, 20, 30_000, async () => true)).unresolved).toBe(20);
     expect((await reconcilePayments(store, client, 20, 30_000, async () => true)).settled).toBe(1);
-  });
+  }, { storeNow: () => time++ });
 });
 
 test("confirmed cancellation permits one concurrent new authorization with the same key, never the old payment", async () => {
