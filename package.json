@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "packageManager": "bun@1.4.2",
   "workspaces": ["backend", "frontend"],
+  "dependencies": { "canonicalize": "5.1.0" },
   "scripts": {
     "typecheck": "bun run --cwd backend typecheck && bun run --cwd frontend typecheck",
     "test": "bun run test:backend && bun run test:contract",

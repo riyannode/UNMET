@@ -1,4 +1,5 @@
 import { normalizeCapability } from "./capability";
+import { encodeRfqV1 } from "../shared/rfq";
 import { ESCROW_DECIMALS, ESCROW_SYMBOL, formatTokenAmount, parseTokenAmount } from "./contract";
 import { SERVICE_PRICE_ASSET, SERVICE_PRICE_SYMBOL, formatServicePrice, parseServicePrice } from "../shared/service-price";
 
@@ -71,9 +72,8 @@ export function parseCapabilityAnswer(value: string): { capability: string; labe
 export function parseSpecificationAnswer(value: string): string {
   const specification = value.trim();
   if (!specification) throw new Error("Enter a service specification");
-  if (new TextEncoder().encode(specification).length > 2048) {
-    throw new Error("Keep the specification within 2,048 UTF-8 bytes");
-  }
+  try { encodeRfqV1(specification); }
+  catch { throw new Error("Use valid Unicode and keep the encoded specification within 2,048 UTF-8 bytes"); }
   return specification;
 }
 

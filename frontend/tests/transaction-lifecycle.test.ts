@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { decodeFunctionData, encodeFunctionData, type Address, type Hash, type Hex } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress, type Address, type Hash, type Hex, type PublicClient } from "viem";
+import { prepareDemand, validateDemandInput } from "../../backend/demand-prepare";
 import { approveService, rejectService, validateVoteIntent, DEMAND_ABI, captureWalletSession, createDemand, ERC20_ABI, setReownWalletProvider, supportDemand, verifyTransaction } from "../contract";
 import { errorMessage } from "../errors";
 import {
@@ -162,6 +163,71 @@ function validCreateInput() {
     commitment: "20",
   };
 }
+
+test("frontend and API prepare identical canonical createDemand bytes while preserving allowance lifecycle", async () => {
+  const signingRequests: string[] = [];
+  const updates: Array<{ stage: string; state: string; intent: TransactionIntent }> = [];
+  setReownWalletProvider(testProvider(() => [wallet], () => "0x7a0", signingRequests), wallet);
+  await createDemand({ ...validCreateInput(), specification: " \nVerify a business.\t" }, (update) => updates.push(update));
+  expect(updates.map(({ stage, state }) => [stage, state])).toEqual([
+    ["approval", "broadcast"], ["approval", "confirmed"], ["demand", "broadcast"], ["demand", "confirmed"],
+  ]);
+  expect(signingRequests).toEqual(["eth_sendTransaction", "eth_sendTransaction"]);
+  const walletIntent = updates[2]!.intent;
+  const decoded = decodeFunctionData({ abi: DEMAND_ABI, data: walletIntent.data });
+  if (decoded.functionName !== "createDemand") throw new Error("wrong function");
+  expect(decoded.args[1]).toBe('{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}');
+  const contract = "0x3333333333333333333333333333333333333333";
+  const token = "0x4444444444444444444444444444444444444444";
+  const request = validateDemandInput(new TextEncoder().encode(JSON.stringify({
+    chainId: 1952, contract, capability: "vendor-kyb-api", specification: { schemaVersion: "unmet-rfq-v1", description: "Verify a business." },
+    maxUnitPrice: "20000", expectedCalls: "1000", deadline: decoded.args[4].toString(), initialCommitment: "20000000",
+  })));
+  if (!request.ok) throw new Error(request.code);
+  const client = {
+    getChainId: async () => 1952, getBytecode: async () => "0x01",
+    getBlock: async () => ({ number: 1n, timestamp: BigInt(Math.floor(Date.now() / 1000)) }),
+    readContract: async ({ functionName }: { functionName: string }) => functionName === "token" ? token : functionName === "decimals" ? 6 : 1n,
+  } as unknown as PublicClient;
+  const prepared = await prepareDemand(client, { chainId: 1952, contract, rpcUrl: "http://127.0.0.1:18545", deployBlock: 0n,
+    chain: { name: "Test", explorerUrl: "https://example.test", nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 } },
+    escrowToken: { address: token, symbol: "USDC", decimals: 6 } }, request.value);
+  expect(prepared).toEqual({ chainId: 1952, ...walletIntent, value: "0" });
+});
+
+test("new-demand validation rejects invalid encoded descriptions before allowance or signing", async () => {
+  const signs: string[] = [];
+  let allowanceReads = 0;
+  allowanceRequested = () => { allowanceReads++; };
+  setReownWalletProvider(testProvider(() => [wallet], () => "0x7a0", signs), wallet);
+  for (const specification of [" \n", "a".repeat(2000), "\ud800"]) {
+    await expect(createDemand({ ...validCreateInput(), specification })).rejects.toThrow("DEMAND_INVALID_SPEC");
+  }
+  expect(signs).toEqual([]);
+  expect(allowanceReads).toBe(0);
+});
+
+test("new-demand creation reuses sufficient allowance and retains wallet rejection behavior", async () => {
+  allowanceValue = 20_000_000n;
+  const base = testProvider();
+  const calls: Hex[] = [];
+  const updates: string[] = [];
+  setReownWalletProvider({ request: async (request: { method: string; params?: readonly unknown[] }) => {
+    if (request.method === "eth_sendTransaction") {
+      const tx = request.params?.[0] as { data: Hex };
+      calls.push(tx.data);
+      throw { code: 4001, message: "User rejected request" };
+    }
+    return base.request(request);
+  } }, wallet);
+  try {
+    await createDemand(validCreateInput(), ({ state }) => updates.push(state));
+    throw new Error("expected rejection");
+  } catch (error) { expect(errorMessage(error)).toBe("WALLET_REJECTED"); }
+  expect(calls).toHaveLength(1);
+  expect(decodeFunctionData({ abi: DEMAND_ABI, data: calls[0]! }).functionName).toBe("createDemand");
+  expect(updates).toEqual([]);
+});
 
 describe("vote intent", () => {
   test("binds encoded votes to their proposal nonce during recovery", () => {
@@ -806,6 +872,13 @@ describe("pending transaction storage", () => {
     const otherContract = { ...pending, contract: "0x5555555555555555555555555555555555555555" as const };
     expect(storePendingTransaction(storage, otherContract)).toBe(true);
     expect(readPendingTransactions(storage).records).toHaveLength(2);
+  });
+
+  test.each(['{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}', "  historical prose  "])("preserves exact new or historical creation readback metadata: %s", (specification) => {
+    const storage = new MemoryTransactionStorage();
+    const verification = { before: [], expected: { creator: getAddress(wallet), capability: "vendor-kyb-api", specification, maxPrice: 20000n, expectedCalls: 1000n, initialCommitment: 20000000n } };
+    expect(storePendingTransaction(storage, { ...pending, actionId: "create-demand", stage: "demand", verification })).toBe(true);
+    expect(readPendingTransactions(storage).records[0]?.verification).toEqual(verification);
   });
 
   test("removes a resolved record so the same action can be submitted again", () => {

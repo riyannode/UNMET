@@ -1574,148 +1574,42 @@ Deploy a new immutable escrow only when changing onchain voting, settlement, ref
 
 ### Objective
 
-Allow agents to create and read demand programmatically.
-
-An RFQ describes:
-
-- required capability
-- technical requirements
-- expected inputs
-- expected outputs
-- compatibility constraints
-- price constraints
-- expected call volume
-- submission deadline
-- verification requirements
-
-RFQ functionality extends demand creation.
-
-It does not replace the escrow model.
-
+Allow agents to create and discover existing UNMET demand programmatically. Describe the demanded capability sufficiently for discovery; builders remain responsible for their API design.
 
 ### 7.1 Canonical Source
 
-The escrow contract is authoritative for:
+Reuse the existing AgentDemand contract, ABI and deployment. Creator, capability, maximum unit price, expected calls, deadline, commitments, status, votes, settlement and refunds remain authoritative onchain. Do not duplicate economics inside specification metadata.
 
-- creator
-- capability
-- specification
-- maximum unit price
-- expected calls
-- deadline
-- commitments
-- submission status
-- review status
-- votes
-- settlement
-- refunds
+### 7.2 RFQ v1 Specification
 
-Offchain metadata must not silently override onchain economic fields.
-
-
-### 7.2 RFQ Storage
-
-Use two layers.
-
-
-### Onchain
-
-Store a compact versioned RFQ envelope inside the contract specification field.
-
-Respect the existing specification size limit unless an approved contract version changes it.
-
-
-CONTENT-ADDRESSED DOCUMENT
-
-Store larger schemas and supporting technical documents using immutable content-addressed references.
-
-For RFQ v1:
-
-- canonicalize JSON with RFC 8785/JCS
-- encode the result as UTF-8
-- calculate SHA-256
-- publish the exact canonical bytes
-- verify the digest on retrieval
-
-Unavailable or mismatched documents must be reported explicitly.
-
-Do not silently replace them with different content.
-
-
-### Example Envelope
+All official new-demand creation, through the human frontend or programmatic preparation, uses exactly:
 
 ```json
-{ "schemaVersion": "unmet-rfq-v1", "summary": "Analyze SEC filing risks", "documentUri": "ipfs://REPLACE_WITH_CID", "documentSha256": "0xREPLACE_WITH_SHA256" }
+{ "schemaVersion": "unmet-rfq-v1", "description": "Describe the demanded capability" }
 ```
 
-The values above are placeholders.
+Use one pure shared encoder. Trim leading/trailing description whitespace, reject empty/invalid Unicode, serialize with RFC 8785/JCS, and bound the final UTF-8 specification to the existing 2,048 bytes. Exact stored bytes affect the existing duplicate-demand key. Historical specifications remain untouched and readable. Human input and review remain prose; card/detail views show recognized v1 descriptions.
 
+No external document, URI/hash, IPFS, gateway, availability state, input/output schema, HTTP/latency requirement, x402 requirement or RFQ database belongs in G1. Richer fields require a real future requirement and a later specification version.
 
-### 7.3 Example RFQ Document
+### 7.3 Programmatic API
 
-```json
-{ "schemaVersion": "unmet-rfq-v1", "capability": "sec-filing-risk-analysis", "description": "Return a structured risk report", "input": { "contentType": "application/json", "schemaUri": "ipfs://INPUT_SCHEMA_CID" }, "output": { "contentType": "application/json", "schemaUri": "ipfs://OUTPUT_SCHEMA_CID" }, "requirements": { "maxLatencyMs": 3000, "paymentProtocol": "x402" }, "verification": { "policy": "supporter-approval", "benchmarkUri": null } }
-```
+`GET /v1/demands` remains canonical discovery, reusing the current deterministic/reorg-aware index and exposing raw specification unchanged. Keep existing sorting, limit and onchain economics. Do not add dedicated RFQ resources, another index or persistence.
 
-Economic fields remain authoritative in the escrow contract.
+`POST /v1/demands/prepare` validates strict structured input, configured chain/contract, description and economic bounds, then encodes existing `createDemand(...)` and returns an unsigned zero-native-value intent. Use exact decimal integer strings for economic quantities and Unix seconds for deadline. The backend must not sign, broadcast, approve tokens or invoke payment. Wallet execution still checks current account, target, allowance and chain state; preparation reserves nothing.
 
-A benchmark requirement does not mean that the benchmark has passed.
+Future `unmet-rfq-v2` or `unmet-rfq-v3` handling can extend the same endpoint. Implement only v1 without a registry or generalized version framework.
 
+### 7.4 Acceptance
 
-### 7.4 Programmatic API
-
-POST /v1/rfqs/prepare
-
-Purpose: Prepare unsigned demand-creation transaction information.
-
-Behavior:
-
-1. Validate schema.
-2. Validate content integrity.
-3. Validate contract version.
-4. Validate target chain.
-5. Validate economic bounds.
-6. Construct transaction arguments.
-7. Return unsigned transaction data.
-
-The backend must not sign or broadcast the user's transaction.
-
-
-GET /v1/rfqs
-
-Return available machine-readable RFQs.
-
-
-GET /v1/rfqs/:id
-
-Return a version-aware RFQ record.
-
-Include:
-
-- canonical demand identity
-- current onchain state
-- metadata version
-- metadata integrity
-- referenced content availability
-- indexing block and freshness
-
-Historical demands without RFQ v1 metadata must remain readable.
-
-
-### 7.5 Acceptance
-
-Required:
-
-- valid schema accepted
-- invalid schema rejected
-- unsupported version rejected
-- invalid URI rejected
-- digest mismatch rejected
-- oversized metadata rejected
-- invalid economic values rejected
-- unsupported network rejected
-- unsigned transaction verified
-- legacy demand remains readable
+- valid minimal v1 accepted; malformed, unsupported-version and unknown fields rejected on prepare
+- description trimming and JCS produce identical frontend/API specification bytes
+- final encoded UTF-8 boundary accepts 2,048 bytes and rejects 2,049
+- exact contract argument ordering, integer bounds, deadline and configured deployment verified
+- only unsigned zero-native-value intent returned; no backend payment/signing/broadcast/approval
+- raw historical specifications and pending recovery remain unchanged/readable
+- existing demand index, paid intelligence and payment behavior preserved
+- no Solidity, ABI, deployment, database or frontend redesign required
 
 
 ## 8. PHASE 2 — FULFILLED DEMAND SERVICE REGISTRY
@@ -2236,11 +2130,11 @@ Proves the authorized verifier signed the specified validation statement.
 It does not independently prove the real-world correctness of that statement.
 
 
-### RFQ Documents
+### RFQ Specifications
 
-Provide versioned technical requirements with content integrity checks.
+Provide a canonical versioned description inside existing demand specification.
 
-They do not override onchain economics.
+Economic fields remain separate and authoritative onchain.
 
 
 ### Service Registry
@@ -2358,7 +2252,7 @@ Deliver:
 
 - RFQ schema
 - canonical metadata
-- content-addressed specifications
+- canonical trimmed v1 descriptions in existing specification
 - unsigned transaction preparation
 - programmatic RFQ reads
 - historical compatibility

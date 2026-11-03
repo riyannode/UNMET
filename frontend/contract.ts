@@ -1,4 +1,5 @@
 import { ValidationResponseError, validationResponseError } from "./errors";
+import { encodeRfqV1 } from "../shared/rfq";
 import {
   createPublicClient,
   createWalletClient,
@@ -579,8 +580,7 @@ export async function createDemand(input: {
   const deployment = selectedDeployment;
   const { account, session } = await requireAccount(deployment, originatingSession);
   const capability = normalizeCapability(input.capability);
-  const specification = input.specification.trim();
-  if (!specification || new TextEncoder().encode(specification).length > 2048) throw new Error("DEMAND_INVALID_SPEC");
+  const specification = encodeRfqV1(input.specification);
   const commitment = parseTokenAmount(input.commitment);
   const maxPrice = parseServicePrice(input.maxPrice);
   if (commitment <= 0n || commitment > (1n << 96n) - 1n || maxPrice <= 0n || maxPrice > (1n << 96n) - 1n) throw new Error("DEMAND_INVALID_AMOUNT");

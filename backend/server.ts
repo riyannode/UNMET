@@ -28,6 +28,7 @@ import {
 
 import { deploymentKey, parseEscrowAmount, type EscrowDeployment } from "../shared/deployment.ts";
 import { SERVICE_PRICE_ASSET } from "../shared/service-price.ts";
+import { prepareDemand, validateDemandInput } from "./demand-prepare.ts";
 
 const cfg = loadConfig();
 const operations = loadOperationalConfig();
@@ -446,9 +447,9 @@ function compareScored(a: { entry: IndexEntry; score: number; deadline: string |
   return compareBigDesc(a.entry.data.committed, b.entry.data.committed) || compareBigDesc(a.entry.demandId, b.entry.demandId);
 }
 
-export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000)), decimals = 6): Opportunity[] {
+export function filterAndSort(entries: IndexEntry[], input: QueryInput, nowUnix = BigInt(Math.floor(Date.now() / 1000)), decimals = 6): Array<Opportunity & { specification: string }> {
   const { scored } = matchingEntries(entries, input, nowUnix);
-  return scored.slice(0, input.limit).map(({ entry, score }) => toOpportunity(entry, score, nowUnix, decimals));
+  return scored.slice(0, input.limit).map(({ entry, score }) => ({ ...toOpportunity(entry, score, nowUnix, decimals), specification: entry.data.specification }));
 }
 
 function compareBigDesc(a: bigint, b: bigint): number { return b > a ? 1 : b < a ? -1 : 0; }
@@ -681,7 +682,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.use(secureHeaders);
   app.use(cors);
   app.use((req, res, next) => {
-    if (req.path === "/" || req.path === "/v1/demands" || req.path === "/v1/opportunities") {
+    if (req.path === "/" || req.path === "/v1/demands" || req.path === "/v1/demands/prepare" || req.path === "/v1/opportunities") {
       res.append("Link", [
         "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"; profile=\"https://www.rfc-editor.org/info/rfc9727\"",
         "</openapi.json>; rel=\"service-desc\"; type=\"application/vnd.oai.openapi+json;version=3.1\"",
@@ -691,6 +692,35 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     }
     next();
   });
+  app.post("/v1/demands/prepare", (req, res, next) => {
+    const charset = /;\s*charset\s*=\s*"?([^;"\s]+)/i.exec(req.get("content-type") || "")?.[1];
+    if (!req.is("application/json") || (charset && charset.toLowerCase() !== "utf-8")) {
+      res.status(415).json({ error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "Use application/json with UTF-8 encoding" } });
+      return;
+    }
+    next();
+  }, express.raw({ type: "application/json", limit: "32kb", inflate: false }), (req, res, next) => {
+    const parsed = validateDemandInput(Buffer.isBuffer(req.body) ? req.body : new Uint8Array());
+    if (!parsed.ok) {
+      res.status(400).json({ error: { code: parsed.code, message: parsed.message } });
+      return;
+    }
+    if (market.deployment && (parsed.value.chainId !== market.deployment.chainId || parsed.value.contract.toLowerCase() !== market.deployment.contract.toLowerCase())) {
+      res.status(400).json({ error: { code: "DEMAND_INVALID_DEPLOYMENT", message: "Use the configured escrow chain and contract" } });
+      return;
+    }
+    res.locals.demandInput = parsed.value;
+    next();
+  }, limiter("demands", config.demandsPerWindow), gate, admittedWork(async (_req, res, next) => {
+    try {
+      if (!market.deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+      res.json(await prepareDemand(rpc(), market.deployment, res.locals.demandInput));
+    } catch (error) {
+      if (error instanceof Error && ["DEMAND_INVALID_DEADLINE", "DEMAND_INVALID_COMMITMENT"].includes(error.message)) {
+        res.status(400).json({ error: { code: error.message, message: "Deadline or commitment does not meet current contract requirements" } });
+      } else next(error);
+    }
+  }));
   app.use(express.json({ limit: "32kb", strict: true }));
 
   type Health = { status: number; body: Record<string, unknown> };
