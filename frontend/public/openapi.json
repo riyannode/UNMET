@@ -85,6 +85,12 @@
           "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
+    },
+    "/v1/services": {
+      "get": { "operationId": "listServices", "summary": "List up to 50 fulfilled services in descending demand ID order", "responses": { "200": { "description": "Canonical index snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ServicesResponse" } } } }, "429": { "description": "Shared demand quota exceeded.", "headers": { "Retry-After": { "$ref": "#/components/headers/RetryAfter" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/v1/services/{id}": {
+      "get": { "operationId": "getService", "summary": "Read a fulfilled service", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[1-9][0-9]*$" }, "description": "Canonical positive uint256 demand ID" }], "responses": { "200": { "description": "Canonical index snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ServiceResponse" } } } }, "400": { "description": "Invalid service ID", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }, "404": { "description": "Absent or not fulfilled", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }, "429": { "description": "Shared demand quota exceeded.", "headers": { "Retry-After": { "$ref": "#/components/headers/RetryAfter" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
     }
   },
   "components": {
@@ -94,6 +100,10 @@
       "RetryAfter": { "description": "Seconds until retry is appropriate.", "schema": { "type": "integer", "minimum": 1 } }
     },
     "schemas": {
+      "Service": { "type": "object", "required": ["demandId", "capability", "specification", "builder", "serviceUrl", "evidenceHash"], "properties": { "demandId": { "type": "string" }, "capability": { "type": "string" }, "specification": { "type": "string", "description": "Raw onchain specification" }, "builder": { "type": "string" }, "serviceUrl": { "type": "string" }, "evidenceHash": { "type": "string" } } },
+      "ServiceSnapshot": { "type": "object", "required": ["chainId", "contract", "blockNumber", "blockHash", "generatedAt"], "properties": { "chainId": { "type": "integer" }, "contract": { "type": "string" }, "blockNumber": { "type": "string" }, "blockHash": { "type": "string", "description": "Snapshot block hash, not fulfillment block hash" }, "generatedAt": { "type": "string", "format": "date-time", "description": "Response generation time, not fulfillment time" } } },
+      "ServicesResponse": { "allOf": [{ "$ref": "#/components/schemas/ServiceSnapshot" }, { "type": "object", "required": ["services"], "properties": { "services": { "type": "array", "maxItems": 50, "items": { "$ref": "#/components/schemas/Service" } } } }] },
+      "ServiceResponse": { "allOf": [{ "$ref": "#/components/schemas/ServiceSnapshot" }, { "type": "object", "required": ["service"], "properties": { "service": { "$ref": "#/components/schemas/Service" } } }] },
       "ErrorResponse": { "type": "object", "required": ["error"], "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } } } },
       "LiveResponse": { "type": "object", "required": ["ok", "name"], "properties": { "ok": { "const": true }, "name": { "const": "UNMET" } } },
       "HealthResponse": { "type": "object", "required": ["ok", "name", "chainId", "contract", "latestBlock"], "properties": { "ok": { "const": true }, "name": { "const": "UNMET" }, "chainId": { "type": "integer" }, "contract": { "type": "string" }, "latestBlock": { "type": "string" } } },

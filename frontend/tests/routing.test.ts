@@ -2,8 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
+import { ReuiAppShell } from "../components/examples/c-sidebar-1";
 import UnmetNavigation, { RollText } from "../UnmetNavigation";
-import { demandHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
+import UnmetFooter from "../UnmetFooter";
+import { demandHref, serviceHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
 
 const contract = "0x1111111111111111111111111111111111111111";
 
@@ -12,10 +14,20 @@ const routeObjects = Object.entries(ROUTES).flatMap(([id, route]) =>
 );
 
 describe("app routes", () => {
+  test("shared footer renders public navigation links", () => {
+    const footer = renderToStaticMarkup(createElement(UnmetFooter));
+    for (const [label, href] of [["Home", "/"], ["Problem", "/#problem"], ["How It Works", "/#how-it-works"], ["Documentation", "/docs"]]) {
+      expect(footer).toContain(`<a href="${href}">${label}</a>`);
+    }
+    expect(footer).toContain('<a href="https://x.com/Unmetxyz" target="_blank" rel="noopener noreferrer">X</a>');
+    expect(footer).toContain("<span>GitHub</span>");
+  });
   test.each([
     ["/", "landing"],
     ["/market", "market"],
     [`/market/1952/${contract}/42`, "demandDetail"],
+    ["/services", "services"],
+    [`/services/1952/${contract}/42`, "serviceDetail"],
     ["/create-demand", "createDemand"],
     ["/analytics", "analytics"],
   ])("matches %s to %s", (path, routeId) => {
@@ -38,6 +50,32 @@ describe("app routes", () => {
     expect(docsAnchor).not.toContain("data-discover");
     expect(marketAnchor).toContain("data-discover");
     expect(analyticsAnchor).toContain("data-discover");
+    expect(markup).toContain('href="/services"');
+  });
+
+  test.each([
+    ["market", "Explore Market"],
+    ["create-demand", "Create Demand"],
+    ["analytics", "Analytics"],
+  ] as const)("renders workspace navigation with %s active", (activeRoute, activeLabel) => {
+    const markup = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(ReuiAppShell, {
+      activeRoute, pageTitle: "Test", account: null, walletStatus: "ready", busy: false,
+      disconnecting: false, boardLoading: false, onConnect: () => {}, onDisconnect: () => {},
+      onRefresh: () => {}, children: null,
+    })));
+    const navigation = markup.match(/<div[^>]*role="navigation"[^>]*aria-label="Market"[^>]*>(.*?)<\/div><\/div><\/div>/)?.[1];
+    expect(navigation).toBeDefined();
+    const anchors = [...navigation!.matchAll(/<a\b[^>]*aria-label="([^"]+)"[^>]*>.*?<\/a>/g)];
+    expect(anchors.map((anchor) => anchor[1])).toEqual(["Explore Market", "Create Demand", "Analytics", "Services", "Docs"]);
+    for (const [index, href] of ["/market", "/create-demand", "/analytics", "/services", "/docs"].entries()) {
+      expect(anchors[index][0]).toContain(`href="${href}"`);
+      expect(anchors[index][0].includes("data-discover")).toBe(index !== 4);
+      expect(anchors[index][0].includes('aria-current="page"')).toBe(anchors[index][1] === activeLabel);
+    }
+    for (const icon of ["compass", "plus", "chart-pie", "box", "book-open"]) {
+      expect(navigation).toContain(`lucide-${icon}`);
+    }
+    expect(navigation).not.toMatch(/<h[1-6]\b|role="separator"/);
   });
 
   test("exposes one readable label while hiding both animated layers", () => {
@@ -59,6 +97,8 @@ describe("app routes", () => {
 
   test("builds demand URLs that can be opened directly", () => {
     expect(demandHref(1952, contract, 42n)).toBe(`/market/1952/${contract}/42`);
+    expect(serviceHref(1952, contract, 42n)).toBe(`/services/1952/${contract}/42`);
+    expect(matchRoutes(routeObjects, "/catalog")).toBeNull();
     expect(parseDemandRoute("1952", contract, "42")).toEqual({ chainId: 1952, contract, demandId: 42n });
     expect(parseDemandRoute("0", contract, "42")).toBeNull();
     expect(parseDemandRoute("1952", `0x${"0".repeat(40)}`, "42")).toBeNull();

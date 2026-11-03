@@ -1,7 +1,7 @@
 // Adapted from ReUI registry component @reui/c-sidebar-1 (base-nova).
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { ChartPie, CompassIcon, LogOut, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
+import { BookOpen, Box, ChartPie, CompassIcon, LogOut, PlusIcon, RefreshCw, WalletIcon } from "lucide-react";
 import { reownButtonLabel, type ReownStatus } from "@/reown-status";
 
 import {
@@ -54,6 +54,8 @@ const NAV = [
   { id: "market", label: "Explore Market", href: ROUTES.market.href, icon: <CompassIcon aria-hidden="true" /> },
   { id: "create-demand", label: "Create Demand", href: ROUTES.createDemand.href, icon: <PlusIcon aria-hidden="true" /> },
   { id: "analytics", label: "Analytics", href: ROUTES.analytics.href, icon: <ChartPie aria-hidden="true" /> },
+  { id: "services", label: "Services", href: ROUTES.services.href, icon: <Box aria-hidden="true" /> },
+  { id: "docs", label: "Docs", href: ROUTES.docs.href, icon: <BookOpen aria-hidden="true" /> },
 ] as const;
 
 function BrandHeader() {
@@ -99,7 +101,7 @@ function WorkspaceNav({ activeRoute }: { activeRoute: AppNavRoute }) {
                 className="gap-3"
                 tooltip={item.label}
                 aria-label={item.label}
-                render={<Link to={item.href} />}
+                render={item.id === "docs" ? <a href={item.href} /> : <Link to={item.href} />}
                 isActive={activeRoute === item.id}
                 aria-current={activeRoute === item.id ? "page" : undefined}
                 onClick={() => setOpenMobile(false)}

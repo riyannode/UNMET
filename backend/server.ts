@@ -682,7 +682,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.use(secureHeaders);
   app.use(cors);
   app.use((req, res, next) => {
-    if (req.path === "/" || req.path === "/v1/demands" || req.path === "/v1/demands/prepare" || req.path === "/v1/opportunities") {
+    if (req.path === "/" || req.path === "/v1/demands" || /^\/v1\/services(?:\/[^/]+)?$/.test(req.path) || req.path === "/v1/demands/prepare" || req.path === "/v1/opportunities") {
       res.append("Link", [
         "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"; profile=\"https://www.rfc-editor.org/info/rfc9727\"",
         "</openapi.json>; rel=\"service-desc\"; type=\"application/vnd.oai.openapi+json;version=3.1\"",
@@ -780,6 +780,38 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       const evaluationTime = options.now?.() ?? Date.now();
       const demands = filterAndSort(entries, { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 50 }, BigInt(Math.floor(evaluationTime / 1000)), market.deployment.escrowToken.decimals);
       res.json({ chainId: market.deployment.chainId, contract: market.deployment.contract, escrowToken: market.deployment.escrowToken, blockNumber: indexState.lastIndexedBlock.toString(), generatedAt: new Date(evaluationTime).toISOString(), demands });
+    } catch (error) { next(error); }
+  }));
+
+  app.get(["/v1/services", "/v1/services/:id"], limiter("demands", config.demandsPerWindow), gate, admittedWork(async (req, res, next) => {
+    const id = req.params.id;
+    if (id !== undefined && (!/^[1-9][0-9]*$/.test(id) || BigInt(id) >= 1n << 256n)) {
+      res.status(400).json({ error: { code: "INVALID_SERVICE_ID", message: "Use a canonical positive uint256 demand ID" } });
+      return;
+    }
+    try {
+      if (!market.deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
+      if ((await health()).status !== 200) throw new Error("CHAIN_RPC_UNAVAILABLE");
+      if (indexState === demandIndex) await ensureIndex(rpc(), market.deployment);
+      else if (indexState.ready) {
+        if (indexState.deploymentKey !== deploymentKey(market.deployment.chainId, market.deployment.contract)) throw new Error("INDEX_DEPLOYMENT_MISMATCH");
+      } else await refreshIndex(rpc(), market.deployment, indexState, config);
+      if (req.aborted || res.destroyed) { res.statusCode = 503; res.end(); return; }
+      if (!indexState.lastIndexedBlockHash) throw new Error("CHAIN_RPC_UNAVAILABLE");
+      const row = (entry: IndexEntry) => ({ demandId: entry.demandId.toString(), capability: entry.data.capability,
+        specification: entry.data.specification, builder: entry.data.builder, serviceUrl: entry.data.serviceUrl, evidenceHash: entry.data.evidenceHash });
+      const envelope = { chainId: market.deployment.chainId, contract: market.deployment.contract,
+        blockNumber: indexState.lastIndexedBlock.toString(), blockHash: indexState.lastIndexedBlockHash,
+        generatedAt: new Date(options.now?.() ?? Date.now()).toISOString() };
+      if (id !== undefined) {
+        const entry = indexState.entries.get(id);
+        if (!entry || entry.data.status !== 2) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Service not found" } }); return; }
+        res.json({ ...envelope, service: row(entry) });
+      } else {
+        const services = [...indexState.entries.values()].filter((entry) => entry.data.status === 2)
+          .sort((a, b) => a.demandId > b.demandId ? -1 : a.demandId < b.demandId ? 1 : 0).slice(0, 50).map(row);
+        res.json({ ...envelope, services });
+      }
     } catch (error) { next(error); }
   }));
 

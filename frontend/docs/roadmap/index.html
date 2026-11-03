@@ -33,7 +33,7 @@
             <h1>Future implementation</h1>
             <p class="docs-description">Planned capabilities that connect funded demand to discoverable, purchasable services.</p>
 <p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
-<p>The stages below describe roadmap scope. RFQ v1 is a minimal description and unsigned preparation interface; other stages retain their proposed status. These descriptions do not establish current endpoint availability. See <a href="/docs/api/">API reference</a> for supported interfaces.</p>
+<p>The stages below describe roadmap scope. RFQ v1 is a minimal description and unsigned preparation interface; G2 minimally exposes fulfilled demand services. Other stages retain their proposed status. These descriptions do not establish current endpoint availability. See <a href="/docs/api/">API reference</a> for supported interfaces.</p>
 <h2 id="automatic-validation">Automatic x402 validation</h2>
 <p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
 <p>Gate 0 would check a builder endpoint's unpaid x402 challenge before escrow submission and issue a short-lived signed attestation. A new immutable escrow version would enforce acceptance while preserving existing-demand settlement/refund access. Approved payment profiles would define supported networks, assets, and compatible prices.</p>
@@ -42,8 +42,8 @@
 <p class="docs-status">MINIMAL RFQ V1</p>
 <p>Phase 1 uses a minimal versioned description in the existing demand specification. Official frontend and API creation share trimmed JCS serialization. GET /v1/demands remains discovery; POST /v1/demands/prepare returns unsigned transaction data. Economic terms remain onchain and historical specifications stay readable. No external documents or dedicated RFQ resources are planned for G1.</p>
 <h2 id="service-registry">Service Registry</h2>
-<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
-<p>Phase 2 would publish services originating from fulfilled demands with onchain provenance. Builders could update authenticated service metadata without rewriting settlement history. Publication, compatibility, availability, and technical verification would remain separate states.</p>
+<p class="docs-status">MINIMAL G2</p>
+<p>The public <a href="/services">Services directory</a> and free API show canonical fulfilled demand records. They do not claim current provider availability or compatibility. Current observations and external distribution remain proposed.</p>
 <h2 id="service-discovery">x402 Service Discovery</h2>
 <p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
 <p>Phase 3 would help agents find services by capability, payment constraints, and recent observations. Purchases would go directly to the provider's authorized receiver. Optional external distribution, including OKX.AI, would require separate publication and acceptance; discovery would never authorize spending.</p>

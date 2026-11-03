@@ -5,7 +5,8 @@
       "item": [
         { "href": "https://unmetxyz.my.id/v1/demands" },
         { "href": "https://unmetxyz.my.id/v1/demands/prepare" },
-        { "href": "https://unmetxyz.my.id/v1/opportunities" }
+        { "href": "https://unmetxyz.my.id/v1/opportunities" },
+        { "href": "https://unmetxyz.my.id/v1/services" }
       ]
     },
     {

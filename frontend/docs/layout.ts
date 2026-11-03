@@ -65,7 +65,8 @@ export function docsLayout(html: string, filename: string): string {
   return html.replace("<!--docs-sidebar-->", sidebar)
     .replace("<!--docs-toc-->", toc)
     .replace("<!--docs-group-->", group.title)
-    .replace("<!--docs-pagination-->", pageLink(docsRoutes[index - 1], "Previous") + pageLink(docsRoutes[index + 1], "Next"));
+    .replace("<!--docs-pagination-->", pageLink(docsRoutes[index - 1], "Previous") + pageLink(docsRoutes[index + 1], "Next"))
+    .replace("</body>", '<div id="docs-footer"></div>\n  </body>');
 }
 
 export const docsLayoutPlugin: Plugin = {

@@ -17,6 +17,8 @@ flowchart TD
 
 The browser's demand actions use `frontend/contract.ts` directly, not the Bun API. `frontend/main.tsx` lazy-loads app routes; `/` is the landing page, `/docs` serves the Vite MPA public API document at `frontend/docs/index.html`, and `/market`, `/market/:chainId/:contract/:demandId`, `/create-demand`, `/analytics` are app routes.
 
+The free Services API projects only raw Fulfilled demands from the existing canonical index. The standalone `/services` pages read that API and check the configured chain and contract; they do not fetch providers. Snapshot block hash and generation time describe the API read, not fulfillment time or block. G2 exposes no current availability, compatibility or provider metadata.
+
 Docker starts `backend/start.ts` through `docker/Dockerfile.api`; Caddy serves the web image and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready`. One **Bun API replica** owns a local payment volume. Indexes, quotas and admission limits are process-local. SQLite and OKX do not share an atomic transaction; no distributed exactly-once guarantee is made. See [Self-hosting](SELF_HOSTING.md) and [Payment recovery](PAYMENT_RECOVERY.md).
 
 The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id). Repository G0.5 changes do not update that running release.

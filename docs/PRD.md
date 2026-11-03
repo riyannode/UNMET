@@ -178,6 +178,7 @@ Routes:
 - `GET /health` free dependency health check
 - `GET /ready` public payment readiness plus health check
 - `GET /v1/demands` free chain-derived board with raw specification preserved
+- `GET /v1/services` and `GET /v1/services/:id` free fulfilled-demand service reads from the canonical index; `/services` provides a public directory without provider probing
 - `POST /v1/demands/prepare` free unsigned creation intent; structured v1 description and existing onchain economic arguments
 - `POST /v1/opportunities` paid OKX.AI/A2MCP route
 
@@ -207,7 +208,7 @@ No LLM and no success-probability claim.
 React/Vite/viem.
 
 Screens/actions:
-- Routes: / is the standalone landing page; /market, /market/:chainId/:contract/:demandId, /create-demand, and /analytics share the application shell. /docs serves the Vite MPA public API document at frontend/docs/index.html.
+- Routes: / is the standalone landing page; /services and /services/:chainId/:contract/:demandId are standalone public pages; /market, /market/:chainId/:contract/:demandId, /create-demand, and /analytics share the application shell. /docs serves the Vite MPA public API document at frontend/docs/index.html.
 - Global navigation: **Explore Market**, **Create Demand**, and **Analytics**; Demand Details keeps **Explore Market** active.
 - Selecting a market request from **Market Requests** or **Analytics** opens its dedicated Demand view; the back action returns to the originating view.
 - Demand view tabs: **Request Details** (request and market state), **Escrow & Support** (escrow, wallet commitment, support inputs and eligible refund), and **Builder Proposal** (proposal, weighted review progress, and currently eligible settlement actions).

@@ -163,3 +163,9 @@ html[data-theme="dark"] .unmet-footer-bottom p { color: var(--unmet-theme-muted)
 html[data-theme="dark"] .unmet-footer-group a:hover { color: var(--unmet-theme-accent); }
 html[data-theme="dark"] .unmet-footer-social { border-color: #414141; color: var(--unmet-theme-muted); }
 html[data-theme="dark"] .unmet-footer-social:hover { border-color: var(--unmet-theme-interactive); background: #252b20; color: var(--unmet-theme-text); }
+
+.services-page + .unmet-footer,
+#docs-footer .unmet-footer {
+  width: 100%;
+  margin: 0;
+}

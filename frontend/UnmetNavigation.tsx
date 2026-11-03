@@ -92,6 +92,7 @@ export default function UnmetNavigation({ documentNavigation = false }: { docume
 
   const navItems = [
     { label: "Market", href: ROUTES.market.href },
+    { label: "Services", href: ROUTES.services.href },
     { label: "How It works", href: sectionHref("#how-it-works") },
     { label: "Analytics", href: ROUTES.analytics.href },
     { label: "Docs", href: ROUTES.docs.href },

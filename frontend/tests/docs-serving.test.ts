@@ -74,9 +74,8 @@ describe("Vite documentation MPA", () => {
     expect(sharedAssets.some((asset) => asset.endsWith(".js"))).toBe(true);
     expect(sharedAssets.some((asset) => asset.endsWith(".css"))).toBe(true);
     for (const asset of sharedAssets) await access(path.join(directory, asset));
-    const sharedCss = sharedAssets.find((asset) => asset.endsWith(".css"));
-    expect(sharedCss).toBeDefined();
-    expect(await readFile(path.join(directory, sharedCss!), "utf8")).toContain("--unmet-theme-page");
+    const sharedCss = await Promise.all(sharedAssets.filter((asset) => asset.endsWith(".css")).map((asset) => readFile(path.join(directory, asset), "utf8")));
+    expect(sharedCss.some((css) => css.includes("--unmet-theme-page"))).toBe(true);
   });
 
   test.each(docsPaths)("%s serves docs HTML through dev and built preview", async (route) => {
@@ -87,6 +86,7 @@ describe("Vite documentation MPA", () => {
       const html = await response.text();
       expect(html).toContain("Introduction · UNMET Docs");
       expect(html).toContain('id="docs-navigation"');
+      expect(html.match(/id="docs-footer"/g)).toHaveLength(1);
       expect(html).toContain('<main id="docs-content" tabindex="-1"');
       expect(html).toContain('href="#docs-content"');
       expect(html).toContain('href="/docs/api/payments/"');
@@ -99,7 +99,7 @@ describe("Vite documentation MPA", () => {
 
   test("keeps app fallback and discovery bytes unchanged", async () => {
     for (const base of [devOrigin, previewOrigin]) {
-      for (const route of ["/market", "/market/1", "/create-demand", "/analytics", "/docs-other"]) {
+      for (const route of ["/market", "/market/1", "/services", "/services/1952/0x1111111111111111111111111111111111111111/42", "/create-demand", "/analytics", "/docs-other"]) {
         const response = await fetch(base + route, { headers: { Accept: "text/html" } });
         expect(response.status).toBe(200);
         expect(await response.text()).toContain('<div id="root"></div>');
@@ -120,6 +120,8 @@ describe("Vite documentation MPA", () => {
     const htmlPages = new Map(await Promise.all(approved.map(async (route) =>
       [route, await readFile(path.join(directory, docsFile(route)), "utf8")] as const)));
     for (const [route, html] of htmlPages) {
+      expect(html.match(/id="docs-footer"/g)).toHaveLength(1);
+      expect(html).toMatch(/<\/div>\s*<div id="docs-footer"><\/div>\s*<\/body>/);
       expect(html.match(/<h1>/g)?.length).toBe(1);
       expect(html).not.toMatch(/github\.com|AGENTS\.md|FUTURE_IMPLEMENTATION\.md|PAYMENT_RECOVERY\.md/);
       expect(html).not.toContain("<!--docs-");
@@ -146,7 +148,7 @@ describe("Vite documentation MPA", () => {
           expect(page).toBeDefined();
           expect(page).toContain(`id="${target.hash.slice(1)}"`);
         } else {
-          expect(page !== undefined || ["/", "/market", "/create-demand", "/openapi.json", "/api.md", "/payment.md", "/.well-known/api-catalog"].includes(target.pathname)).toBe(true);
+          expect(page !== undefined || ["/", "/market", "/services", "/create-demand", "/openapi.json", "/api.md", "/payment.md", "/.well-known/api-catalog"].includes(target.pathname)).toBe(true);
         }
       }
       const cssLinks = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)];
@@ -172,6 +174,7 @@ describe("Vite documentation MPA", () => {
         const html = await response.text();
         expect(html).toContain(`rel="canonical" href="https://unmetxyz.my.id${route}"`);
         expect(html).toContain('class="docs-article"');
+        expect(html.match(/id="docs-footer"/g)).toHaveLength(1);
         expect(html).not.toContain('<div id="root"></div>');
         const head = await fetch(base + alias, { method: "HEAD" });
         expect(head.status).toBe(200);
@@ -244,7 +247,8 @@ describe("Vite documentation MPA", () => {
     expect(roadmap).toContain('<h2 id="rfq">Machine-readable RFQ</h2>\n<p class="docs-status">MINIMAL RFQ V1</p>');
     expect(schema.paths["/v1/demands/prepare"].post.operationId).toBe("prepareDemand");
     expect(schema.components.schemas.DemandsResponse.properties.demands.items.$ref).toBe("#/components/schemas/PublicDemand");
-    for (const id of ["automatic-validation", "service-registry", "service-discovery", "intelligence-expansion", "capability-resolver"]) {
+    expect(roadmap).toContain('<h2 id="service-registry">Service Registry</h2>\n<p class="docs-status">MINIMAL G2</p>');
+    for (const id of ["automatic-validation", "service-discovery", "intelligence-expansion", "capability-resolver"]) {
       expect(roadmap).toMatch(new RegExp('id="' + id + '">[^<]+</h2>\\s*<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>'));
     }
     const payments = await readFile(path.join(directory, "docs/api/payments/index.html"), "utf8");

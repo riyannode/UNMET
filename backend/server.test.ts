@@ -37,6 +37,7 @@ async function routeFixture(entries: IndexEntry[], run: (url: string, marketCall
   state.ready = true;
   state.deploymentKey = `1952:${demandContract.toLowerCase()}`;
   state.lastIndexedBlock = 42n;
+  state.lastIndexedBlockHash = hashA;
   for (const entry of entries) state.entries.set(entry.demandId.toString(), entry);
   let marketCalls = 0;
   const client = fakeClient({ getBlock: () => { marketCalls++; return { number: 42n, hash: hashA }; }, readContract: () => { marketCalls++; return 0n; } });
@@ -326,7 +327,7 @@ describe("free and paid discovery responses", () => {
     const catalog = JSON.parse(readFileSync(new URL("../frontend/public/.well-known/api-catalog", import.meta.url), "utf8"));
     expect(catalog.linkset[0].anchor).toBe("https://unmetxyz.my.id/.well-known/api-catalog");
     expect(catalog.linkset[0].item.map((link: { href: string }) => link.href)).toEqual([
-      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/demands/prepare", "https://unmetxyz.my.id/v1/opportunities",
+      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/demands/prepare", "https://unmetxyz.my.id/v1/opportunities", "https://unmetxyz.my.id/v1/services",
     ]);
     expect(catalog.linkset.every((entry: { anchor: string }) => new URL(entry.anchor).protocol === "https:")).toBe(true);
     expect(catalog.linkset.slice(1).every((entry: Record<string, Array<{ href: string }>>) =>
@@ -334,8 +335,15 @@ describe("free and paid discovery responses", () => {
     expect(catalog.linkset[2]["service-doc"].some((link: { href: string }) => link.href === "https://unmetxyz.my.id/payment.md")).toBe(true);
     const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
     expect(spec.info.description).toContain("Mozilla browser user agent");
-    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/opportunities"]);
+    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/opportunities", "/v1/services", "/v1/services/{id}"]);
     expect(spec.paths["/v1/demands/prepare"].post).not.toHaveProperty("x-payment-info");
+    for (const path of ["/v1/services", "/v1/services/{id}"]) {
+      const responses = spec.paths[path].get.responses;
+      expect(responses["429"].headers["Retry-After"].$ref).toBe("#/components/headers/RetryAfter");
+      expect(responses["429"].content["application/json"].schema.$ref).toBe("#/components/schemas/ErrorResponse");
+      expect(responses["503"].$ref).toBe("#/components/responses/ServiceUnavailable");
+    }
+    for (const status of ["400", "404"]) expect(spec.paths["/v1/services/{id}"].get.responses[status].content["application/json"].schema.$ref).toBe("#/components/schemas/ErrorResponse");
     expect(spec.paths["/.well-known/api-catalog"].get.responses["200"].content).toHaveProperty("application/linkset+json");
     expect(spec.paths["/v1/opportunities"].post.responses).toHaveProperty("402");
     expect(spec.paths["/v1/opportunities"].post.responses["402"].headers).toHaveProperty("PAYMENT-REQUIRED");
@@ -368,6 +376,146 @@ describe("free and paid discovery responses", () => {
     expect(paymentGuide).toContain("USDG");
     expect(paymentGuide).toContain("Idempotency-Key");
     expect(paymentGuide).toContain("Ethereum L1 finality");
+  });
+
+  test("services use raw fulfilled status, retain exact fields and look up beyond the list", async () => {
+    const entries = Array.from({ length: 55 }, (_, index) => syntheticEntry(BigInt(index + 1), { status: 2, builder: testContract, serviceUrl: "https://example.org/same", specification: index === 0 ? "{broken" : index === 1 ? '{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}' : "  legacy prose  ", committed: index % 2 ? 0n : 1n }));
+    entries.push(syntheticEntry(100n, { status: 1, quorumReached: true, builder: testContract, serviceUrl: "https://example.org/same" }));
+    entries.push(syntheticEntry(101n, { status: 0, builder: testContract, serviceUrl: "https://example.org/same" }));
+    entries.push(syntheticEntry(102n, { status: 0, builder: testContract, serviceUrl: "https://example.org/same", candidateRejected: true }));
+    entries.push(syntheticEntry(103n, { status: 1, builder: testContract, serviceUrl: "https://example.org/same", candidateRejected: true }));
+    entries.push(syntheticEntry(104n, { status: 3, builder: testContract, serviceUrl: "https://example.org/same" }));
+    entries.push(syntheticEntry(105n, { status: 4, builder: testContract, serviceUrl: "https://example.org/same" }));
+    entries.push(syntheticEntry(9007199254740993n, { status: 2, serviceUrl: "https://example.org/same" }));
+    entries.push(syntheticEntry(9007199254740994n, { status: 2, serviceUrl: "https://example.org/same" }));
+    await routeFixture(entries, async (base, marketCalls) => {
+      const response = await fetch(base + "/v1/services");
+      expect(response.headers.get("link")).toContain("api-catalog");
+      const body = await response.json();
+      expect(body).toMatchObject({ chainId: 1952, contract: demandContract, blockNumber: "42", blockHash: hashA, generatedAt: new Date(fixedNow).toISOString() });
+      expect(body.services).toHaveLength(50);
+      expect(body.services.slice(0, 2).map((row: { demandId: string }) => row.demandId)).toEqual(["9007199254740994", "9007199254740993"]);
+      expect(body.services.some((row: { demandId: string }) => ["100", "101", "102", "103", "104", "105"].includes(row.demandId))).toBe(false);
+      const detail = await (await fetch(base + "/v1/services/1")).json();
+      expect(detail.service).toEqual({ demandId: "1", capability: "fixture-1", specification: "{broken", builder: testContract, serviceUrl: "https://example.org/same", evidenceHash: hashA });
+      expect((await (await fetch(base + "/v1/services/2")).json()).service.specification).toBe('{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}');
+      expect((await (await fetch(base + "/v1/services/3")).json()).service.specification).toBe("  legacy prose  ");
+      for (const invalid of ["0", "01", "abc", (1n << 256n).toString()]) expect((await fetch(base + "/v1/services/" + invalid)).status).toBe(400);
+      for (const absent of ["100", "101", "102", "103", "104", "105", "999"]) expect((await fetch(base + "/v1/services/" + absent)).status).toBe(404);
+      expect(marketCalls()).toBe(0);
+    });
+  });
+
+  test("fulfilled service rebuild, duplicate incremental logs and reorg follow canonical state", async () => {
+    const state = createDemandIndexState();
+    let status = 2;
+    let height = 42n;
+    let hash = hashA;
+    let reads = 0;
+    const fulfilledLog = { ...closedLog(1n), topics: encodeEventTopics({ abi: AGENT_DEMAND_ABI, eventName: "DemandFulfilled", args: { demandId: 1n, builder: testContract, treasury: testContract } }) };
+    const client = fakeClient({
+      getBlock: (blockNumber) => ({ number: blockNumber ?? height, hash }),
+      getLogs: () => [fulfilledLog, fulfilledLog],
+      readContract: (name) => {
+        if (name === "nextDemandId") return 2n;
+        if (name === "getDemand") { reads++; return syntheticEntry(1n, { status, serviceUrl: "https://provider.example" }).data; }
+        if (name === "approvalProgress" || name === "rejectionProgress") return [0n, 0n, false];
+      },
+    });
+    await refreshIndex(client, marketDeployment, state);
+    expect(state.entries.get("1")?.data.status).toBe(2);
+    expect(reads).toBe(1);
+    height = 43n;
+    await refreshIndex(client, marketDeployment, state);
+    expect(reads).toBe(2);
+    expect(state.entries.size).toBe(1);
+    await routeFixture([...state.entries.values()], async (base) => {
+      expect((await (await fetch(base + "/v1/services")).json()).services).toHaveLength(1);
+    });
+    status = 1;
+    hash = hashB;
+    height = 44n;
+    await refreshIndex(client, marketDeployment, state);
+    expect(state.entries.get("1")?.data.status).toBe(1);
+    await routeFixture([...state.entries.values()], async (base) => {
+      expect((await (await fetch(base + "/v1/services")).json()).services).toHaveLength(0);
+      expect((await fetch(base + "/v1/services/1")).status).toBe(404);
+    });
+  });
+
+  test("services share bounded free quota without calling payment middleware", async () => {
+    const state = createDemandIndexState();
+    state.ready = true;
+    state.deploymentKey = `1952:${demandContract.toLowerCase()}`;
+    state.lastIndexedBlockHash = hashA;
+    const server = createApp({ middleware: () => { throw new Error("payment called"); } }, {
+      config: loadOperationalConfig({ RATE_DEMANDS: "1" }),
+      market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment },
+      client: fakeClient(), indexState: state,
+    }).listen(0, "127.0.0.1");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test listener unavailable");
+    try {
+      const base = `http://127.0.0.1:${address.port}`;
+      expect((await fetch(base + "/v1/services")).status).toBe(200);
+      expect((await fetch(base + "/v1/services/1")).status).toBe(429);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("service index work observes the shared concurrency limit", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const client = fakeClient({ getBlock: async () => { entered(); await blocked; return { number: 42n, hash: hashA }; }, readContract: (name) => name === "nextDemandId" ? 1n : undefined });
+    const server = createApp({ middleware: () => { throw new Error("payment called"); } }, {
+      config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_DEMANDS: "10" }),
+      market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment },
+      client, indexState: createDemandIndexState(),
+    }).listen(0, "127.0.0.1");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test listener unavailable");
+    try {
+      const base = `http://127.0.0.1:${address.port}`;
+      const first = fetch(base + "/v1/services");
+      await started;
+      const rejected = await fetch(base + "/v1/services/1");
+      expect(rejected.status).toBe(503);
+      expect((await rejected.json()).error.code).toBe("OVER_CAPACITY");
+      release();
+      expect((await first).status).toBe(200);
+    } finally {
+      release();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("service dependency and deployment failures are unavailable, not missing", async () => {
+    const market = { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment };
+    const state = createDemandIndexState();
+    state.ready = true;
+    state.deploymentKey = "1952:0x0000000000000000000000000000000000000002";
+    state.lastIndexedBlockHash = hashA;
+    for (const options of [
+      { market, indexState: state, client: fakeClient() },
+      { market, indexState: createDemandIndexState(), client: fakeClient({ getBlock: () => { throw new Error("offline"); } }) },
+      { market: { ...market, deployment: undefined }, indexState: state, client: fakeClient() },
+    ]) {
+      const server = createApp({ middleware: () => { throw new Error("payment middleware called"); } }, options).listen(0, "127.0.0.1");
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test listener unavailable");
+      try {
+        const response = await fetch(`http://127.0.0.1:${address.port}/v1/services/1`);
+        expect(response.status).toBe(503);
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    }
   });
 
   test("free adds raw specification to legacy row fields and caps results at 50", async () => {

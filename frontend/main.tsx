@@ -8,6 +8,7 @@ import { ROUTES } from "./routing.ts";
 import "./theme.css";
 import "./app.css";
 
+const Services = lazy(() => import("./Services.tsx"));
 const App = lazy(() => import("./App.tsx"));
 const MarketRoute = lazy(() => import("./App.tsx").then((module) => ({ default: module.MarketRoute })));
 const DemandDetailRoute = lazy(() => import("./App.tsx").then((module) => ({ default: module.DemandDetailRoute })));
@@ -77,6 +78,8 @@ createRoot(el).render(
       <CanonicalRoute />
       <Routes>
         <Route path={ROUTES.landing.path} element={<UnmetLanding />} />
+        <Route path={ROUTES.services.path} element={<Suspense fallback={<WorkspaceLoading />}><Services /></Suspense>} />
+        <Route path={ROUTES.serviceDetail.path} element={<Suspense fallback={<WorkspaceLoading />}><Services detail /></Suspense>} />
         <Route element={<Suspense fallback={<WorkspaceLoading />}><App /></Suspense>}>
           <Route id="market" path={ROUTES.market.path} element={<MarketRoute />} />
           <Route id="demand-detail" path={ROUTES.demandDetail.path} element={<DemandDetailRoute />} />
