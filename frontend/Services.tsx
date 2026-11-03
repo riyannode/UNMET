@@ -1,5 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
+import { ArrowLeft, Box, Search, X } from "lucide-react";
+import { Card } from "./components/ui/card.tsx";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "./components/ui/input-group.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./components/ui/empty.tsx";
+import { Separator } from "./components/ui/separator.tsx";
 import { CHAIN_ID, DEMAND_CONTRACT } from "./contract.ts";
 import { parseDemandId, parseDemandRoute, ROUTES, serviceHref } from "./routing.ts";
 import { specificationDescription } from "../shared/rfq.ts";
@@ -25,6 +32,8 @@ export function safeServiceUrl(value: string): string | null {
 }
 
 export default function Services({ detail = false }: { detail?: boolean }) {
+  const [query, setQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
   const params = useParams();
   const identity = detail ? parseDemandRoute(params.chainId, params.contract, params.demandId) : null;
   const invalid = detail && (!identity || identity.chainId !== CHAIN_ID || !DEMAND_CONTRACT || identity.contract !== DEMAND_CONTRACT.toLowerCase());
@@ -54,11 +63,63 @@ export default function Services({ detail = false }: { detail?: boolean }) {
     return () => controller.abort();
   }, [detail, id, invalid, requestKey]);
   const service = result.state === "ready" ? result.services[0] : undefined;
+  const search = query.trim().toLowerCase();
+  const filtered = result.state === "ready" ? result.services.filter((item) =>
+    [item.capability, specificationDescription(item.specification), item.demandId].some((value) => value.toLowerCase().includes(search))) : [];
   return <div className="unmet-landing services-page"><UnmetNavigation /><main className="services-content">
-    {detail ? <><Link to={ROUTES.services.href}>Back to Services</Link>{(invalid || result.state !== "ready") && <h1>Service</h1>}</> : <><h1>Services</h1><p>Services created from fulfilled UNMET demands.</p></>}
-    {invalid ? <p role="alert">Invalid service route.</p> : result.state === "loading" ? <p role="status">Loading services…</p> : result.state === "error" ? <p role="alert">Services are unavailable. Please try again later.</p> : result.state === "notfound" ? <p>Service not found or demand is not fulfilled.</p> : detail && service ? <article className="service-card">
-      <h1>{service.capability}</h1><p>Fulfilled</p><h2>Originating request</h2><p>{specificationDescription(service.specification)}</p>
-      <dl><dt>Service URL</dt><dd>{safeServiceUrl(service.serviceUrl) ? <a href={service.serviceUrl} target="_blank" rel="noopener noreferrer">{service.serviceUrl}</a> : service.serviceUrl}</dd><dt>Builder</dt><dd>{service.builder}</dd><dt>Evidence hash</dt><dd>{service.evidenceHash}</dd><dt>Demand ID</dt><dd>{service.demandId}</dd><dt>Chain</dt><dd>{CHAIN_ID}</dd><dt>Contract</dt><dd>{DEMAND_CONTRACT}</dd></dl>
-    </article> : result.state === "ready" && result.services.length ? <ul className="services-grid">{result.services.map((item) => <li className="service-card" key={item.demandId}><article><h2>{item.capability}</h2><p>Fulfilled · Demand #{item.demandId}</p><h3>Originating request</h3><p>{specificationDescription(item.specification)}</p><p>Builder: {item.builder}</p><Link to={serviceHref(CHAIN_ID, DEMAND_CONTRACT!, BigInt(item.demandId))}>View Service</Link></article></li>)}</ul> : <p>No fulfilled services yet.</p>}
+    {detail ? <>
+      <Link className="services-back" to={ROUTES.services.href}><ArrowLeft size={16} aria-hidden="true" /> Back to Services</Link>
+      {(invalid || result.state !== "ready") && <h1>Service</h1>}
+      {invalid ? <p role="alert">Invalid service route.</p> : result.state === "loading" ? <p role="status">Loading services…</p> : result.state === "error" ? <p role="alert">Services are unavailable. Please try again later.</p> : result.state === "notfound" ? <p>Service not found or demand is not fulfilled.</p> : service && <article className="service-detail">
+        <p className="service-eyebrow">Fulfilled · Demand #{service.demandId}</p>
+        <h1>{service.capability}</h1><p className="service-description">{specificationDescription(service.specification)}</p>
+        <section><h2>Service</h2><Separator className="services-separator" /><dl>
+          <dt>Service URL</dt><dd>{safeServiceUrl(service.serviceUrl) ? <a href={service.serviceUrl} target="_blank" rel="noopener noreferrer">{service.serviceUrl}</a> : service.serviceUrl}</dd>
+          <dt>Builder</dt><dd>{service.builder}</dd>
+        </dl></section>
+        <section><h2>Provenance</h2><Separator className="services-separator" /><dl>
+          <dt>Demand ID</dt><dd>{service.demandId}</dd><dt>Chain</dt><dd>{CHAIN_ID === 1952 ? "X Layer · 1952" : CHAIN_ID}</dd>
+          <dt>AgentDemand contract</dt><dd>{DEMAND_CONTRACT}</dd><dt>Evidence hash</dt><dd>{service.evidenceHash}</dd>
+        </dl></section>
+      </article>}
+    </> : <>
+      <header className="services-header"><h1>Services</h1><p>Services created from fulfilled UNMET demands.</p></header>
+      <label className="services-search-label" htmlFor="services-search">Search services</label>
+      <InputGroup className="services-search"><InputGroupInput ref={searchInput} id="services-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by capability, request, or demand ID" /><InputGroupAddon><Search size={18} aria-hidden="true" /></InputGroupAddon>{query && <InputGroupAddon align="inline-end"><Button type="button" variant="ghost" size="icon-sm" aria-label="Clear search" onClick={() => { setQuery(""); searchInput.current?.focus(); }}><X size={16} /></Button></InputGroupAddon>}</InputGroup>
+      <div className="services-layout">
+        <aside className="services-rail" aria-label="Service categories"><span aria-current="page">All Services</span></aside>
+        <div className="services-results">
+          {result.state === "loading" ? <>
+            <p className="services-sr-only" role="status">Loading services…</p>
+            <div className="services-grid" aria-hidden="true">
+              {[0, 1, 2].map((item) => <Card className="service-card service-skeleton" key={item}>
+                <div className="service-card-header"><Skeleton className="service-skeleton-icon" /><Skeleton className="service-skeleton-title" /></div>
+                <Skeleton className="service-skeleton-line" /><Skeleton className="service-skeleton-line short" />
+                <Separator className="services-separator" /><Skeleton className="service-skeleton-meta" />
+              </Card>)}
+            </div>
+          </> : result.state !== "ready" ? (
+            <p className="services-error" role="alert">Services are unavailable. Please try again later.</p>
+          ) : result.services.length === 0 ? (
+            <Empty className="services-empty"><EmptyHeader><EmptyTitle>No fulfilled services yet.</EmptyTitle><EmptyDescription>Services will appear here when demands are fulfilled.</EmptyDescription></EmptyHeader></Empty>
+          ) : filtered.length === 0 ? (
+            <Empty className="services-empty"><EmptyHeader><EmptyTitle>No matching services.</EmptyTitle><EmptyDescription>Try another search or clear your query.</EmptyDescription></EmptyHeader></Empty>
+          ) : (
+            <ul className="services-grid">
+              {filtered.map((item) => <li key={item.demandId}>
+                <Link className="service-card-link" aria-labelledby={`service-title-${item.demandId}`} to={serviceHref(CHAIN_ID, DEMAND_CONTRACT!, BigInt(item.demandId))}>
+                  <Card className="service-card"><article>
+                    <div className="service-card-header"><Box className="service-glyph" size={20} aria-hidden="true" /><h2 id={`service-title-${item.demandId}`}>{item.capability}</h2></div>
+                    <p className="service-card-description">{specificationDescription(item.specification)}</p>
+                    <Separator className="services-separator" />
+                    <div className="service-card-meta"><span>Demand #{item.demandId}</span><span>Fulfilled</span></div>
+                  </article></Card>
+                </Link>
+              </li>)}
+            </ul>
+          )}
+        </div>
+      </div>
+    </>}
   </main></div>;
 }

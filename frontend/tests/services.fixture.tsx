@@ -23,7 +23,7 @@ void (async () => {
   try {
     check(contract, "Set VITE_DEMAND_CONTRACT and VITE_PAYMENT_TOKEN for fixture");
     createRoot(root).render(<MemoryRouter initialEntries={["/services"]}><Harness /></MemoryRouter>);
-    await tick(); check(root.textContent?.includes("Loading services"), "loading");
+    await tick(); check(root.textContent?.includes("Loading services") && root.querySelector(".services-search") && root.querySelector(".services-rail") && root.querySelectorAll(".service-skeleton").length === 3, "loading shell");
     await reply({ ...envelope, services: [] }); check(root.textContent?.includes("No fulfilled services"), "empty");
     await navigate("detail"); check(root.textContent?.includes("Loading services"), "detail loading");
     await reply({}, 503); check(root.textContent?.includes("unavailable") && !root.textContent.includes("not found"), "503");
@@ -52,9 +52,29 @@ void (async () => {
       check(root.textContent?.includes(specification.trim()), "raw specification fallback");
       check(root.textContent?.includes(url) && !root.querySelector(`a[href="${url}"]`), "unsafe URL is text");
     }
-    await navigate("list"); await reply({ ...envelope, services: [service] });
+    await navigate("list"); await reply({ ...envelope, services: [service, { ...service, demandId: "27", capability: "Translate", specification: "Translate a document." }] });
     check(root.querySelector('ul li article') && root.textContent?.includes("Verify a business."), "list semantics");
-    check(root.querySelector(`a[href="/services/${CHAIN_ID}/${contract?.toLowerCase()}/1"]`), "canonical link");
+    const card = root.querySelector<HTMLAnchorElement>(`a[href="/services/${CHAIN_ID}/${contract?.toLowerCase()}/1"]`);
+    check(card?.querySelector("article") && card.tabIndex === 0 && !card.querySelector("a, button"), "canonical full card link and keyboard focus");
+    const cards = [...root.querySelectorAll<HTMLAnchorElement>(".service-card-link")];
+    const labels = cards.map((link) => link.getAttribute("aria-labelledby"));
+    check(labels.every((id, index) => id && cards[index].querySelector("h2")?.id === id && document.getElementById(id)?.textContent?.trim()), "card links labelled by their headings");
+    check(new Set(labels).size === cards.length, "card heading IDs are unique");
+    const input = root.querySelector<HTMLInputElement>("#services-search")!;
+    async function search(value: string) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await tick();
+    }
+    for (const query of ["verify", "business", "1"]) {
+      await search(query);
+      check(root.querySelectorAll(".services-grid li").length === 1 && root.textContent?.includes("Verify a business."), `search ${query}`);
+    }
+    await search("27"); check(root.querySelectorAll(".services-grid li").length === 1 && root.textContent?.includes("Translate a document."), "search demand ID");
+    await search("missing"); check(root.textContent?.includes("No matching services") && !root.textContent.includes("No fulfilled services"), "search empty");
+    root.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')?.click(); await tick();
+    check(root.querySelectorAll(".services-grid li").length === 2 && input.value === "" && document.activeElement === input, "clear search and restore focus");
+    await search("   "); check(root.querySelectorAll(".services-grid li").length === 2, "whitespace search");
     const menu = root.querySelector<HTMLButtonElement>('[aria-label="Open navigation"]'); menu?.click(); await tick();
     check(root.querySelector('.unmet-mobile-menu a[href="/services"]'), "mobile Services navigation");
     result.textContent = "PASS";
