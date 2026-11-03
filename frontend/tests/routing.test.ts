@@ -100,8 +100,8 @@ test("approved proposal describes settlement and cancelled refund eligibility", 
     const now = BigInt(Math.floor(Date.now() / 1000));
     const demand = { demandId: 1n, submissionNonce: 1n, creator: address, builder: address, maxUnitPrice: 1n, committed: 50_000n, reviewCommitted: 50_000n, approvalRequired: 30_000n, expectedCalls: 1n, deadline: now + 86400n, reviewEndsAt: now + 3600n, supporterCount: 1, status: 1, capability: "example", specification: "example", serviceUrl: "https://example.test", evidenceHash: "0x" + "0".repeat(64), approvalWeight: 50_000n, quorumReached: true, rejectionWeight: 0n, rejectionThreshold: 20_001n, candidateRejected: false };
     const support = { commitment: 50_000n, expectedCalls: 1n, approved: true, rejected: false, refundable: false };
-    const render = (status, refundable, commitment = 50_000n) => renderToStaticMarkup(createElement(DemandDetail, {
-      demand: { ...demand, status }, support: { ...support, refundable, commitment }, supportState: "ready",
+    const render = (status, refundable, commitment = 50_000n, specification = demand.specification) => renderToStaticMarkup(createElement(DemandDetail, {
+      demand: { ...demand, status, specification }, support: { ...support, refundable, commitment }, supportState: "ready",
       account: address, busy: false, close: () => {}, closeLabel: "Close", run: async () => { throw new Error("unexpected transaction"); }, blockedActionIds: [],
     }));
     const active = render(1, false);
@@ -111,6 +111,11 @@ test("approved proposal describes settlement and cancelled refund eligibility", 
     assert.doesNotMatch(cancelled, /Approval recorded \u00b7 commitment eligible for settlement/);
     assert.match(cancelled, /Settlement cancelled \u00b7 remaining commitment refundable/);
     assert.doesNotMatch(render(4, false, 0n), /remaining commitment refundable/);
+    assert.ok(active.includes("<dd>example</dd>"));
+    const rfq = render(1, false, 50_000n, '{"description":"Readable RFQ description","schemaVersion":"unmet-rfq-v1"}');
+    assert.ok(rfq.includes("<dd>Readable RFQ description</dd>"));
+    assert.doesNotMatch(rfq, /schemaVersion/);
+    assert.ok(render(1, false, 50_000n, "{broken").includes("<dd>{broken</dd>"));
   `;
   const result = Bun.spawnSync([process.execPath, "-e", script], { cwd: "frontend", stdout: "pipe", stderr: "pipe", timeout: 30_000 });
   expect(result.stderr.toString()).toBe("");

@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "unmet",
+      "dependencies": {
+        "canonicalize": "5.1.0",
+      },
     },
     "backend": {
       "name": "unmet-backend",

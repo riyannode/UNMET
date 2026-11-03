@@ -57,7 +57,7 @@ Pays per query for normalized, ranked, chain-verifiable Demand Intelligence.
 
 A public funded demand record contains:
 - capability slug
-- specification
+- specification: official frontend/API creation stores a trimmed description as canonical JCS `unmet-rfq-v1`; historical plain-text specifications remain unchanged
 - maximum acceptable unit price
 - expected calls
 - deadline
@@ -177,7 +177,8 @@ Routes:
 - `GET /live` public process liveness
 - `GET /health` free dependency health check
 - `GET /ready` public payment readiness plus health check
-- `GET /v1/demands` free chain-derived board
+- `GET /v1/demands` free chain-derived board with raw specification preserved
+- `POST /v1/demands/prepare` free unsigned creation intent; structured v1 description and existing onchain economic arguments
 - `POST /v1/opportunities` paid OKX.AI/A2MCP route
 
 Requirements:

@@ -56,8 +56,10 @@ describe("guided demand answers", () => {
   });
 
   test("validates specification by UTF-8 byte length", () => {
-    expect(parseSpecificationAnswer("🧪".repeat(512))).toBe("🧪".repeat(512));
-    expect(() => parseSpecificationAnswer("🧪".repeat(513))).toThrow("2,048 UTF-8 bytes");
+    expect(parseSpecificationAnswer("🧪".repeat(499) + "abc")).toBe("🧪".repeat(499) + "abc");
+    expect(parseSpecificationAnswer("  Verify a business.\n")).toBe("Verify a business.");
+    expect(() => parseSpecificationAnswer("🧪".repeat(500))).toThrow("2,048 UTF-8 bytes");
+    expect(() => parseSpecificationAnswer("a".repeat(2000))).toThrow("2,048 UTF-8 bytes");
     expect(() => parseSpecificationAnswer("   ")).toThrow("Enter a service specification");
   });
 
@@ -132,6 +134,8 @@ describe("guided demand answers", () => {
     const invalid = updateEditedAnswer(completeAnswers, "expectedCalls", "0");
     expect(invalid.kind).toBe("invalid");
     expect(completeAnswers.expectedCalls).toBe("1000");
+    expect(updateEditedAnswer(completeAnswers, "specification", "a".repeat(2000)).kind).toBe("invalid");
+    expect(updateEditedAnswer(completeAnswers, "specification", "  New description\n")).toEqual({ kind: "valid", answers: { ...completeAnswers, specification: "New description" } });
     expect(updateEditedAnswer(completeAnswers, "expectedCalls", "1,200 calls")).toEqual({
       kind: "valid",
       answers: { ...completeAnswers, expectedCalls: "1200" },
@@ -155,6 +159,7 @@ describe("guided demand answers", () => {
     ]);
     expect(rows[0]?.value).toBe("Vendor KYB API");
     expect(rows[0]?.detail).toBe("Canonical capability: vendor-kyb-api");
+    expect(rows[1]?.value).toBe(completeAnswers.specification);
     expect(rows[2]?.value).toBe("0.02 USDC per call");
     expect(rows[3]?.value).toBe("1,000 calls");
     expect(rows[4]?.value).toBe("20 USDC");
@@ -166,7 +171,7 @@ describe("created demand readback matching", () => {
   const expected = {
     creator: "0x1111111111111111111111111111111111111111",
     capability: "vendor-kyb-api",
-    specification: completeAnswers.specification,
+    specification: '{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}',
     maxPrice: 20_000n,
     expectedCalls: 1000n,
     initialCommitment: 20_000_000n,
@@ -200,6 +205,12 @@ describe("created demand readback matching", () => {
       expected,
     )).toBeNull();
     expect(resolveUniqueCreatedDemandId([demand(1n)], [demand(1n)], expected)).toBeNull();
+  });
+
+  test("still matches historical pending creates by their exact plain-text specification", () => {
+    const specification = "  historical prose  ";
+    expect(resolveUniqueCreatedDemandId([], [demand(2n, { specification })], { ...expected, specification })).toBe(2n);
+    expect(resolveUniqueCreatedDemandId([], [demand(2n, { specification })], expected)).toBeNull();
   });
 
   test("does not match another creator or a changed contract term", () => {

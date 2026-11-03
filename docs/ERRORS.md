@@ -17,10 +17,14 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `WALLET_CHANGED` | account/provider/session changed before signing | review the action under the current wallet; observe any already-broadcast transaction separately |
 | `WALLET_REJECTED` | user rejected wallet request | retry intentionally |
 | `DEMAND_INVALID_CAPABILITY` | capability is not canonical lowercase slug | use lowercase letters/digits/hyphens |
-| `DEMAND_INVALID_SPEC` | specification is empty/oversize | correct input |
-| `DEMAND_INVALID_AMOUNT` | token amount invalid/out of uint96 range | correct decimal amount |
+| `DEMAND_INVALID_SPEC` | RFQ v1 description is empty after trimming, invalid Unicode, malformed schema or exceeds 2,048 serialized UTF-8 bytes | correct the description/schema |
+| `DEMAND_UNSUPPORTED_SPEC_VERSION` | 400 prepare; specification version is not `unmet-rfq-v1` | use the supported v1 shape |
+| `INVALID_REQUEST` | 400 prepare; missing or unknown fields | send exactly the required fields |
+| `DEMAND_INVALID_DEPLOYMENT` | 400 prepare; invalid or unconfigured target identity | use the configured escrow chain and contract |
+| `DEMAND_INVALID_COMMITMENT` | 400 prepare; invalid uint96 or below current contract minimum | use raw escrow-token units meeting `minCommitment` |
+| `DEMAND_INVALID_AMOUNT` | token amount invalid/out of uint96 range | frontend accepts human decimals; prepare requires a raw integer string |
 | `DEMAND_INVALID_CALLS` | expected calls invalid/out of uint64 range | correct integer |
-| `DEMAND_INVALID_DEADLINE` | deadline input invalid | use positive day interval |
+| `DEMAND_INVALID_DEADLINE` | deadline input invalid; prepare requires uint64 Unix seconds at least chain time plus one hour | frontend uses a positive day interval; API uses absolute seconds |
 | `DEMAND_DEADLINE_TOO_SHORT` | guided-chat deadline duration is below one hour | choose a deadline of at least one hour |
 | `SUPPORT_TOO_SMALL` | invalid support amount | use a positive amount meeting contract minimum |
 | `SUBMISSION_INVALID_URL` | service URL invalid/non-HTTPS | submit public HTTPS endpoint |

@@ -326,7 +326,7 @@ describe("free and paid discovery responses", () => {
     const catalog = JSON.parse(readFileSync(new URL("../frontend/public/.well-known/api-catalog", import.meta.url), "utf8"));
     expect(catalog.linkset[0].anchor).toBe("https://unmetxyz.my.id/.well-known/api-catalog");
     expect(catalog.linkset[0].item.map((link: { href: string }) => link.href)).toEqual([
-      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/opportunities",
+      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/demands/prepare", "https://unmetxyz.my.id/v1/opportunities",
     ]);
     expect(catalog.linkset.every((entry: { anchor: string }) => new URL(entry.anchor).protocol === "https:")).toBe(true);
     expect(catalog.linkset.slice(1).every((entry: Record<string, Array<{ href: string }>>) =>
@@ -334,7 +334,8 @@ describe("free and paid discovery responses", () => {
     expect(catalog.linkset[2]["service-doc"].some((link: { href: string }) => link.href === "https://unmetxyz.my.id/payment.md")).toBe(true);
     const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
     expect(spec.info.description).toContain("Mozilla browser user agent");
-    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/opportunities"]);
+    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/opportunities"]);
+    expect(spec.paths["/v1/demands/prepare"].post).not.toHaveProperty("x-payment-info");
     expect(spec.paths["/.well-known/api-catalog"].get.responses["200"].content).toHaveProperty("application/linkset+json");
     expect(spec.paths["/v1/opportunities"].post.responses).toHaveProperty("402");
     expect(spec.paths["/v1/opportunities"].post.responses["402"].headers).toHaveProperty("PAYMENT-REQUIRED");
@@ -369,7 +370,7 @@ describe("free and paid discovery responses", () => {
     expect(paymentGuide).toContain("Ethereum L1 finality");
   });
 
-  test("free keeps exactly the legacy 18 row fields and caps results at 50", async () => {
+  test("free adds raw specification to legacy row fields and caps results at 50", async () => {
     await routeFixture(Array.from({ length: 55 }, (_, index) => syntheticEntry(BigInt(index + 1))), async (url, marketCalls) => {
       const response = await fetch(url + "/v1/demands");
       expect(response.status).toBe(200);
@@ -378,10 +379,22 @@ describe("free and paid discovery responses", () => {
       expect(Object.keys(body.demands[0])).toEqual([
         "demandId", "capability", "currentEscrow", "fundedBounty", "reviewCommitted", "supporters", "expectedCalls",
         "maxUnitPrice", "deadline", "status", "creator", "builder", "approvalWeight", "approvalRequired",
-        "rejectionWeight", "rejectionThreshold", "candidateRejected", "score",
+        "rejectionWeight", "rejectionThreshold", "candidateRejected", "score", "specification",
       ]);
       expect(JSON.stringify(body)).not.toMatch(/"(analysis|rank|scoreBreakdown|economicSignals|reasoning)"/);
       expect(marketCalls()).toBe(0);
+    });
+  });
+
+  test("free preserves legacy, malformed, unrelated, future and canonical RFQ specification bytes", async () => {
+    const specifications = ["  historical prose  ", "{broken", '{"other":true}', '{"schemaVersion":"unmet-rfq-v2","description":"future"}', '{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}', '{"schemaVersion":"unmet-rfq-v1","description":"conflict","maxUnitPrice":"0","expectedCalls":"0"}'];
+    await routeFixture(specifications.map((specification, index) => syntheticEntry(BigInt(index + 1), { specification })), async (url) => {
+      const body = await (await fetch(url + "/v1/demands")).json();
+      expect(body.demands.map((row: { specification: string }) => row.specification)).toEqual([...specifications].reverse());
+      expect(body.demands[0].maxUnitPrice).toBe("1.000000");
+      expect(body.demands[0].expectedCalls).toBe("6");
+      const paid = await (await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
+      expect(paid.opportunities.every((row: Record<string, unknown>) => !Object.hasOwn(row, "specification"))).toBe(true);
     });
   });
 

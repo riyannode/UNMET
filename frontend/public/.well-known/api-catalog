@@ -4,6 +4,7 @@
       "anchor": "https://unmetxyz.my.id/.well-known/api-catalog",
       "item": [
         { "href": "https://unmetxyz.my.id/v1/demands" },
+        { "href": "https://unmetxyz.my.id/v1/demands/prepare" },
         { "href": "https://unmetxyz.my.id/v1/opportunities" }
       ]
     },
@@ -23,6 +24,11 @@
         { "href": "https://unmetxyz.my.id/api.md", "type": "text/markdown" },
         { "href": "https://unmetxyz.my.id/payment.md", "type": "text/markdown", "title": "Payment guide" }
       ]
+    },
+    {
+      "anchor": "https://unmetxyz.my.id/v1/demands/prepare",
+      "service-desc": [{ "href": "https://unmetxyz.my.id/openapi.json", "type": "application/vnd.oai.openapi+json;version=3.1" }],
+      "service-doc": [{ "href": "https://unmetxyz.my.id/api.md", "type": "text/markdown" }]
     }
   ]
 }

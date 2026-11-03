@@ -1,4 +1,5 @@
 import { animate, stagger } from "animejs";
+import { encodeRfqV1, specificationDescription } from "../shared/rfq";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
@@ -723,7 +724,7 @@ export default function App() {
           expected: {
             creator: account,
             capability: normalizeCapability(createdDemand.capability),
-            specification: createdDemand.specification.trim(),
+            specification: encodeRfqV1(createdDemand.specification),
             maxPrice: parseServicePrice(createdDemand.maxPrice),
             expectedCalls: BigInt(createdDemand.expectedCalls),
             initialCommitment: parseTokenAmount(createdDemand.commitment),
@@ -1260,7 +1261,7 @@ function DemandCard({ demand, selected, detailFrom, now }: { demand: DemandView;
   const state = effectiveStatus(demand, now);
   const requestId = demand.demandId.toString();
   const capability = demand.capability.trim() ? demand.capability : "Capability not provided";
-  const specification = demand.specification.trim() ? demand.specification : "No details provided";
+  const specification = demand.specification.trim() ? specificationDescription(demand.specification) : "No details provided";
   const StatusIcon = state === "READY" || state === "FULFILLED"
     ? CircleCheck
     : state === "OPEN" || state === "SUBMITTED"
@@ -1434,7 +1435,7 @@ export function DemandDetail({
               <CardContent>
                 <dl className="demand-detail-facts">
                   <div><dt>Capability</dt><dd>{demand.capability}</dd></div>
-                  <div><dt>Specification</dt><dd>{demand.specification}</dd></div>
+                  <div><dt>Specification</dt><dd>{specificationDescription(demand.specification)}</dd></div>
                   <div><dt>Creator</dt><dd>{demand.creator}</dd></div>
                   <div><dt>Deadline</dt><dd>{iso(demand.deadline)}</dd></div>
                 </dl>

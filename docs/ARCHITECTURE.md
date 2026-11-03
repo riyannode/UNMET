@@ -43,9 +43,17 @@ Pending v2 records use `chainId:contract:wallet:actionId`; approval intents sepa
 
 The browser hashes ordered query pairs and GET/POST metadata with JCS plus SHA-256, signs the G0.3 EIP-712 authorization, and calls the explicitly configured validator endpoint. PASS bindings, current-verifier signature, expiry and nonce are checked before a separately user-signed submit. Receipt success and canonical state readback precede submission success. Validation failures never trigger automatic submission or validation retries.
 
+## Demand creation specification
+
+All official new-demand creation uses `shared/rfq.ts` to trim the description, reject empty/invalid Unicode and JCS-serialize exactly `{ schemaVersion: "unmet-rfq-v1", description }` within the existing 2,048-byte UTF-8 limit. Frontend chat/review still uses human prose. The contract helper encodes it immediately before the existing allowance/write flow; App readback metadata uses the same encoder. Card/detail presentation extracts v1 descriptions with raw-text fallback. Direct contract reads and historical pending records remain opaque strings.
+
+`POST /v1/demands/prepare` validates strict raw JSON before global Express parsing, then uses the same encoder and existing ABI. It verifies the configured deployment, chain timestamp and pinned minimum commitment and returns only unsigned `{ chainId, to, data, value: "0" }`. It shares bounded demand quota/admission and RPC transport; no payment call, wallet action, persistent state, second index or external retrieval is added. The caller still owns allowance, signing and stale-state checks. Direct third-party contract callers can continue supplying arbitrary specification text; RFQ v1 enforcement applies to official creation paths.
+
+Exact specification bytes participate in the existing demand key, so whitespace trimming and JCS eliminate serialization variation for the same description. Internal whitespace and distinct Unicode sequences remain meaningful. Economic fields stay outside the specification and authoritative onchain. Future specification versions may extend the same prepare endpoint through explicit version handling; only v1 is accepted today.
+
 ## Free discovery and paid intelligence
 
-`GET /v1/demands` retains its public market fields and legacy score for API compatibility. The frontend reads the contract directly; its board, detail and analytics views do not consume either API response.
+`GET /v1/demands` retains its public market fields and legacy score for API compatibility, adding raw onchain `specification` unchanged. The frontend reads the contract directly; its board, detail and analytics views do not consume either API response.
 
 `POST /v1/opportunities` uses the same index and filters, with no additional RPC reads. It adds rank within the full matching pool before the response limit, a reproducible score breakdown, current escrow per historically expected call, remaining deadline/review time, review gaps, and deterministic reasons and cautions. Requested response order remains independent of score rank. Percentile tables are prepared once per pool; premium row enrichment applies only to the returned rows.
 

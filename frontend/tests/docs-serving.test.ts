@@ -241,7 +241,10 @@ describe("Vite documentation MPA", () => {
     for (const sort of schema.components.schemas.OpportunityQuery.properties.sort.enum) expect(api).toContain(sort);
     for (const value of ["32 KiB", "4,294,967,295", "1 to 50", "scoreBreakdown", "economicSignals", "reasoning"]) expect(api).toContain(value);
     const roadmap = await readFile(path.join(directory, "docs/roadmap/index.html"), "utf8");
-    for (const id of ["automatic-validation", "rfq", "service-registry", "service-discovery", "intelligence-expansion", "capability-resolver"]) {
+    expect(roadmap).toContain('<h2 id="rfq">Machine-readable RFQ</h2>\n<p class="docs-status">MINIMAL RFQ V1</p>');
+    expect(schema.paths["/v1/demands/prepare"].post.operationId).toBe("prepareDemand");
+    expect(schema.components.schemas.DemandsResponse.properties.demands.items.$ref).toBe("#/components/schemas/PublicDemand");
+    for (const id of ["automatic-validation", "service-registry", "service-discovery", "intelligence-expansion", "capability-resolver"]) {
       expect(roadmap).toMatch(new RegExp('id="' + id + '">[^<]+</h2>\\s*<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>'));
     }
     const payments = await readFile(path.join(directory, "docs/api/payments/index.html"), "utf8");

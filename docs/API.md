@@ -14,6 +14,7 @@ The public frontend serves the [OpenAPI 3.1 description](../frontend/public/open
 | `GET /health` | Public | Checks market RPC chain ID, latest block and contract bytecode |
 | `GET /ready` | Public | Payment middleware/storage readiness, then the health check |
 | `GET /v1/demands` | Free | Up to 50 public chain-derived demands and the legacy score |
+| `POST /v1/demands/prepare` | Free | Validate RFQ v1 and return an unsigned zero-native-value createDemand intent |
 | `POST /v1/opportunities` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
 
 `OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure, then uses the same health result. It sends no payment and does not guarantee future settlement or index capacity.
@@ -58,6 +59,8 @@ Free chain dependency check. Returns `503` if the configured contract is missing
 
 ## GET /v1/demands
 
+Each returned row adds raw onchain `specification` unchanged. It can be historical plain text, malformed/unrelated JSON, an unknown future version or canonical RFQ v1. No migration, document retrieval or classification state is applied. Onchain economics remain authoritative.
+
 Free discovery returns up to 50 chain-derived demands of all statuses, sorted by **current escrow descending**, then numeric demand ID descending. The envelope is `chainId`, `contract`, `blockNumber` (decimal string), `generatedAt` (ISO timestamp), and `demands`. It has no filter or pagination contract; the query string is not used. The disposable index is not the payment database.
 
 All existing fields remain available, including public review/accounting details and `score`, for compatibility with API consumers. The legacy score is computed across the entire indexed pool before the 50-row limit. The new paid-only `analysis`, `rank`, `scoreBreakdown`, `economicSignals` and `reasoning` fields are absent. The current frontend reads contracts directly, so its market/detail/analytics views do not depend on this JSON response.
@@ -93,6 +96,29 @@ Synthetic example (one returned row shown):
   }]
 }
 ```
+
+## POST /v1/demands/prepare
+
+Free unsigned preparation for the configured escrow deployment. Send an uncompressed UTF-8 `application/json` object, at most 32 KiB, with exactly these fields. Duplicate keys, unknown fields and malformed JSON are rejected before RPC work.
+
+| Field | Required value |
+| --- | --- |
+| `chainId` | Positive safe JSON integer, exactly the configured escrow chain |
+| `contract` | Nonzero EVM address, exactly the configured escrow contract |
+| `capability` | Canonical lowercase slug, at most 64 characters; letters/digits separated by single hyphens |
+| `specification` | Exactly `{ "schemaVersion": "unmet-rfq-v1", "description": "..." }` |
+| `maxUnitPrice` | Positive uint96 decimal integer string in raw Mainnet USDC units (6 decimals), independent of escrow collateral |
+| `expectedCalls` | Positive uint64 decimal integer string |
+| `deadline` | Absolute Unix seconds as a uint64 decimal integer string, at least the current chain block timestamp plus 3,600 seconds |
+| `initialCommitment` | Positive uint96 decimal integer string in raw configured escrow-token units, at least the current contract `minCommitment` |
+
+Integer strings have no leading zeros, signs, whitespace, decimal points or exponent notation. Maximum uint96 is `79228162514264337593543950335`; maximum uint64 is `18446744073709551615`.
+
+Both this endpoint and the human frontend use `shared/rfq.ts` to trim leading/trailing description whitespace, reject empty/invalid Unicode descriptions and JCS-serialize exactly the v1 object. The stored specification must fit 2,048 UTF-8 bytes, including JSON escaping and metadata. Economic fields remain separate contract arguments. No document, URI, hash or retrieval is involved.
+
+Success is HTTP 200 with exactly `{ chainId, to, data, value: "0" }`. `data` encodes existing `createDemand(capability, specification, maxUnitPrice, expectedCalls, deadline, initialCommitment)`. The endpoint verifies chain, contract bytecode, token and token decimals, then reads the current chain timestamp and pinned `minCommitment`. It shares the demand quota and request admission limit and does not access the demand index, payment middleware, private keys, signing, broadcasting or ERC-20 approvals.
+
+Preparation reserves nothing and is not an execution guarantee. The caller must review decoded arguments and target, use the intended account/chain, arrange any required token allowance, and recheck deadline, deployment and current contract state before explicitly signing. Account, allowance, active duplicate demand and contract state can change after preparation. An active duplicate may revert at execution. Demand identity still depends on exact capability and specification bytes; economics do not change that key.
 
 ## POST /v1/opportunities
 
