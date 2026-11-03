@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
+import { ReuiAppShell } from "../components/examples/c-sidebar-1";
 import UnmetNavigation, { RollText } from "../UnmetNavigation";
 import { demandHref, serviceHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
 
@@ -41,6 +42,31 @@ describe("app routes", () => {
     expect(marketAnchor).toContain("data-discover");
     expect(analyticsAnchor).toContain("data-discover");
     expect(markup).toContain('href="/services"');
+  });
+
+  test.each([
+    ["market", "Explore Market"],
+    ["create-demand", "Create Demand"],
+    ["analytics", "Analytics"],
+  ] as const)("renders workspace navigation with %s active", (activeRoute, activeLabel) => {
+    const markup = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(ReuiAppShell, {
+      activeRoute, pageTitle: "Test", account: null, walletStatus: "ready", busy: false,
+      disconnecting: false, boardLoading: false, onConnect: () => {}, onDisconnect: () => {},
+      onRefresh: () => {}, children: null,
+    })));
+    const navigation = markup.match(/<div[^>]*role="navigation"[^>]*aria-label="Market"[^>]*>(.*?)<\/div><\/div><\/div>/)?.[1];
+    expect(navigation).toBeDefined();
+    const anchors = [...navigation!.matchAll(/<a\b[^>]*aria-label="([^"]+)"[^>]*>.*?<\/a>/g)];
+    expect(anchors.map((anchor) => anchor[1])).toEqual(["Explore Market", "Create Demand", "Analytics", "Services", "Docs"]);
+    for (const [index, href] of ["/market", "/create-demand", "/analytics", "/services", "/docs"].entries()) {
+      expect(anchors[index][0]).toContain(`href="${href}"`);
+      expect(anchors[index][0].includes("data-discover")).toBe(index !== 4);
+      expect(anchors[index][0].includes('aria-current="page"')).toBe(anchors[index][1] === activeLabel);
+    }
+    for (const icon of ["compass", "plus", "chart-pie", "box", "book-open"]) {
+      expect(navigation).toContain(`lucide-${icon}`);
+    }
+    expect(navigation).not.toMatch(/<h[1-6]\b|role="separator"/);
   });
 
   test("exposes one readable label while hiding both animated layers", () => {
