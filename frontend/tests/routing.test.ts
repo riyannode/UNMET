@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { matchRoutes, MemoryRouter } from "react-router";
 import { describe, expect, test } from "bun:test";
 import UnmetNavigation, { RollText } from "../UnmetNavigation";
-import { demandHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
+import { demandHref, serviceHref, parseDemandId, parseDemandRoute, ROUTES } from "../routing";
 
 const contract = "0x1111111111111111111111111111111111111111";
 
@@ -16,6 +16,8 @@ describe("app routes", () => {
     ["/", "landing"],
     ["/market", "market"],
     [`/market/1952/${contract}/42`, "demandDetail"],
+    ["/services", "services"],
+    [`/services/1952/${contract}/42`, "serviceDetail"],
     ["/create-demand", "createDemand"],
     ["/analytics", "analytics"],
   ])("matches %s to %s", (path, routeId) => {
@@ -38,6 +40,7 @@ describe("app routes", () => {
     expect(docsAnchor).not.toContain("data-discover");
     expect(marketAnchor).toContain("data-discover");
     expect(analyticsAnchor).toContain("data-discover");
+    expect(markup).toContain('href="/services"');
   });
 
   test("exposes one readable label while hiding both animated layers", () => {
@@ -59,6 +62,8 @@ describe("app routes", () => {
 
   test("builds demand URLs that can be opened directly", () => {
     expect(demandHref(1952, contract, 42n)).toBe(`/market/1952/${contract}/42`);
+    expect(serviceHref(1952, contract, 42n)).toBe(`/services/1952/${contract}/42`);
+    expect(matchRoutes(routeObjects, "/catalog")).toBeNull();
     expect(parseDemandRoute("1952", contract, "42")).toEqual({ chainId: 1952, contract, demandId: 42n });
     expect(parseDemandRoute("0", contract, "42")).toBeNull();
     expect(parseDemandRoute("1952", `0x${"0".repeat(40)}`, "42")).toBeNull();

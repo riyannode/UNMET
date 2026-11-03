@@ -3,6 +3,8 @@ export const ROUTES = {
   docs: { href: "/docs" },
   market: { path: "market", href: "/market" },
   demandDetail: { path: "market/:chainId/:contract/:demandId", href: "/market/:chainId/:contract/:demandId" },
+  services: { path: "services", href: "/services" },
+  serviceDetail: { path: "services/:chainId/:contract/:demandId", href: "/services/:chainId/:contract/:demandId" },
   createDemand: { path: "create-demand", href: "/create-demand" },
   analytics: { path: "analytics", href: "/analytics" },
 } as const;
@@ -24,4 +26,10 @@ export function parseDemandId(value: string | undefined): bigint | null {
   if (!value || !/^[1-9][0-9]*$/.test(value)) return null;
   const demandId = BigInt(value);
   return demandId < 1n << 256n ? demandId : null;
+}
+
+export function serviceHref(chainId: number, contract: string, demandId: bigint): string {
+  const identity = parseDemandRoute(String(chainId), contract, demandId.toString());
+  if (!identity) throw new Error("SERVICE_ROUTE_INVALID");
+  return `${ROUTES.services.href}/${identity.chainId}/${identity.contract}/${identity.demandId}`;
 }

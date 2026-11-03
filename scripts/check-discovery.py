@@ -179,7 +179,7 @@ try:
                         assert asset == (dist / path.lstrip("/")).read_bytes()
                         continue
                     target = docs_pages.get(path)
-                    assert target or path in public_resources or path in ["/", "/market", "/create-demand"], (route, href, "unregistered documentation link")
+                    assert target or path in public_resources or path in ["/", "/market", "/services", "/create-demand"], (route, href, "unregistered documentation link")
                     if target:
                         mime, marker = "text/html", b""
                     else:
@@ -192,7 +192,7 @@ try:
             for path in ["/docs/missing", "/docs/api/missing/", "/docs/sources/AGENTS.md", "/docs/navigation.tsx"]:
                 for method in ["GET", "HEAD"]:
                     check(path, expected=404, method=method)
-            for path in ["/market", "/market/1", "/create-demand", "/analytics", "/docs-other"]:
+            for path in ["/market", "/market/1", "/services", "/services/1952/0x1111111111111111111111111111111111111111/42", "/create-demand", "/analytics", "/docs-other"]:
                 check(path, mime="text/html")
 
             headers = {"Content-Type": "application/json", "Accept": "text/markdown", "X-Forwarded-For": "198.51.100.44", "CF-Connecting-IP": "198.51.100.45", "X-Request-ID": "untrusted-fixture-id"}

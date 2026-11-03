@@ -1614,146 +1614,11 @@ Future `unmet-rfq-v2` or `unmet-rfq-v3` handling can extend the same endpoint. I
 
 ## 8. PHASE 2 — FULFILLED DEMAND SERVICE REGISTRY
 
-### Objective
+G2 minimally implements a public Services directory and free read-only API from the existing canonical demand index. A service is included only when the onchain demand status is Fulfilled. Its identity is chain ID, escrow contract and demand ID. The index is disposable derived state, rebuilt and checked against canonical chain snapshots; no separate service database or provider publication state is required.
 
-Make services originating from fulfilled demand discoverable.
+`GET /v1/services` returns up to 50 fulfilled services ordered by descending demand ID. `GET /v1/services/:id` looks up the complete index. Both expose the original capability, raw specification, builder, submitted service URL and opaque evidence hash, alongside the snapshot block number and hash and response generation time. The snapshot is not a fulfillment receipt or timestamp. The public `/services` and `/services/:chainId/:contract/:demandId` pages present these records without fetching the provider.
 
-This registry is a service catalog.
-
-It does not control builder admission.
-
-
-### 8.1 Service Provenance
-
-A service may be registered as demand-originated only after the corresponding escrow fulfillment.
-
-Required evidence:
-
-- chain ID
-- escrow contract address
-- demand ID
-- canonical fulfillment event
-- transaction receipt
-- builder address
-- original service URL
-- original evidence reference
-
-A submitted proposal does not prove the demand was fulfilled.
-
-A backend database flag alone does not prove fulfillment.
-
-
-### 8.2 Immutable Fields
-
-Immutable provenance:
-
-- service ID
-- originating chain
-- originating escrow
-- originating demand
-- originating builder
-- fulfillment reference
-- originating capability
-- original submission evidence
-
-Provider metadata updates must not modify these fields.
-
-
-### 8.3 Mutable Metadata
-
-The originating builder may update:
-
-- current endpoint
-- service description
-- service version
-- current price
-- payment network
-- accepted payment assets
-- input/output schemas
-- documentation
-- availability declaration
-
-Updates must be authenticated by the originating builder.
-
-Use versioned signed metadata.
-
-The signature must bind:
-
-- service ID
-- originating chain
-- originating escrow
-- provider wallet
-- metadata version
-- metadata digest
-- validity information
-
-Reject replayed and stale updates.
-
-Changing an endpoint does not alter the original escrow settlement.
-
-
-### 8.4 Storage
-
-Canonical fulfillment provenance: Blockchain.
-
-Mutable provider configuration: Authenticated builder metadata.
-
-Backend storage: Published records, indexes, observations, and query state.
-
-Persistent records require durable storage.
-
-Do not assume ephemeral filesystems provide durable registry persistence.
-
-Keep service metadata separate from payment settlement invariants.
-
-
-### 8.5 Service States
-
-Track independently:
-
-Fulfillment:
-- NOT_FULFILLED
-- FULFILLED
-
-Publication:
-- DRAFT
-- PUBLISHED
-- UNLISTED
-
-x402 compatibility:
-- UNKNOWN
-- COMPATIBLE
-- INCOMPATIBLE
-- STALE
-
-Availability:
-- UNKNOWN
-- REACHABLE
-- UNREACHABLE
-
-Technical verification:
-- NOT_VERIFIED
-- VERIFIED
-- FAILED
-- STALE
-
-Do not collapse these dimensions into one misleading VERIFIED state.
-
-
-### 8.6 Service API
-
-GET /v1/services
-
-GET /v1/services/:id
-
-Responses distinguish:
-
-- immutable provenance
-- builder-declared metadata
-- observed payment compatibility
-- independent verification
-- availability
-- observation timestamps
+G3 covers current observations, compatibility and external distribution. Mutable provider metadata, publication states, availability, technical verification, provider schemas and their storage or authentication are not G2 requirements.
 
 
 ## 9. PHASE 3 — x402 SERVICE DISCOVERY
@@ -1807,6 +1672,8 @@ Discovery must report current observations and their timestamps.
 
 
 ### 9.3 Discovery API
+
+The filters and observations below are proposed G3 behavior. The implemented G2 routes have no query filters.
 
 GET /v1/services
 
@@ -1862,7 +1729,7 @@ Initial OKX.AI distribution does not assume a public programmatic listing API. P
 
 Gate 0 compatibility does not imply OKX registration approval or successful paid execution. Registration, publication, and paid acceptance require their own approval and evidence; Gate 0 does not perform them.
 
-The Service Registry preserves canonical demand-to-service references and authenticated provider metadata. Direct x402 consumption remains supported, and other compatible marketplaces or discovery protocols may be added through separately reviewed integrations. A distribution channel does not require AgentDemand to fetch its APIs or change its payment policy.
+The G2 Service Registry preserves canonical demand-to-service references; provider metadata is outside its implemented scope. Direct x402 consumption remains supported, and other compatible marketplaces or discovery protocols may be added through separately reviewed integrations. A distribution channel does not require AgentDemand to fetch its APIs or change its payment policy.
 
 External listing is not fulfillment evidence. Listing failure, delisting, and marketplace outages cannot modify historical provenance or block demand creation, funding, supporter voting, finalize(), reopen(), or refund(). UNMET does not add marketplace checkout, service-payment custody, or a generalized payment router for this integration. Future API consumption remains a separate direct x402 payment to the provider's authorized receiver.
 
@@ -2139,7 +2006,7 @@ Economic fields remain separate and authoritative onchain.
 
 ### Service Registry
 
-Provides fulfillment provenance and published service metadata.
+Provides fulfilled demand records from canonical chain state. Current provider metadata is outside G2.
 
 Canonical settlement provenance comes from blockchain state.
 
@@ -2264,9 +2131,8 @@ Deliver:
 
 - fulfillment-derived service registry
 - immutable provenance
-- builder-authenticated mutable metadata
-- durable records
-- explicit verification states
+- free read-only service API
+- public Services directory
 
 
 ### Phase 3
@@ -2529,7 +2395,7 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 
 3. Fulfilled services preserve onchain provenance.
 
-4. Builders can update authenticated metadata.
+4. Future provider metadata, if added, requires authenticated updates.
 
 5. Agents can discover compatible services.
 

@@ -44,3 +44,9 @@ Preparation reserves nothing and is not an execution guarantee. The caller must 
 Send an `application/json` object with optional `minBounty` (decimal string, up to six fractional digits), `minSupporters` (uint32), `status` (`open`, `submitted`, `ready`, `rejected`, `expired`, `fulfilled`, or `closed`), `sort` (`bounty`, `supporters`, `calls`, `deadline`, `score`), and `limit` (1–50). Defaults are `0`, `1`, `open`, `bounty`, and `10`. Status comparisons are case-insensitive; omit `status` to use the default filter. A supplied `null` is invalid.
 
 The `200` response includes chain metadata, paid `analysis` metadata, and ranked `opportunities`. For machine requests, send `Accept: application/json`; an unpaid request receives HTTP `402` with an x402 v2 challenge in the `PAYMENT-REQUIRED` header. Browser-like requests (`Accept: text/html` and a Mozilla user agent) may instead receive an HTML payment page without that header. Follow the JSON challenge and replay the same JSON request with `PAYMENT-SIGNATURE`; do not treat the challenge itself as a payment or as a Markdown document.
+
+## Fulfilled services
+
+`GET /v1/services` returns up to 50 fulfilled demands as services, ordered by descending numeric demand ID. `GET /v1/services/:id` reads any fulfilled demand in the index. The ID is a canonical positive decimal uint256; invalid IDs return 400, missing or nonfulfilled demands return 404, and unavailable index or chain returns 503. Both routes are free.
+
+Each response includes chain ID, contract, snapshot block number and hash, and generation time. Each service contains demandId, capability, raw specification, builder, original serviceUrl and evidenceHash. Snapshot hash and generation time are not fulfillment block or time. A listing does not assert current provider availability or compatibility.

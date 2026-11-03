@@ -14,6 +14,8 @@ The public frontend serves the [OpenAPI 3.1 description](../frontend/public/open
 | `GET /health` | Public | Checks market RPC chain ID, latest block and contract bytecode |
 | `GET /ready` | Public | Payment middleware/storage readiness, then the health check |
 | `GET /v1/demands` | Free | Up to 50 public chain-derived demands and the legacy score |
+| `GET /v1/services` | Free | Up to 50 fulfilled services from the canonical index |
+| `GET /v1/services/:id` | Free | Look up a fulfilled service by demand ID |
 | `POST /v1/demands/prepare` | Free | Validate RFQ v1 and return an unsigned zero-native-value createDemand intent |
 | `POST /v1/opportunities` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
 
@@ -329,3 +331,9 @@ API responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, 
 See the canonical [error reference](ERRORS.md) and [operational limits](SELF_HOSTING.md#limits-and-bounded-work).
 
 The market is unavailable until an operator supplies a reviewed contract, token address and token decimals. Before market reads, the API verifies RPC chain ID, contract code, immutable `token()` and token `decimals()`; mismatches fail closed. Each index is bound to `(chainId, contract)` and ranks only that deployment.
+
+## Fulfilled services
+
+`GET /v1/services` returns up to 50 fulfilled demands as services, ordered by descending numeric demand ID. `GET /v1/services/:id` reads any fulfilled demand in the index. The ID is a canonical positive decimal uint256; invalid IDs return 400, missing or nonfulfilled demands return 404, and unavailable index or chain returns 503. Both routes are free.
+
+Each response includes chain ID, contract, snapshot block number and hash, and generation time. Each service contains demandId, capability, raw specification, builder, original serviceUrl and evidenceHash. Snapshot hash and generation time are not fulfillment block or time. A listing does not assert current provider availability or compatibility.

@@ -33,7 +33,8 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `INVALID_LIMIT` | `limit` outside 1..50 | use allowed range |
 | `INVALID_SORT` | unsupported sort | see API.md |
 | `INVALID_STATUS` | unsupported status filter | see API.md |
-| `NOT_FOUND` | route does not exist | use documented route |
+| `INVALID_SERVICE_ID` | service ID is not a canonical positive decimal uint256 | use a valid demand ID |
+| `NOT_FOUND` | route does not exist, or service is absent or not fulfilled | use a documented route or verify the demand |
 
 ## Contract CLI
 
