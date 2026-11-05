@@ -334,7 +334,7 @@ Historical Mainnet E2E acceptance passed for USD₮0, USDC and USDG at commit `c
 | 429 | `RATE_LIMITED`; respect `Retry-After` |
 | 503 | Chain/index dependency, payment readiness, capacity, client identity or durable storage failure |
 
-Default per-IP route quotas are 60 demands and 20 opportunities per 60 seconds, including unpaid challenges. Invalid input precedes quotas/admission; limits and admission precede x402. Limits are process-local. Retry guidance never authorizes a new payment. The error handler sanitizes unexpected execution failures as `CHAIN_RPC_UNAVAILABLE`. Readiness uses `{ ok: false, error: ... }`; normal API failures use `{ error: ... }`; official SDK challenge/payment bodies retain SDK format.
+Default per-IP route quotas are 60 demands and 20 insights requests per 60 seconds, including unpaid x402 challenges. Invalid input precedes quotas/admission; limits and admission precede x402. Limits are process-local. Retry guidance never authorizes a new payment. The error handler sanitizes unexpected execution failures as `CHAIN_RPC_UNAVAILABLE`. Readiness uses `{ ok: false, error: ... }`; normal API failures use `{ error: ... }`; official SDK challenge/payment bodies retain SDK format.
 
 API responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a server-generated `X-Request-ID`. CORS allows configured exact origins, exposes `link`, `payment-required`, and `payment-response`, and permits `idempotency-key`.
 

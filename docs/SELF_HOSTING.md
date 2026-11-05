@@ -119,7 +119,7 @@ Require exactly one `bridge unmet_egress` table with **2 sets, 2 chains and 9 ru
 
 For rollback, restore the saved owned policy and hook with their original permissions, syntax-check and atomically apply the saved policy **before** retiring any superseded owned table. Verify recovery traffic, required paths, denies and unrelated state; confirm persistence through the restored UFW hook. On first install, absence of a prior policy is not a normal rollback that permits deleting protection: retain the reviewed fallback or maintenance boundary until protection is restored. Never flush the host ruleset, remove persistent volumes or use a namespace policy loader during normal deployment; any namespace fallback is confined to the reviewed emergency rollback.
 
-One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid opportunities endpoint.
+One Compose stack runs a Bun/Express API and Caddy containing the production React/Vite build. The contract remains the source of truth. Browsers still read/write the configured X Layer contract directly through their RPC/wallet; the backend is the separate demand index and paid insights endpoint.
 
 Run Compose from the repository root. It keeps `context: .` and builds with `docker/Dockerfile.api` and `docker/Dockerfile.web`; the web image copies `docker/Caddyfile` into `/etc/caddy/Caddyfile`. Root `compose.yaml`, `.dockerignore` and `.env.example` remain the entrypoints for local configuration.
 
@@ -301,7 +301,7 @@ BASE_URL=http://localhost:18080 REQUESTS=60 CONCURRENCY=4 bun scripts/load-unpai
 docker stats --no-stream
 ~~~
 
-At most 200 requests / 16 concurrent clients are permitted. The default unpaid opportunities path does not invoke verify/settle or index refresh after initialization. Do not load-test upstream public services. The probe reports counts and p50/p95/p99; 429 is expected after quota exhaustion. Backend tests separately verify overload with deterministic held requests on local infrastructure.
+At most 200 requests / 16 concurrent clients are permitted. An unpaid challenge request to `POST /v1/insights` does not invoke verify/settle or index refresh after initialization. Do not load-test upstream public services. The probe reports counts and p50/p95/p99; 429 is expected after quota exhaustion. Backend tests separately verify overload with deterministic held requests on local infrastructure.
 
 ## Production deployment checklist
 
