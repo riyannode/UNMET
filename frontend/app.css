@@ -337,13 +337,11 @@ body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: clip; backgro
   .market-card-escrow strong { font-size: 24px; }
 }
 
-.unmet-workspace-content button.ghost, .unmet-workspace-content button.primary, .unmet-workspace-content button.danger { min-height: 40px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 6px; white-space: nowrap; font-size: 15px; font-weight: 630; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+.unmet-workspace-content button.ghost, .unmet-workspace-content button.primary { min-height: 40px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 6px; white-space: nowrap; font-size: 15px; font-weight: 630; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
 .unmet-workspace-content button.ghost { background: transparent; color: var(--text-primary); }
 .unmet-workspace-content button.ghost:hover:not(:disabled) { border-color: var(--signal-primary); background: rgb(29 49 74 / 68%); }
 .unmet-workspace-content button.primary { border-color: var(--signal-primary); background: var(--signal-primary); color: var(--text-inverse); }
 .unmet-workspace-content button.primary:hover:not(:disabled) { border-color: var(--signal-glow); background: var(--signal-glow); }
-.unmet-workspace-content button.danger { border-color: rgb(241 143 150 / 50%); background: rgb(83 34 44 / 54%); color: var(--signal-danger); }
-.unmet-workspace-content button.danger:hover:not(:disabled) { border-color: var(--signal-danger); background: rgb(105 41 52 / 74%); }
 .unmet-workspace-content input, .unmet-workspace-content textarea { width: 100%; min-width: 0; min-height: 40px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: 5px; background: #0a121d; color: var(--text-primary); caret-color: var(--signal-primary); font-size: 16px; }
 .unmet-workspace-content input::placeholder, .unmet-workspace-content textarea::placeholder { color: var(--text-muted); opacity: 1; }
 .unmet-workspace-content input:focus, .unmet-workspace-content textarea:focus { border-color: var(--signal-primary); outline: 1px solid var(--signal-primary); outline-offset: -1px; }
@@ -779,7 +777,6 @@ html[data-theme="dark"] .market-panel .workflow-summary,
 html[data-theme="dark"] .market-panel .market-control-label,
 html[data-theme="dark"] .market-panel .market-search-count,
 html[data-theme="dark"] .market-panel .market-result-summary,
-html[data-theme="dark"] .market-panel .market-card-wallet-count,
 html[data-theme="dark"] .market-panel .market-card label { color: #b3b3b3; }
 html[data-theme="dark"] .market-panel .market-card [data-slot="card"],
 html[data-theme="dark"] .market-panel .market-card input,
