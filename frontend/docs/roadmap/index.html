@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Planned capabilities that connect funded demand to discoverable, purchasable services." />
+    <meta name="description" content="Implementation status and future plans for demand and services." />
     <link rel="canonical" href="https://unmetxyz.my.id/docs/roadmap/" />
     <link rel="icon" type="image/png" href="/logos/unmet.png" />
     <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
     <link rel="stylesheet" href="/unmet-landing.css" />
     <link rel="stylesheet" href="/theme.css" />
     <link rel="stylesheet" href="/docs/docs.css" />
-    <title>Future implementation · UNMET Docs</title>
+    <title>Roadmap and status · UNMET Docs</title>
     <script type="module" src="/docs/navigation.tsx"></script>
     <script type="module" src="/docs/interactions.ts"></script>
   </head>
@@ -30,31 +30,31 @@
         <main id="docs-content" tabindex="-1" class="docs-main">
           <article class="docs-article">
             <p class="docs-eyebrow"><!--docs-group--></p>
-            <h1>Future implementation</h1>
-            <p class="docs-description">Planned capabilities that connect funded demand to discoverable, purchasable services.</p>
-<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
-<p>The stages below describe roadmap scope. RFQ v1 provides an unsigned preparation interface; G2 exposes fulfilled demand services and G3 adds cached discovery observations. Later stages retain their proposed status. These descriptions do not establish current endpoint availability. See <a href="/docs/api/">API reference</a> for supported interfaces.</p>
+            <h1>Roadmap and status</h1>
+            <p class="docs-description">Implementation status and future plans for demand and services.</p>
+<p class="docs-status">MIXED IMPLEMENTATION AND PROPOSALS</p>
+<p>These statuses describe repository scope, not release acceptance or current availability. See the <a href="/docs/api/">API reference</a> for supported interfaces.</p>
 <h2 id="automatic-validation">Automatic x402 validation</h2>
-<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
-<p>Gate 0 would check a builder endpoint's unpaid x402 challenge before escrow submission and issue a short-lived signed attestation. A new immutable escrow version would enforce acceptance while preserving existing-demand settlement/refund access. Approved payment profiles would define supported networks, assets, and compatible prices.</p>
-<p>Compatibility would not prove paid execution, service quality, or supporter approval. New submissions could depend on validation availability; eligible settlement and refunds would remain independent.</p>
+<p class="docs-status">IMPLEMENTED — SOURCE/INTEGRATION</p>
+<p>G0.1-G0.5 source and integration implement unpaid x402 challenge validation and signed attestation for the canonical escrow. G0.6 release acceptance requires independent target-host and end-to-end evidence for each release.</p>
+<p>Compatibility does not prove paid execution, service quality, or supporter approval. Eligible settlement and refunds remain independent of validation availability.</p>
 <h2 id="rfq">Machine-readable RFQ</h2>
-<p class="docs-status">MINIMAL RFQ V1</p>
+<p class="docs-status">IMPLEMENTED — MINIMAL RFQ V1</p>
 <p>Phase 1 uses a minimal versioned description in the existing demand specification. Official frontend and API creation share trimmed JCS serialization. GET /v1/demands remains discovery; POST /v1/demands/prepare returns unsigned transaction data. Economic terms remain onchain and historical specifications stay readable. No external documents or dedicated RFQ resources are planned for G1.</p>
 <h2 id="service-registry">Service Registry</h2>
-<p class="docs-status">MINIMAL G2</p>
+<p class="docs-status">IMPLEMENTED — G2</p>
 <p>The public <a href="/services">Services directory</a> and free API show canonical fulfilled demand records and cached unpaid observations. External distribution is the builder's responsibility.</p>
 <h2 id="service-discovery">x402 Service Discovery</h2>
-<p class="docs-status">G3 DISCOVERY</p>
+<p class="docs-status">IMPLEMENTED — G3 CORE DISCOVERY</p>
 <p>Services can be filtered by capability, exact payment identity and recent observation state. Discovery does not authorize spending or establish paid execution. Builders manage any external publication themselves.</p>
 <h2 id="intelligence-expansion">Intelligence Expansion</h2>
-<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
-<p>Phase 4 would add demand history, fulfillment metrics, and attributed service-usage evidence. Provider declarations, observed payments, provider-attested execution, and independent tests would have distinct evidence levels. Payment alone would not count as proof of correct execution.</p>
+<p class="docs-status">IMPLEMENTED — G4 REDUCED SCOPE</p>
+<p>Paid intelligence includes market snapshots, coverage-gated event history and discovery metrics. All four usage evidence producers remain unsupported; expected calls are not measured usage.</p>
 <h2 id="capability-resolver">Capability Resolver</h2>
-<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>
+<p class="docs-status">DEFERRED — DEMAND-DRIVEN; NOT IMPLEMENTED</p>
 <p>Phase 5 would search compatible published services first, then matching funded RFQs, before offering unsigned demand creation. It would not spend funds, approve a service, or submit a transaction automatically.</p>
 <h2 id="availability">Availability and order</h2>
-<p>The planned order is validation, RFQ, registry, discovery, intelligence expansion, then resolver. Earlier capabilities provide data and safeguards for later stages. No release date is promised. Support for additional payment networks or methods requires separate review; it is not implied by an external library's capabilities.</p>
+<p>G2, G3 and G4 are usable without the resolver. Actual agent and client demand must establish future matching semantics; there is no current resolver API or commitment to a specific contract. No release date is promised. Additional payment networks or methods require separate review.</p>
           </article>
           <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
         </main>

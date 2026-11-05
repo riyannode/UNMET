@@ -35,13 +35,13 @@
 <h2 id="eligibility">When a proposal is allowed</h2>
 <p>The demand must be open and its deadline must still be active. A demand has one active proposal at a time. Anyone may propose a service; submitting does not guarantee approval or payout.</p>
 <h2 id="submission">Submit your service</h2>
-<ol><li>Open the demand's <strong>Builder Proposal</strong> tab.</li><li>Provide a public HTTPS service URL, at most 512 bytes.</li><li>Provide an evidence reference or a nonzero bytes32 evidence hash. The interface hashes a text reference for the transaction.</li><li>Review the intended builder wallet and submit the proposal.</li></ol>
-<p>The current frontend checks the URL and evidence. The current contract checks URL length and the nonzero evidence hash; it does not inspect the endpoint's HTTP behavior or verify x402 compatibility.</p>
+<ol><li>Open the demand's <strong>Builder Proposal</strong> tab.</li><li>Provide a public HTTPS service URL of at most 512 UTF-8 bytes, a nonzero bytes32 evidence hash or text reference (hashed by the interface), and payment receiver, network and request details.</li><li>Sign builder authorization for unpaid validation. The frontend verifies the signed PASS.</li><li>Approve the separate attestation-gated wallet transaction, then check its receipt and state readback.</li></ol>
+<p>The validator inspects an unpaid x402 challenge. The contract verifies the signed attestation; it does not make HTTP requests. A PASS does not prove paid execution or service quality.</p>
 <h2 id="review-snapshot">The review snapshot</h2>
 <p>An accepted proposal records the builder, URL, evidence hash, and a new submission nonce. It fixes the current escrow snapshot and approval threshold, then starts the configured review period. New funding stops during review.</p>
 <h2 id="next-steps">After submission</h2>
 <p>Wait for a successful receipt and state readback. Supporters can then <a href="/docs/demand-market/review/">approve or reject</a>. Old votes do not carry into a replacement proposal.</p>
-<p><a href="/docs/roadmap/#automatic-validation">Automatic x402 validation</a> is proposed. A current accepted proposal is not a compatibility certificate or an independent technical verification.</p>
+<p>Validation is a time-bound compatibility check, not independent technical verification or a guarantee of availability.</p>
           </article>
           <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
         </main>

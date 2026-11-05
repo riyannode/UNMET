@@ -60,12 +60,12 @@ Foundry runs from `backend/`, where source and tests are siblings. Its dependenc
 
 ## System architecture
 
-- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:chainId/:contract/:demandId`, `/create-demand` and `/analytics`.
+- `frontend/main.tsx` registers React Router routes. `/` is the landing page; `/docs` is a Vite HTML entry at `frontend/docs/index.html`, with static content and the shared React navbar; linked with full document navigation and mapped by Vite and Caddy. App routes are `/market`, `/market/:chainId/:contract/:demandId`, `/create-demand` and `/analytics`. Standalone Services routes are `/services` and `/services/:chainId/:contract/:demandId`.
 - The app shell owns wallet/session orchestration. Reown AppKit is configured in `frontend/reown.ts`; `frontend/contract.ts` uses viem for direct RPC reads, approvals and contract writes. Ordinary demand actions do not pass through the Bun API.
 - `backend/AgentDemand.sol` is the canonical escrow source. Frontend/backend use the shared canonical ABI; offline deployment planning and read-only verification are in `backend/admin.ts`. Before changing deployment identity, submission or recovery, inspect [Architecture](docs/ARCHITECTURE.md#canonical-attestation) before changing those consumers.
 - `backend/server.ts` exports the Express app and implements API routes, health/readiness, demand indexing and ranking. `backend/start.ts` is the standalone Bun/container entrypoint.
-- The backend index is disposable, process-local derived chain state. Reads use pinned blocks; canonical hashes, bounded log windows and atomic checkpoints protect refreshes and reorg recovery.
-- Native `bun:sqlite` stores operational x402 reservations, idempotency and settlement records. It is not the escrow database. Self-hosting requires WAL, synchronous=FULL, one Bun API replica and persistent `payment_data:/data` at `/data/payments.sqlite`.
+- The market index is disposable, process-local derived chain state. Reads use pinned blocks; canonical hashes, bounded log windows and atomic checkpoints protect refreshes and reorg recovery. Activity history is separately persisted and rebuildable.
+- Separate SQLite stores on persistent `/data` hold payment operations (`payments.sqlite`), discovery metadata and observations (`discovery.sqlite`), and derived activity events and coverage (`activity.sqlite`). None is escrow authority. Payment storage requires WAL, synchronous=FULL and one Bun API replica.
 - Official OKX verification precedes buffered execution and settlement. Durable mode reserves the authorization, persists the in-flight marker before external settlement, and withholds content until confirmed success is persisted. Ambiguous results remain blocked for status-only recovery.
 - Root Compose builds from `context: .` using `docker/Dockerfile.api` and `docker/Dockerfile.web`. Caddy serves the frontend and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready` to the private API. Caddy replaces forwarded client identity; Express trusts only its configured hop.
 - The only supported hosted path uses Docker Compose and Caddy. Durable payment storage remains a persistent SQLite volume.
@@ -89,6 +89,9 @@ These are starting points, not isolated ownership boundaries. Trace the complete
 | Landing and visual conventions | `frontend/UnmetLanding.tsx`, `frontend/UnmetHowItWorks.tsx`, `frontend/UnmetNavigation.tsx`, `frontend/UnmetFooter.tsx`, `frontend/MagicRings.tsx`, `docs/DESIGN.md` |
 | Styles and reusable UI | `frontend/app.css`, `frontend/create-demand-chat.css`, `frontend/components/ui/`, `frontend/components/reui/`; landing styles remain in `frontend/` |
 | Analytics and derived frontend state | `frontend/Analytics.tsx`, `frontend/analytics.ts`, `frontend/app-state.ts` |
+| Services directory and discovery | `frontend/Services.tsx`, `backend/discovery-store.ts`, `backend/discovery-observer.ts`, `docs/API.md` |
+| Validation and signer | `backend/validation-service.ts`, `backend/validation-signer.ts`, `docs/API.md#standalone-g02-validation-runtime` |
+| Activity and insights | `backend/activity-store.ts`, `backend/activity-index.ts`, `backend/insights.ts`, `docs/ARCHITECTURE.md` |
 | Escrow/economics and ABI | `backend/AgentDemand.sol`, `backend/AgentDemand.t.sol`, `backend/contract.ts`, `frontend/contract.ts` |
 | API routes, schemas, index/ranking | `backend/server.ts`, `backend/contract.ts`, `backend/server.test.ts`, `docs/API.md` |
 | Configuration, trust and bounded work | `backend/config.ts`, `backend/admission.ts`, `backend/upstream.ts`, `backend/hardening.test.ts` |

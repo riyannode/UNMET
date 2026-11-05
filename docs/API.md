@@ -4,7 +4,7 @@
 
 Default local base URL: `http://127.0.0.1:8787`.
 
-The public frontend serves the [OpenAPI 3.1 description](../frontend/public/openapi.json), an [RFC 9727 API catalog](../frontend/public/.well-known/api-catalog), a concise [Markdown API reference](../frontend/public/api.md), and [payment guide](../frontend/public/payment.md). These discovery documents describe the deployed API schema. API clients should send `Accept: application/json`; the pinned x402 SDK can return an HTML payment page for a request with both `Accept: text/html` and a Mozilla browser user agent, and that browser-specific 402 may omit `PAYMENT-REQUIRED`.
+The public frontend serves the [OpenAPI 3.1 description](../frontend/public/openapi.json), an [RFC 9727 API catalog](../frontend/public/.well-known/api-catalog), a concise [Markdown API reference](../frontend/public/api.md), and [payment guide](../frontend/public/payment.md). These documents publish a reference schema; they do not establish what a currently served release contains. API clients should send `Accept: application/json`; the pinned x402 SDK can return an HTML payment page for a request with both `Accept: text/html` and a Mozilla browser user agent, and that browser-specific 402 may omit `PAYMENT-REQUIRED`.
 
 ## Routes
 
@@ -16,6 +16,7 @@ The public frontend serves the [OpenAPI 3.1 description](../frontend/public/open
 | `GET /v1/demands` | Free | Up to 50 public chain-derived demands and the legacy score |
 | `GET /v1/services` | Free | Up to 50 fulfilled services from the canonical index |
 | `GET /v1/services/:id` | Free | Look up a fulfilled service by demand ID |
+| `PUT /v1/services/:chainId/:contract/:demandId/discovery` | Builder authorization | Publish signed discovery metadata |
 | `POST /v1/demands/prepare` | Free | Validate RFQ v1 and return an unsigned zero-native-value createDemand intent |
 | `POST /v1/insights` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
 
@@ -23,7 +24,7 @@ The public frontend serves the [OpenAPI 3.1 description](../frontend/public/open
 
 ## Standalone G0.2 validation runtime
 
-The source includes a separate, local validation runtime. It is not part of the API routes above, is not deployed by the existing Compose configuration, and is not a production-ready validation or attestation service. With an explicitly reviewed configuration file, it can be started locally as:
+The source includes a separate validation runtime, outside the API routes above. The base Compose stack omits it; the opt-in five-service overlay provides validator, signer and observer with Caddy ingress. Configuration does not establish deployment or release acceptance. With an explicitly reviewed configuration file, it can be started locally as:
 
 ```sh
 VALIDATION_CONFIG_PATH=/path/to/validation-config.json bun --no-env-file backend/validation-service.ts
@@ -31,7 +32,7 @@ VALIDATION_CONFIG_PATH=/path/to/validation-config.json bun --no-env-file backend
 
 It binds `127.0.0.1:3001` and exposes only `POST /v1/x402/validate`. There is no built-in production profile. The strict configuration has `maxInFlight`, `managementAddresses`, absolute `signerSocketPath` and `signerAuthTokenPath`, and a nonempty `deployments` array. Each deployment has `escrowChainId`, `escrowContract`, `escrowRpcUrl`, lowercase nonzero `verifier`, `demandPriceAsset` and a nonempty `paymentProfiles` array. Each payment profile contains the fields in the [public policy schema](schemas/validation-policy.json) under `profile`, plus `paymentRpcUrl`. Identity is the exact `(escrowChainId, escrowContract, paymentNetwork)` tuple. RPC URLs, signer settings, verifier and admission settings are excluded from the public policy digest. Configuration and its RPC endpoints are trusted operator inputs.
 
-Browser integration uses public build inputs `VITE_VALIDATION_URL` (the full `/v1/x402/validate` URL) and `VITE_VALIDATION_NETWORKS` (approved comma-separated CAIP-2 networks matching operator policy). Missing configuration disables builder submission. A public HTTPS reverse proxy must forward that path to the standalone validator on `127.0.0.1:3001`; the repository does not provision or deploy this ingress. A same-origin proxy path is also supported. Keep this route directed to the isolated validator, separately from the existing payment API.
+Browser integration uses public build inputs `VITE_VALIDATION_URL` (the full `/v1/x402/validate` URL) and `VITE_VALIDATION_NETWORKS` (approved comma-separated CAIP-2 networks matching operator policy). Missing configuration disables builder submission. Standalone hosting requires a public HTTPS reverse proxy to the validator on `127.0.0.1:3001`; the opt-in overlay supplies the exact Caddy route. Keep this route directed to the isolated validator, separately from the existing payment API.
 
 For cross-origin browser calls, set `VALIDATION_ALLOWED_ORIGINS` on the standalone validator to an exact comma-separated origin allowlist. Only POST with `content-type` is allowed by preflight; unknown origins or requested headers receive 403. Responses to allowed origins include CORS headers, including FAIL/UNAVAILABLE. Cookies and ambient credentials are omitted. This transport configuration does not change the signed policy schema or establish G0.6 target-host isolation.
 
@@ -63,7 +64,7 @@ Free chain dependency check. Returns `503` if the configured contract is missing
 
 Each returned row adds raw onchain `specification` unchanged. It can be historical plain text, malformed/unrelated JSON, an unknown future version or canonical RFQ v1. No migration, document retrieval or classification state is applied. Onchain economics remain authoritative.
 
-Free discovery returns up to 50 chain-derived demands of all statuses, sorted by **current escrow descending**, then numeric demand ID descending. The envelope is `chainId`, `contract`, `blockNumber` (decimal string), `generatedAt` (ISO timestamp), and `demands`. It has no filter or pagination contract; the query string is not used. The disposable index is not the payment database.
+Free discovery returns up to 50 chain-derived demands of all statuses, sorted by **current escrow descending**, then numeric demand ID descending. The envelope is `chainId`, `contract`, `escrowToken`, `blockNumber` (decimal string), `generatedAt` (ISO timestamp), and `demands`. It has no filter or pagination contract; the query string is not used. The disposable index is not the payment database.
 
 All existing fields remain available, including public review/accounting details and `score`, for compatibility with API consumers. The legacy score is computed across the entire indexed pool before the 50-row limit. The new paid-only `analysis`, `rank`, `scoreBreakdown`, `economicSignals` and `reasoning` fields are absent. The current frontend reads contracts directly, so its market/detail/analytics views do not depend on this JSON response.
 
@@ -79,6 +80,7 @@ Synthetic example (one returned row shown):
   "demands": [{
     "demandId": "3",
     "capability": "vendor-kyb-singapore",
+    "specification": "{\"description\":\"Return synthetic vendor verification results.\",\"schemaVersion\":\"unmet-rfq-v1\"}",
     "currentEscrow": "100.000000",
     "fundedBounty": "100.000000",
     "reviewCommitted": "0.000000",
@@ -124,7 +126,7 @@ Preparation reserves nothing and is not an execution guarantee. The caller must 
 
 ## POST /v1/insights
 
-Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `INSIGHTS_PRICE` fails configuration. Agents receive a comparison within their matching demand pool, inspectable factor contributions, escrow/usage and review calculations, and deterministic evidence and cautions for further investigation. Public blockchain facts remain free; payment buys the comparison and interpretation.
+Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `INSIGHTS_PRICE` fails configuration. Agents receive a comparison within their matching demand pool, inspectable factor contributions, escrow-per-expected-call and review calculations, and deterministic evidence and cautions for further investigation. Expected calls are not observed usage. Public blockchain facts remain free; payment buys the comparison and interpretation.
 
 The former paid intelligence route is removed and returns ordinary `404 NOT_FOUND`; it has no payment challenge. Rename client requests and operator settings to `/v1/insights`, `RATE_INSIGHTS`, and `INSIGHTS_PRICE`. The retired settings are rejected.
 
@@ -310,7 +312,7 @@ The deadline factor is `min(max(deadline - evaluationTime, 0), 2592000) / 259200
 
 Paid scoring and rank use **all entries matching the validated filters before limit** (`analysis.rankingScope`), not merely returned rows or the entire market. Rank is a unique 1-based ordinal by rounded score descending, then numeric demand ID descending. `sort` controls response order independently; a bounty-ordered first row need not have rank 1. Changing only sort or limit preserves scores/ranks; changing filters can change both. No score/rank is a cross-pool benchmark. Free uses all indexed statuses with zero minimums, so its legacy score may differ from a filtered paid score.
 
-Percentile tables are prepared once per evaluated pool with sorting and exact integer comparisons; scoring/ranking is O(N log N), and premium explanations/economic calculations are generated only for up to 50 returned rows. Both endpoints reuse the same bounded index and add no RPC requests.
+Percentile tables are prepared once per evaluated pool with sorting and exact integer comparisons; scoring/ranking is O(N log N), and premium explanations/economic calculations are generated only for up to 50 returned rows. Ranking adds no provider calls. G4 history guards read the chain and checkpoint separately from the market snapshot anchor.
 
 Historical Mainnet E2E acceptance passed for USD₮0, USDC and USDG at commit `cb346e2a73de917a01e2555363d6b54f4e4a58a7`, with empty opportunity results because no OPEN demands matched. The additive intelligence contract is verified with synthetic fixtures and mock settlement; it has not received new live Mainnet acceptance. No payment settlement logic is changed for this response differentiation.
 
@@ -350,4 +352,4 @@ Each response includes chain ID, contract, snapshot block number and hash, and g
 
 Publish metadata with `PUT /v1/services/:chainId/:contract/:demandId/discovery` using the strict [metadata schema](schemas/discovery-metadata.json). The route, signed body and configured deployment must match the canonical Fulfilled service and builder. The EIP-712 domain is `UNMET AgentDemand`, version `2`, with the escrow chain ID and contract; `DiscoveryMetadata(bytes32 payloadHash)` signs SHA-256 of the UTF-8 JCS metadata object without `signature`. Query pair order is retained. Targets must be sorted by network, asset and payTo and contain no duplicates. The signed targets authorize payment identities, not amounts or spending. EOAs and ERC-1271 wallets are supported. Higher revisions replace, lower revisions conflict, and equal revisions are idempotent only for identical canonical payloads. The durable revision high-watermark remains even when a service becomes inactive.
 
-List filters are `capability`, `network`, `asset`, `maxPrice`, and `state`. `maxPrice` is an atomic uint256 string and requires exact `network` and `asset`; all payment filters must match the same current compatible offer. Filtering precedes the 50-result limit. Discovery states distinguish missing metadata, pending, invalid metadata, compatible, incompatible, unavailable and stale observations. Observations include timestamps, request hash, canonical snapshot hash and policy identity when available; unavailable or stale offers are last-known evidence. Current offer compatibility is independent of the originating maximum. Per-offer `withinOriginatingMaxPrice` is null unless network, asset and verified decimals match the deployment's historical denomination. No currency conversion is performed.
+List filters are `capability`, `network`, `asset`, `maxPrice`, and `state`. `maxPrice` is an atomic uint256 string and requires exact `network` and `asset`; all payment filters must match the same current compatible offer. Filtering precedes the 50-result limit. Metadata states are missing, valid and invalid; observation states are pending, metadata_invalid, compatible, incompatible, unavailable and stale. Current metadata and the revision high-watermark are not an unlimited historical metadata log. Observations include timestamps, request hash, canonical snapshot hash and policy identity when available; unavailable or stale offers are last-known evidence. Current offer compatibility is independent of the originating maximum. Per-offer `withinOriginatingMaxPrice` is null unless network, asset and verified decimals match the deployment's historical denomination. No currency conversion is performed.

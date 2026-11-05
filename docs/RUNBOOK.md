@@ -6,7 +6,7 @@ For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands`
 
 Use both `compose.yaml` and `compose.validation.yaml` for every build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the [lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web, validator and observer together so both join the current web network namespace.
 
-On the reviewed VPS, [persistent host egress](SELF_HOSTING.md#persistent-egress-on-the-reviewed-vps) is loaded by the existing UFW hook. Check UFW status and `sudo nft list table bridge unmet_egress` before/after deployment, then verify required traffic and deny counters. Keep both pinned web addresses and exact internal exceptions. Do not manually reapply a namespace policy after normal recreation or reboot; retain the namespace fallback only in the reviewed emergency rollback.
+The reviewed VPS configuration uses the existing UFW hook for [persistent host egress](SELF_HOSTING.md#persistent-egress-on-the-reviewed-vps). Check current UFW status and `sudo nft list table bridge unmet_egress` before/after deployment, then verify required traffic and deny counters. Keep both pinned web addresses and exact internal exceptions. Do not manually reapply a namespace policy after normal recreation or reboot; retain the namespace fallback only in the reviewed emergency rollback.
 
 Leave an explicitly requested local preview running until its owner requests closure. Restart only task-owned services for outage probes and verify their health afterward. Never leave validator in the previous namespace after replacing web. Preserve persistent volumes and unrelated projects.
 
@@ -134,7 +134,7 @@ X402_CHAIN_ID=196
 X402_RPC_URL=https://rpc.xlayer.tech
 ```
 
-Set `PAYMENT_DB_PATH` to an absolute file path inside a private directory that already exists.
+Set `PAYMENT_DB_PATH` and `ACTIVITY_DB_PATH` to absolute file paths inside existing private API-owned directories with mode 700.
 
 `OKX_PAY_TO` is canonical. `PAY_TO_ADDRESS` remains a legacy fallback for existing local configuration; use `OKX_PAY_TO` for new setup.
 
@@ -187,7 +187,7 @@ Browser verification:
 - confirm Support This Request and Submit Service Proposal are visible only when their existing lifecycle conditions allow them
 - Analytics opens a selected demand in the same Demand view
 - support from a second wallet; read back the board and position
-- submit an HTTPS service URL and evidence
+- provide the HTTPS service URL, evidence, receiver, network and request details; sign builder authorization for unpaid validation, allow the frontend to verify the signed PASS, approve the separate wallet transaction and verify receipt/readback
 - approve or reject and verify commitment-weighted progress
 - finalize only after quorum; verify only approver funds settle
 - verify Refund and Reopen Demand appear only when eligible
@@ -195,7 +195,7 @@ Browser verification:
 
 ## 8. Production operations
 
-Use the Docker Compose and Caddy deployment documented in [Self-hosting](SELF_HOSTING.md). The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id); confirm current availability directly rather than relying on dated status records.
+Use the Docker Compose and Caddy deployment documented in [Self-hosting](SELF_HOSTING.md). The reference origin is [https://unmetxyz.my.id](https://unmetxyz.my.id); confirm current availability directly rather than relying on dated status records.
 
 For payment incidents, follow [Payment recovery](PAYMENT_RECOVERY.md). Preserve the persistent payment_data volume during updates and rollback; never infer settlement from a local build or smoke test.
 
@@ -215,7 +215,7 @@ RPC/contract unavailable:
 
 Chain reorg:
 - backend verifies indexed block hash
-- mismatch triggers full derived-index rebuild
+- mismatch triggers full in-memory demand-index rebuild; persisted activity history is separately revalidated and rebuilt, with null historical quantities while coverage is untrusted or incomplete
 
 Facilitator unavailable:
 - paid service fails closed; never bypass verification
@@ -223,4 +223,4 @@ Facilitator unavailable:
 Frontend unavailable:
 - contract remains usable directly; no funds depend on frontend availability
 
-For browser access to the separately hosted validator, configure its `VALIDATION_ALLOWED_ORIGINS` as a comma-separated list of exact application origins. It permits only JSON POST preflights for those origins. This does not expose the loopback listener directly; a separately configured TLS reverse proxy is required.
+For cross-origin browser access to a standalone validator, configure `VALIDATION_ALLOWED_ORIGINS` as a comma-separated list of exact application origins. It permits only JSON POST preflights for those origins. Standalone hosting requires a TLS reverse proxy to the loopback listener; the opt-in overlay provides Caddy ingress.

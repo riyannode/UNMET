@@ -153,13 +153,15 @@ Submission freezes:
 - `reviewCommitted`
 - ceil-rounded `approvalRequired`
 
+Submission requires a signed attestation binding the builder, demand, service URL, evidence, next nonce, and signed requirements and policy hashes. The immutable verifier admin can rotate the current verifier; signatures from the previous verifier then fail for new submissions, while accepted proposals and escrow rights remain unaffected. See [Architecture](ARCHITECTURE.md#canonical-attestation).
+
 No new support is allowed during review. Each supporter's weight is its pre-submission token commitment. Each supporter may approve or reject once per submission nonce; the same supporter cannot do both. Approval and rejection weights are measured against the immutable review snapshot.
 
 `rejectionProgress` reports rejection weight and the threshold that makes approval quorum mathematically impossible. When rejection reaches that threshold, the candidate is marked rejected. Anyone may reopen immediately while the demand deadline is active; otherwise, anyone may reopen after review ends below quorum while the deadline remains active. Reopening emits `SubmissionRejected`, clears the current candidate and review progress, and starts a fresh open period; votes from the old submission do not carry forward.
 
 ### Fulfillment
 
-Anyone may finalize after the fixed approval quorum is reached and before seven days after review end. At or after that boundary anyone may cancel settlement; all remaining supporters can individually refund, and Cancelled remains terminal. Votes specify the intended submission nonce. State is finalized before token transfers. Only `approvalWeight` is settled: the builder receives the approved amount less its 2% fee, and the treasury receives the fee. Funds from non-approvers are excluded and remain refundable. Builder payout plus fee therefore equals the approved amount, not the original review snapshot or total committed pool.
+Anyone may finalize after the fixed approval quorum is reached and before seven days after review end. At or after that boundary anyone may cancel settlement; all remaining supporters can individually refund, and Cancelled remains terminal. Votes specify the intended submission nonce. State is finalized before token transfers. Only `approvalWeight` is settled: the builder receives the approved amount less the configured protocol fee, and the treasury receives the fee. Funds from non-approvers are excluded and remain refundable. Builder payout plus fee therefore equals the approved amount, not the original review snapshot or total committed pool.
 
 ### Failed review
 
@@ -181,6 +183,7 @@ Routes:
 - `GET /ready` public payment and activity-storage readiness, then dependency health check; storage readiness does not establish complete backfill
 - `GET /v1/demands` free chain-derived board with raw specification preserved
 - `GET /v1/services` and `GET /v1/services/:id` free fulfilled-demand service reads from the canonical index; `/services` displays builder-signed metadata and cached unpaid x402 observations. Provider probing occurs in the isolated observer, not in GET requests.
+- `PUT /v1/services/:chainId/:contract/:demandId/discovery` publishes builder-authorized metadata; see [API](API.md#fulfilled-services).
 - `POST /v1/demands/prepare` free unsigned creation intent; structured v1 description and existing onchain economic arguments
 - `POST /v1/insights` paid OKX.AI/A2MCP route with market history and snapshot metrics; see [API](API.md#post-v1insights)
 

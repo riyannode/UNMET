@@ -8,13 +8,15 @@ UNMET exposes public chain-derived demand data and a separate paid intelligence 
 | --- | --- | --- |
 | `GET /v1/demands` | Free | Up to 50 current public demands, sorted by current escrow descending and demand ID descending. |
 | `POST /v1/demands/prepare` | Free | Validate a structured demand and return unsigned transaction data. |
+| `GET /v1/services`, `GET /v1/services/:id` | Free | Fulfilled services and cached observations. |
+| `PUT /v1/services/:chainId/:contract/:demandId/discovery` | Builder authorization | Publish signed discovery metadata. |
 | `POST /v1/insights` | OKX x402 payment required | Filtered and ranked demand intelligence. |
 
 See [OpenAPI](./openapi.json) for request and response schemas, or [Payment guide](./payment.md) for the paid request flow. API clients should send `Accept: application/json`. Markdown negotiation does not change API responses. The pinned x402 SDK can return an HTML payment page for requests that include both `Accept: text/html` and a Mozilla browser user agent; this browser-specific 402 may omit `PAYMENT-REQUIRED`.
 
 ## GET /v1/demands
 
-Returns `chainId`, `contract`, `blockNumber`, `generatedAt`, and `demands`. Each demand row contains its public accounting, review, legacy `score` fields and raw onchain `specification` unchanged, including historical plain text and unknown versions. The response is capped at 50 and has no pagination or query-filter contract. This endpoint never returns paid-only analysis fields.
+Returns `chainId`, `contract`, `escrowToken`, `blockNumber`, `generatedAt`, and `demands`. Each demand row contains its public accounting, review, legacy `score` fields and raw onchain `specification` unchanged, including historical plain text and unknown versions. The response is capped at 50 and has no pagination or query-filter contract. This endpoint never returns paid-only analysis fields.
 
 ## POST /v1/demands/prepare
 
@@ -43,7 +45,7 @@ Preparation reserves nothing and is not an execution guarantee. The caller must 
 
 The paid response includes the snapshot block hash, all-market activity snapshots and separately anchored event history. Untrusted or incomplete historical quantities are null. All four usage evidence levels are unsupported; expected calls are not measured usage. See [OpenAPI](./openapi.json) for the complete response.
 
-Send an `application/json` object with optional `minBounty` (decimal string, up to six fractional digits), `minSupporters` (uint32), `status` (`open`, `submitted`, `ready`, `rejected`, `expired`, `fulfilled`, or `closed`), `sort` (`bounty`, `supporters`, `calls`, `deadline`, `score`), and `limit` (1–50). Defaults are `0`, `1`, `open`, `bounty`, and `10`. Status comparisons are case-insensitive; omit `status` to use the default filter. A supplied `null` is invalid.
+Send an `application/json` object with optional `minBounty` (decimal string, up to the configured escrow-token decimals), `minSupporters` (uint32), `status` (`open`, `submitted`, `ready`, `rejected`, `expired`, `fulfilled`, `closed`, or `cancelled`), `sort` (`bounty`, `supporters`, `calls`, `deadline`, `score`), and `limit` (1–50). Defaults are `0`, `1`, `open`, `bounty`, and `10`. Status comparisons are case-insensitive; omit `status` to use the default filter. A supplied `null` is invalid.
 
 The `200` response includes chain metadata, paid `analysis` metadata, and ranked `opportunities`. For machine requests, send `Accept: application/json`; an unpaid request receives HTTP `402` with an x402 v2 challenge in the `PAYMENT-REQUIRED` header. Browser-like requests (`Accept: text/html` and a Mozilla user agent) may instead receive an HTML payment page without that header. Follow the JSON challenge and replay the same JSON request with `PAYMENT-SIGNATURE`; do not treat the challenge itself as a payment or as a Markdown document.
 
@@ -51,6 +53,6 @@ The `200` response includes chain metadata, paid `analysis` metadata, and ranked
 
 `GET /v1/services` returns up to 50 fulfilled demands as services, ordered by descending numeric demand ID. `GET /v1/services/:id` reads any fulfilled demand in the index. The ID is a canonical positive decimal uint256; invalid IDs return 400, missing or nonfulfilled demands return 404, and unavailable index or chain returns 503. Both routes are free.
 
-Each response includes chain ID, contract, snapshot block number and hash, and generation time. Each service contains demandId, capability, raw specification, builder, original serviceUrl and evidenceHash, plus discovery metadata and cached observation state. Snapshot hash and generation time are not fulfillment block or time. An observation is an unpaid challenge check, not proof of paid execution or guaranteed availability. List filters include capability, state, network, asset and exact maximum price; see [API reference](/docs/api/) for their requirements.
+Each response includes chain ID, contract, snapshot block number and hash, and generation time. Each service contains demandId, capability, raw specification, builder, original serviceUrl and evidenceHash, plus discovery metadata and cached observation state. Snapshot hash and generation time are not fulfillment block or time. An observation is an unpaid challenge check, not proof of paid execution or guaranteed availability. List filters include capability, state, network, asset and exact maximum price; see [service discovery](/docs/api/#service-discovery) for their requirements.
 
-Builders can publish signed metadata using `PUT /v1/services/:chainId/:contract/:demandId/discovery`. See [OpenAPI](/openapi.json) for the request schema and full identity binding.
+Builders can publish signed metadata using `PUT /v1/services/:chainId/:contract/:demandId/discovery`. The EIP-712 domain is `UNMET AgentDemand`, version `2`, with the escrow chain and contract. `DiscoveryMetadata(bytes32 payloadHash)` signs the SHA-256 hash of the UTF-8 JCS unsigned metadata payload. See [OpenAPI](/openapi.json) for the request schema and full identity binding.

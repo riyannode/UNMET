@@ -25,7 +25,7 @@ export const docsGroups: readonly { title: string; items: readonly (readonly [st
     ["Supported networks & assets", "/docs/api/payments/#networks-and-assets"],
     ["Errors & recovery", "/docs/api/errors/"],
   ] },
-  { title: "Future Implementation", items: [
+  { title: "Roadmap & status", items: [
     ["Roadmap overview", "/docs/roadmap/"],
     ["Automatic x402 validation", "/docs/roadmap/#automatic-validation"],
     ["Machine-readable RFQ", "/docs/roadmap/#rfq"],

@@ -70,7 +70,7 @@ For a later VPS, retain these images and topology. Change domain/origin, TLS, se
 
 ### Persistent egress on the reviewed VPS
 
-[The repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) is installed as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`. It enforces the **shared web/validator/observer boundary**, not a per-process boundary: validator and observer both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
+The reviewed configuration installs [the repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`; verify current host state for each release. It enforces the **shared web/validator/observer boundary**, not a per-process boundary: validator and observer both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
 
 The reviewed production topology pins IPv4 sources `172.30.80.2` and `172.18.0.3`. Exact TCP exceptions for API `172.30.80.3:8787` and HOROI `172.18.0.2:3000` precede private/reserved/metadata denies; `43.156.68.254` is denied as the VPS public management address. Ingress replies, related traffic and public TCP HTTPS/443 remain allowed. Validator loopback and Docker DNS remain local; API egress is outside this policy and signer retains `network_mode: none`. Both reviewed bridge interfaces have IPv6 disabled: this IPv4 policy does not establish IPv6 protection. Review any IP, topology, port, dependency or IPv6 change before applying it elsewhere.
 
@@ -170,7 +170,7 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | DEMAND_CONTRACT, PAYMENT_TOKEN | Required for market runtime, public addresses | Reviewed canonical contract and immutable token on the same chain; no experimental address fallback |
 | PAYMENT_TOKEN_SYMBOL, PAYMENT_TOKEN_DECIMALS | Public escrow metadata | Faucet USDC_TEST acceptance token; explicit decimals checked against token; independent of x402 billing |
 | CHAIN_NAME, CHAIN_EXPLORER_URL, CHAIN_NATIVE_NAME, CHAIN_NATIVE_SYMBOL, CHAIN_NATIVE_DECIMALS | Required for custom chains | Chain metadata bound to the deployment; use matching VITE_ inputs for browser builds |
-| DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Existing metadata; index rebuild reads current contract state |
+| DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Activity indexing start and coverage boundary; market index rebuild reads current contract state |
 | X402_CHAIN_ID | Required API runtime | **Must be 196 in production containers**, independently of Testnet market 1952 |
 | X402_RPC_URL | API runtime, public default `https://rpc.xlayer.tech` | Bounded Mainnet receipt confirmation RPC; must return chain ID 196; a credential-bearing provider URL is private configuration; never use the market RPC |
 | INSIGHTS_PRICE | Public, default 0.01 | Mainnet must remain exactly `0.01`; other values fail configuration |
@@ -222,7 +222,7 @@ Both runtimes use non-root users and read-only root filesystems. Caddy binds unp
 
 ### Cloudflare proxy activation gate
 
-Cloudflare proxying is a production change and requires separate operational authorization before changing production DNS from DNS-only to proxied. The current deployment is DNS-only. Do not enable the proxy until staging/runtime evidence demonstrates all of the following for the actual ingress and origin path:
+Cloudflare proxying is a production change and requires separate operational authorization before changing production DNS from DNS-only to proxied. DNS-only is the reviewed reference configuration; verify current state for the release. Do not enable the proxy until staging/runtime evidence demonstrates all of the following for the actual ingress and origin path:
 
 - Cloudflare ingress is authenticated/restricted as designed, and the complete trusted-proxy chain through Cloudflare and Caddy/Express assigns the original client IP. Test spoofed `CF-Connecting-IP` and `X-Forwarded-For` values from direct or untrusted requests to confirm they cannot alter identity or bypass limits.
 - Per-client quotas remain correct behind shared Cloudflare edges; clients do not collapse into an edge-wide quota.
@@ -263,7 +263,7 @@ Validation, rate limiting and admission precede official x402. Rejected inputs r
 
 - /live: cheap process liveness, no chain/payment call. Docker uses it to avoid restart loops on temporary RPC outages.
 - /health: preserves chain/contract verification and success fields, with short shared caching; checks chain ID, bytecode, immutable token, token decimals and latest block.
-- /ready: additionally checks configured durable storage and requires initialized payment middleware. It initiates no payment and does not promise future verify/settle success. Chain outages appear after the dependency cache expires.
+- /ready: checks payment and activity storage readiness, then dependency health. It does not establish complete activity backfill, initiate payment or promise future verify/settle success. Chain outages appear after the dependency cache expires.
 - The first data request warms the index under a single-flight promise. Readiness is dependency readiness, not proof a cold index fits its budget. Alert separately on INDEX_* failures.
 - Structured logs contain generated request IDs, registered method/route, status/duration and stable error codes. Application handlers omit raw bodies, payment headers, query strings and upstream exception text. The pinned official SDK lacks transport/log injection options: an async-local scope bounds its unchanged signed HTTP calls and replaces its warning/error diagnostics with a stable PAYMENT_SDK_DIAGNOSTIC record. Fetch and console calls outside that scope retain their original behavior.
 - Compose rotates JSON logs at 10 MiB, three files/container. The restart policy restarts exited containers; Docker does not automatically restart a merely unhealthy live process.
@@ -292,7 +292,7 @@ curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/insights"
 # Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
 ~~~
 
-Refresh /docs, /market, /market/1, /create-demand and /analytics at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
+Refresh /docs, /market, a canonical /market/:chainId/:contract/:demandId detail route, /create-demand and /analytics at that same origin directly in a browser. Wallet connection requires your Reown origin configuration. Do not sign transactions for deployment smoke testing.
 
 The local-only bounded probe sends **no PAYMENT-SIGNATURE**. This example uses HTTP_PORT=18080; use `http://localhost` instead only for the default port 80. Do not point it at a public HTTPS origin:
 
@@ -376,7 +376,7 @@ docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validatio
 | TLS failure | DNS, ports 80/443, public SITE_ADDRESS without HTTP scheme, volume permissions |
 | Subnet/IP problems | Adjust subnet/Caddy/API IPs together, retain explicit proxy trust/header replacement |
 
-Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before increasing limits. This targets one VPS and one API replica. Extra replicas duplicate RPC/index work and have separate quotas. Global rate policy, index ownership and official x402 verify/settle/idempotency under concurrent retry/failure need verification before horizontal scaling. There is no Redis, database server or worker. Local SQLite payment storage is required and is not a distributed payment guarantee.
+Measure CPU/RAM, RPC quota, cold-index latency, p95/p99 and 429/503 before increasing limits. This targets one VPS and one API replica. Extra replicas duplicate RPC/index work and have separate quotas. Global rate policy, index ownership and official x402 verify/settle/idempotency under concurrent retry/failure need verification before horizontal scaling. Bounded in-process schedulers handle activity and discovery; there is no external queue, Redis or database server. Local SQLite payment storage is required and is not a distributed payment guarantee.
 
 ## Durable payment storage
 

@@ -106,7 +106,7 @@ The resulting service may become discoverable through the UNMET Service Registry
 
 Agents purchase future API usage directly from the builder through x402.
 
-Verified market activity and appropriately attributed usage evidence improve future Demand Intelligence.
+Verified market activity informs current Demand Intelligence. Appropriately attributed usage evidence is future work; no usage producer is currently supported.
 
 
 ### Core Thesis
@@ -115,6 +115,8 @@ UNMET turns funded unmet demand into purchasable AI-agent services.
 
 
 ### Complete Lifecycle
+
+This extended future vision includes unsupported usage evidence; the implemented phases do not depend on completing the entire loop.
 
 ```text
 Unmet Capability
@@ -172,11 +174,11 @@ Examples:
 - funded opportunities
 - capital distribution
 - capability demand
-- expected usage
+- expected calls (intent, not observed usage)
 - funding history
 - submission history
 - fulfillment history
-- observed service adoption
+- future observed service adoption (no current usage producer)
 
 The existing paid POST /v1/insights endpoint remains the initial Demand Intelligence payment surface.
 
@@ -201,8 +203,8 @@ Service records connect:
 - service endpoint
 - x402 payment requirements
 - compatibility observations
-- availability observations
-- usage evidence
+- cached unpaid challenge observations (not an availability guarantee)
+- future usage evidence (currently unsupported)
 
 The builder hosts and operates the service.
 
@@ -418,6 +420,8 @@ No builder staking or bond is required.
 
 
 ### G0.1 runtime boundary and deployment identity
+
+This section and the original G0.1 impact map record the historical design milestone. G0.2-G0.5 subsequently implemented the validator, signer and canonical consumers; see the gate table for status and the current API and Architecture for behavior. Target-host acceptance remains release-specific.
 
 The initial validation runtime is a dedicated Bun service on an isolated VPS. It is separate from the existing Bun API, its payment database, and x402 settlement. The service has no signing key in its process or environment: a separately protected signer accepts only authenticated, narrowly scoped requests from the validation service and enforces its own policy before signing. Authentication, isolation and signer policy must be independently reviewed and tested on the target VPS before use. A local test cannot establish that host firewall rules or signer isolation are deployed.
 
@@ -2008,12 +2012,7 @@ Canonical settlement provenance comes from blockchain state.
 
 ### Backend Database
 
-Stores:
-
-- derived chain indexes
-- service metadata
-- analytics materialization
-- operational observations
+The current separate payment, discovery and derived activity stores are described in [Architecture](ARCHITECTURE.md). The in-memory demand index is also derived.
 
 It is not authoritative for moving escrow funds.
 
@@ -2396,7 +2395,7 @@ These full-roadmap goals include future work and are not prerequisites for the i
 
 3. Fulfilled services preserve onchain provenance.
 
-4. Future provider metadata, if added, requires authenticated updates.
+4. G3 provider metadata uses authenticated updates.
 
 5. Agents can discover compatible services.
 

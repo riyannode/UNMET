@@ -16,12 +16,14 @@ UNMET is an onchain demand market for AI-agent capabilities. Requesters publish 
 | [AgentDemand.sol](backend/AgentDemand.sol) | Canonical escrow source with attestation-gated submission, voting, settlement and refunds |
 | React/Vite frontend | Reown wallet UI, viem contract reads/writes, routed demand views |
 | Bun/Express backend | Bounded, reorg-aware in-memory chain index and intelligence ranking |
-| Native `bun:sqlite` | Self-hosted x402 operation/idempotency and settlement records; **not the escrow database** |
+| Native `bun:sqlite` | Separate payment operations, discovery metadata/observations and derived activity stores; **not the escrow database** |
 | Caddy + Docker Compose | Static frontend, reverse proxy and persistent payment volume |
 
-AgentDemand is the canonical escrow source. The current Testnet acceptance deployment and canonical frontend/backend integration use the attestation-gated AgentDemand flow described in [Architecture](docs/ARCHITECTURE.md#canonical-attestation). Gate-0 local acceptance is complete; target-host/VPS G0.6 verification remains a separate release gate.
+AgentDemand is the canonical escrow source. The reviewed Testnet deployment and canonical frontend/backend integration use the attestation-gated flow described in [Architecture](docs/ARCHITECTURE.md#canonical-attestation). Gate 0 source and integration are implemented; G0.6 acceptance requires independent evidence for each release.
 
-The chain index can be rebuilt. Payment records must survive restarts. The supported hosted path uses one Bun API replica with persistent SQLite behind Caddy. See [Architecture](docs/ARCHITECTURE.md). The active public site is [unmetxyz.my.id](https://unmetxyz.my.id). Deployment details and current operations live in [Self-hosting](docs/SELF_HOSTING.md) and [Runbook](docs/RUNBOOK.md).
+The chain index and activity history are derived and rebuildable. Payment records must survive restarts. The supported hosted path uses one Bun API replica with persistent SQLite behind Caddy. See [Architecture](docs/ARCHITECTURE.md). The reference public origin is [unmetxyz.my.id](https://unmetxyz.my.id). Deployment checks and operations live in [Self-hosting](docs/SELF_HOSTING.md) and [Runbook](docs/RUNBOOK.md).
+
+G4 intelligence includes market and discovery snapshots plus coverage-gated event history; all four usage evidence producers remain unsupported. Expected calls are not observed usage, and history does not claim finality.
 
 ## Local development
 
@@ -54,7 +56,7 @@ bun run test:contract
 bun run build:frontend
 ```
 
-`bun run check` runs all of these. Foundry dependencies must be installed first. The CI workflow runs frontend, backend, contract and Docker checks; there is no lint script. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
+`bun run check` runs all of these, including frontend lint. Foundry dependencies must be installed first. The CI workflow runs frontend, backend, contract and Docker checks. Payment regressions use temporary SQLite files and injected facilitator fixtures; they submit no live payments.
 
 ## Documentation and limitations
 
