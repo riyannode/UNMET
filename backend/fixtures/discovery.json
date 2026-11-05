@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "schemaVersion": "unmet-discovery-v1",
+    "chainId": "31337",
+    "contract": "0x1111111111111111111111111111111111111111",
+    "demandId": "9007199254740993",
+    "builder": "0x2222222222222222222222222222222222222222",
+    "serviceUrl": "https://fixture.example/api",
+    "evidenceHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": "18446744073709551617",
+    "issuedAt": "1793750400",
+    "request": {
+      "method": "POST",
+      "query": [
+        [
+          "q",
+          "first"
+        ],
+        [
+          "q",
+          "second"
+        ]
+      ],
+      "contentType": "application/json",
+      "body": {
+        "z": 1,
+        "a": "hello"
+      }
+    },
+    "targets": [
+      {
+        "network": "eip155:1",
+        "asset": "0x3333333333333333333333333333333333333333",
+        "payTo": "0x4444444444444444444444444444444444444444"
+      },
+      {
+        "network": "eip155:8453",
+        "asset": "0x5555555555555555555555555555555555555555",
+        "payTo": "0x6666666666666666666666666666666666666666"
+      }
+    ],
+    "signature": "0x12"
+  },
+  "expected": {
+    "canonicalPayload": "{\"builder\":\"0x2222222222222222222222222222222222222222\",\"chainId\":\"31337\",\"contract\":\"0x1111111111111111111111111111111111111111\",\"demandId\":\"9007199254740993\",\"evidenceHash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"issuedAt\":\"1793750400\",\"request\":{\"body\":{\"a\":\"hello\",\"z\":1},\"contentType\":\"application/json\",\"method\":\"POST\",\"query\":[[\"q\",\"first\"],[\"q\",\"second\"]]},\"revision\":\"18446744073709551617\",\"schemaVersion\":\"unmet-discovery-v1\",\"serviceUrl\":\"https://fixture.example/api\",\"targets\":[{\"asset\":\"0x3333333333333333333333333333333333333333\",\"network\":\"eip155:1\",\"payTo\":\"0x4444444444444444444444444444444444444444\"},{\"asset\":\"0x5555555555555555555555555555555555555555\",\"network\":\"eip155:8453\",\"payTo\":\"0x6666666666666666666666666666666666666666\"}]}",
+    "payloadHash": "0x2a893e45707e8153c85be390e87046e8dafcdba0f92ba0e8c0eb13131b54b2bb",
+    "requestHash": "0x641da0179a10631b759c288b5e4cfb056c5ac76cf669efddb4f2c59070bf2eec",
+    "typeHash": "0xd464d4791b82590aee81b7b85cb94aa57578550b9c7f225b1a63ea4088d39f33",
+    "domainSeparator": "0x4f2122cfc1da1b1ab71a3c95c0bf2cb1c3a5290dd982b4973b19ca3068344943",
+    "structHash": "0xbb630b63acaffad998a6e15b2251bf0301254a196fc3ef1241987132ca48189e",
+    "digest": "0x3b378f9b26b07b291750fa2e1fe1c4686c1cbf2d1e48eac60568b3460cee3461"
+  },
+  "provenance": "Independent Python ASCII/integer JCS fixture serialization + hashlib SHA256; ethers 6.17.0 EIP712"
+}

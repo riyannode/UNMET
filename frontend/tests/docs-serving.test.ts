@@ -248,7 +248,8 @@ describe("Vite documentation MPA", () => {
     expect(schema.paths["/v1/demands/prepare"].post.operationId).toBe("prepareDemand");
     expect(schema.components.schemas.DemandsResponse.properties.demands.items.$ref).toBe("#/components/schemas/PublicDemand");
     expect(roadmap).toContain('<h2 id="service-registry">Service Registry</h2>\n<p class="docs-status">MINIMAL G2</p>');
-    for (const id of ["automatic-validation", "service-discovery", "intelligence-expansion", "capability-resolver"]) {
+    expect(roadmap).toContain('<h2 id="service-discovery">x402 Service Discovery</h2>\n<p class="docs-status">G3 DISCOVERY</p>');
+    for (const id of ["automatic-validation", "intelligence-expansion", "capability-resolver"]) {
       expect(roadmap).toMatch(new RegExp('id="' + id + '">[^<]+</h2>\\s*<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>'));
     }
     const payments = await readFile(path.join(directory, "docs/api/payments/index.html"), "utf8");

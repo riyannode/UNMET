@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { encodeEventTopics, toFunctionSelector, toEventSelector, type Address, type PublicClient } from "viem";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-core/server";
@@ -9,6 +11,9 @@ import { statusLabel, getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI
 import { app, changedDemandIds, createApp, createDemandIndexState, createPaymentMiddleware, filterAndSort, opportunityPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput, type IndexEntry } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
 import { assertPublishedPaymentDiscovery, paymentDiscovery, validatePaymentDiscovery } from "./payment-discovery.ts";
+import { DiscoveryStore } from "./discovery-store.ts";
+import { discoveryIdentity, discoveryPayload, parseDiscoveryMetadata } from "./discovery-metadata.ts";
+import { discoveryRequest } from "./discovery-evaluator.ts";
 
 const testContract = "0x0000000000000000000000000000000000000001" as Address;
 const demandContract = "0x7c51457235cFFBae862493D788137BFf1EF07e2E" as Address;
@@ -32,7 +37,7 @@ function syntheticEntry(id: bigint, overrides: Partial<DemandTuple> & Partial<Pi
   };
 }
 
-async function routeFixture(entries: IndexEntry[], run: (url: string, marketCalls: () => number) => Promise<void>) {
+async function routeFixture(entries: IndexEntry[], run: (url: string, marketCalls: () => number) => Promise<void>, discovery?: DiscoveryStore) {
   const state = createDemandIndexState();
   state.ready = true;
   state.deploymentKey = `1952:${demandContract.toLowerCase()}`;
@@ -44,7 +49,7 @@ async function routeFixture(entries: IndexEntry[], run: (url: string, marketCall
   const server = createApp({ middleware: (_req, _res, next) => next() }, {
     config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_OPPORTUNITIES: "1000" }),
     market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment }, client,
-    indexState: state, now: () => fixedNow,
+    indexState: state, now: () => fixedNow, discovery,
   }).listen(0, "127.0.0.1");
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("test listener unavailable");
@@ -101,7 +106,7 @@ test("cancellation status and event are indexed", async () => {
 function fakeClient(overrides: {
   getLogs?: (fromBlock: bigint, toBlock: bigint) => unknown[] | Promise<unknown[]>;
   getBlock?: (blockNumber?: bigint) => { number: bigint; hash: `0x${string}` } | Promise<{ number: bigint; hash: `0x${string}` }>;
-  readContract?: (functionName: string) => unknown | Promise<unknown>;
+  readContract?: (functionName: string, args?: readonly unknown[]) => unknown | Promise<unknown>;
 } = {}): PublicClient {
   return {
     getChainId: async () => 1952,
@@ -109,7 +114,7 @@ function fakeClient(overrides: {
     getBlockNumber: async () => 42n,
     getLogs: async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => await overrides.getLogs?.(fromBlock, toBlock) ?? [],
     getBlock: async (args?: { blockNumber?: bigint }) => await overrides.getBlock?.(args?.blockNumber) ?? { number: 0n, hash: hashA },
-    readContract: async ({ functionName }: { functionName: string }) => functionName === "token" ? marketToken : functionName === "decimals" ? 6 : await overrides.readContract?.(functionName),
+    readContract: async ({ functionName, args }: { functionName: string; args?: readonly unknown[] }) => functionName === "token" ? marketToken : functionName === "decimals" ? 6 : await overrides.readContract?.(functionName, args),
   } as unknown as PublicClient;
 }
 
@@ -335,7 +340,12 @@ describe("free and paid discovery responses", () => {
     expect(catalog.linkset[2]["service-doc"].some((link: { href: string }) => link.href === "https://unmetxyz.my.id/payment.md")).toBe(true);
     const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
     expect(spec.info.description).toContain("Mozilla browser user agent");
-    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/opportunities", "/v1/services", "/v1/services/{id}"]);
+    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/opportunities", "/v1/services", "/v1/services/{chainId}/{contract}/{demandId}/discovery", "/v1/services/{id}"]);
+    expect(spec.components.schemas.DiscoveryMetadata).toEqual(JSON.parse(readFileSync(new URL("../docs/schemas/discovery-metadata.json", import.meta.url), "utf8")));
+    expect(spec.paths["/v1/services/{chainId}/{contract}/{demandId}/discovery"].put.parameters.map((parameter: { name: string; in: string; required: boolean }) => [parameter.name, parameter.in, parameter.required])).toEqual([["chainId", "path", true], ["contract", "path", true], ["demandId", "path", true]]);
+    expect(spec.paths["/v1/services/{id}/discovery"]).toBeUndefined();
+    expect(spec.components.schemas.DiscoveryState.properties.state.enum).toEqual(["pending", "metadata_invalid", "compatible", "incompatible", "unavailable", "stale"]);
+    expect(spec.components.schemas.DiscoveryState.properties.metadataState.enum).toEqual(["missing", "valid", "invalid"]);
     expect(spec.paths["/v1/demands/prepare"].post).not.toHaveProperty("x-payment-info");
     for (const path of ["/v1/services", "/v1/services/{id}"]) {
       const responses = spec.paths[path].get.responses;
@@ -397,13 +407,48 @@ describe("free and paid discovery responses", () => {
       expect(body.services.slice(0, 2).map((row: { demandId: string }) => row.demandId)).toEqual(["9007199254740994", "9007199254740993"]);
       expect(body.services.some((row: { demandId: string }) => ["100", "101", "102", "103", "104", "105"].includes(row.demandId))).toBe(false);
       const detail = await (await fetch(base + "/v1/services/1")).json();
-      expect(detail.service).toEqual({ demandId: "1", capability: "fixture-1", specification: "{broken", builder: testContract, serviceUrl: "https://example.org/same", evidenceHash: hashA });
+      expect(detail.service).toEqual({ demandId: "1", capability: "fixture-1", specification: "{broken", builder: testContract, serviceUrl: "https://example.org/same", evidenceHash: hashA, discovery: { metadataState: "missing", state: "pending", offers: [] } });
       expect((await (await fetch(base + "/v1/services/2")).json()).service.specification).toBe('{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}');
       expect((await (await fetch(base + "/v1/services/3")).json()).service.specification).toBe("  legacy prose  ");
+      const filtered = await (await fetch(base + "/v1/services?capability=fixture-1")).json();
+      expect(filtered.services.some((row: { demandId: string }) => row.demandId === "1")).toBe(true);
+      for (const query of ["maxPrice=1", "network=eip155:1&asset=bad&maxPrice=1", "state=unknown", "capability=a&capability=b"]) expect((await fetch(base + "/v1/services?" + query)).status).toBe(400);
       for (const invalid of ["0", "01", "abc", (1n << 256n).toString()]) expect((await fetch(base + "/v1/services/" + invalid)).status).toBe(400);
       for (const absent of ["100", "101", "102", "103", "104", "105", "999"]) expect((await fetch(base + "/v1/services/" + absent)).status).toBe(404);
       expect(marketCalls()).toBe(0);
     });
+  });
+
+  test("discovery filters run before limit and payment constraints match one offer", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "unmet-services-"));
+    const store = new DiscoveryStore(join(dir, "discovery.sqlite"));
+    try {
+      const entries = Array.from({ length: 55 }, (_, index) => syntheticEntry(BigInt(index + 1), { status: 2, builder: testContract, serviceUrl: "https://example.org/same" }));
+      const asset = `0x${"1".repeat(40)}`, otherAsset = `0x${"2".repeat(40)}`;
+      const metadata = parseDiscoveryMetadata(Buffer.from(JSON.stringify({ schemaVersion: "unmet-discovery-v1", chainId: "1952", contract: demandContract.toLowerCase(), demandId: "1", builder: testContract,
+        serviceUrl: "https://example.org/same", evidenceHash: hashA, revision: "1", issuedAt: "1", request: { method: "GET", query: [], contentType: null, body: null },
+        targets: [{ network: "eip155:1", asset, payTo: testContract }, { network: "eip155:2", asset: otherAsset, payTo: testContract }], signature: "0x12" })));
+      const { payload, payloadHash } = discoveryPayload(metadata), identity = discoveryIdentity(metadata);
+      store.put({ identity, revision: "1", payload, payloadHash, signature: metadata.signature });
+      const offer = { scheme: "exact", network: "eip155:1", asset, amount: "100", payTo: testContract, maxTimeoutSeconds: 300, transferMethod: "permit2", paymentFlow: "authorization", extra: { assetTransferMethod: "permit2", paymentFlow: "authorization" }, validationPolicyId: hashA, withinOriginatingMaxPrice: null };
+      const requestHash = discoveryRequest(metadata).requestHash;
+      store.setObservation(identity, "1", payloadHash, JSON.stringify({ observedAt: fixedNow, lastAttemptAt: fixedNow, generation: 0, failure: null, result: { state: "compatible", reason: null, metadataRevision: "1", requestHash, blockHash: hashB, offers: [offer, { ...offer, network: "eip155:2", asset: otherAsset, amount: "1" }] } }));
+      await routeFixture(entries, async (base) => {
+        const matching = await (await fetch(`${base}/v1/services?network=eip155:1&asset=${asset}&maxPrice=100`)).json();
+        expect(matching.services.map((item: { demandId: string }) => item.demandId)).toEqual(["1"]);
+        expect(matching.services[0].discovery).toMatchObject({ state: "compatible", metadataRevision: "1", requestHash, blockHash: hashB });
+        const wrongOffer = await (await fetch(`${base}/v1/services?network=eip155:1&asset=${asset}&maxPrice=1`)).json();
+        expect(wrongOffer.services).toEqual([]);
+        const wrongPair = await (await fetch(`${base}/v1/services?network=eip155:1&asset=${otherAsset}`)).json();
+        expect(wrongPair.services).toEqual([]);
+        const previous = JSON.parse(store.get(identity)!.observation!);
+        store.setObservation(identity, "1", payloadHash, JSON.stringify({ ...previous, observedAt: fixedNow - 900000 }));
+        expect((await (await fetch(`${base}/v1/services/1`)).json()).service.discovery.state).toBe("stale");
+        expect((await (await fetch(`${base}/v1/services?network=eip155:1&asset=${asset}`)).json()).services).toEqual([]);
+        store.setObservation(identity, "1", payloadHash, JSON.stringify({ ...previous, result: { state: "metadata_invalid", reason: "INVALID_METADATA", offers: [] } }));
+        expect((await (await fetch(`${base}/v1/services/1`)).json()).service.discovery).toMatchObject({ state: "metadata_invalid", metadataState: "invalid" });
+      }, store);
+    } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 
   test("fulfilled service rebuild, duplicate incremental logs and reorg follow canonical state", async () => {
@@ -441,6 +486,37 @@ describe("free and paid discovery responses", () => {
       expect((await (await fetch(base + "/v1/services")).json()).services).toHaveLength(0);
       expect((await fetch(base + "/v1/services/1")).status).toBe(404);
     });
+  });
+
+  test("index generations invalidate lifecycle changes and rebuilds without changing unrelated entries", async () => {
+    const state = createDemandIndexState();
+    let height = 42n, hash = hashA, status = 2, logs: ReturnType<typeof closedLog>[] = [];
+    const client = fakeClient({
+      getBlock: (blockNumber) => ({ number: blockNumber ?? height, hash }),
+      getLogs: () => logs,
+      readContract: (name, args) => {
+        if (name === "nextDemandId") return 3n;
+        if (name === "getDemand") return syntheticEntry(args?.[0] as bigint, { status: args?.[0] === 1n ? status : 2 }).data;
+        if (name === "approvalProgress" || name === "rejectionProgress") return [0n, 0n, false];
+      },
+    });
+    await refreshIndex(client, marketDeployment, state);
+    const initial = state.entryVersions.get("1"), unrelated = state.entryVersions.get("2");
+    height++; await refreshIndex(client, marketDeployment, state);
+    expect(state.entryVersions.get("1")).toBe(initial);
+    expect(state.entryVersions.get("2")).toBe(unrelated);
+    logs = [closedLog(1n)]; status = 1; height++;
+    await refreshIndex(client, marketDeployment, state);
+    const inactive = state.entryVersions.get("1");
+    expect(inactive).not.toBe(initial);
+    expect(state.entryVersions.get("2")).toBe(unrelated);
+    status = 2; height++; await refreshIndex(client, marketDeployment, state);
+    expect(state.entryVersions.get("1")).not.toBe(inactive);
+    expect(state.entryVersions.get("2")).toBe(unrelated);
+    const beforeReorg = state.entryVersions.get("1");
+    hash = hashB; height++; await refreshIndex(client, marketDeployment, state);
+    expect(state.entryVersions.get("1")).not.toBe(beforeReorg);
+    expect(state.entryVersions.get("2")).not.toBe(unrelated);
   });
 
   test("services share bounded free quota without calling payment middleware", async () => {

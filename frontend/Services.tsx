@@ -7,22 +7,24 @@ import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./components/ui/empty.tsx";
 import { Separator } from "./components/ui/separator.tsx";
-import { CHAIN_ID, DEMAND_CONTRACT } from "./contract.ts";
+import { CHAIN_ID, DEMAND_CONTRACT, targetChain } from "./contract.ts";
 import { parseDemandId, parseDemandRoute, ROUTES, serviceHref } from "./routing.ts";
 import { specificationDescription } from "../shared/rfq.ts";
 import UnmetNavigation from "./UnmetNavigation.tsx";
 import UnmetFooter from "./UnmetFooter.tsx";
 import "./unmet-landing.css";
 import "./services.css";
+import { isDiscoveryView, type DiscoveryView } from "../shared/discovery-types.ts";
 
-type Service = { demandId: string; capability: string; specification: string; builder: string; serviceUrl: string; evidenceHash: string };
+type Service = { demandId: string; capability: string; specification: string; builder: string; serviceUrl: string; evidenceHash: string; discovery?: DiscoveryView };
 type Result = { state: "loading" | "error" | "notfound" } | { state: "ready"; services: Service[] };
 
 function isService(value: unknown): value is Service {
   if (typeof value !== "object" || value === null) return false;
   const row = value as Record<string, unknown>;
   return typeof row.demandId === "string" && parseDemandId(row.demandId) !== null &&
-    [row.capability, row.specification, row.builder, row.serviceUrl, row.evidenceHash].every((field) => typeof field === "string");
+    [row.capability, row.specification, row.builder, row.serviceUrl, row.evidenceHash].every((field) => typeof field === "string") &&
+    (row.discovery === undefined || isDiscoveryView(row.discovery));
 }
 
 export function safeServiceUrl(value: string): string | null {
@@ -34,12 +36,15 @@ export function safeServiceUrl(value: string): string | null {
 
 export default function Services({ detail = false }: { detail?: boolean }) {
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState({ capability: "", network: "", asset: "", maxPrice: "", state: "" });
+  const [applied, setApplied] = useState("");
+  const [filterError, setFilterError] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const params = useParams();
   const identity = detail ? parseDemandRoute(params.chainId, params.contract, params.demandId) : null;
   const invalid = detail && (!identity || identity.chainId !== CHAIN_ID || !DEMAND_CONTRACT || identity.contract !== DEMAND_CONTRACT.toLowerCase());
   const id = identity?.demandId.toString();
-  const requestKey = detail ? `detail:${id}` : "list";
+  const requestKey = detail ? `detail:${id}` : `list:${applied}`;
   const [loaded, setLoaded] = useState<{ key: string; result: Result }>({ key: requestKey, result: { state: "loading" } });
   const result: Result = loaded.key === requestKey ? loaded.result : { state: "loading" };
   useEffect(() => {
@@ -49,7 +54,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
     setResult({ state: "loading" });
     void (async () => {
       try {
-        const response = await fetch(detail ? `/v1/services/${id}` : "/v1/services", { signal: controller.signal });
+        const response = await fetch(detail ? `/v1/services/${id}` : `/v1/services${applied ? `?${applied}` : ""}`, { signal: controller.signal });
         if (response.status === 404 && detail) { if (!controller.signal.aborted) setResult({ state: "notfound" }); return; }
         if (!response.ok) throw new Error("unavailable");
         const value: unknown = await response.json();
@@ -62,7 +67,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
       } catch { if (!controller.signal.aborted) setResult({ state: "error" }); }
     })();
     return () => controller.abort();
-  }, [detail, id, invalid, requestKey]);
+  }, [detail, id, invalid, requestKey, applied]);
   const service = result.state === "ready" ? result.services[0] : undefined;
   const search = query.trim().toLowerCase();
   const filtered = result.state === "ready" ? result.services.filter((item) =>
@@ -79,14 +84,25 @@ export default function Services({ detail = false }: { detail?: boolean }) {
           <dt>Builder</dt><dd>{service.builder}</dd>
         </dl></section>
         <section><h2>Provenance</h2><Separator className="services-separator" /><dl>
-          <dt>Demand ID</dt><dd>{service.demandId}</dd><dt>Chain</dt><dd>{CHAIN_ID === 1952 ? "X Layer · 1952" : CHAIN_ID}</dd>
+          <dt>Demand ID</dt><dd>{service.demandId}</dd><dt>Chain</dt><dd>{targetChain.name} · {CHAIN_ID}</dd>
           <dt>AgentDemand contract</dt><dd>{DEMAND_CONTRACT}</dd><dt>Evidence hash</dt><dd>{service.evidenceHash}</dd>
         </dl></section>
+        <section><h2>Discovery</h2><Separator className="services-separator" /><DiscoveryDetails discovery={service.discovery} /></section>
       </article>}
     </> : <>
       <header className="services-header"><h1>Services</h1><p>Services created from fulfilled UNMET demands.</p></header>
       <label className="services-search-label" htmlFor="services-search">Search services</label>
       <InputGroup className="services-search"><InputGroupInput ref={searchInput} id="services-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by capability, request, or demand ID" /><InputGroupAddon><Search size={18} aria-hidden="true" /></InputGroupAddon>{query && <InputGroupAddon align="inline-end"><Button type="button" variant="ghost" size="icon-sm" aria-label="Clear search" onClick={() => { setQuery(""); searchInput.current?.focus(); }}><X size={16} /></Button></InputGroupAddon>}</InputGroup>
+      <form className="services-filters" onSubmit={(event) => { event.preventDefault(); if (filters.maxPrice.trim() && (!filters.network.trim() || !filters.asset.trim())) { setFilterError("Maximum price requires a payment network and asset address."); return; } setFilterError(""); const params = new URLSearchParams(); for (const [key, value] of Object.entries(filters)) if (value.trim()) params.set(key, value.trim()); setApplied(params.toString()); }}>
+        <label>Capability<input value={filters.capability} onChange={(event) => setFilters({ ...filters, capability: event.target.value })} /></label>
+        <label>Payment network<input placeholder="eip155:1" value={filters.network} onChange={(event) => setFilters({ ...filters, network: event.target.value })} /></label>
+        <label>Asset address<input value={filters.asset} onChange={(event) => setFilters({ ...filters, asset: event.target.value })} /></label>
+        <label>Maximum price (atomic units)<input inputMode="numeric" value={filters.maxPrice} onChange={(event) => setFilters({ ...filters, maxPrice: event.target.value })} /></label>
+        <label>Observation state<select value={filters.state} onChange={(event) => setFilters({ ...filters, state: event.target.value })}><option value="">Any state</option><option value="compatible">Compatible</option><option value="incompatible">Incompatible</option><option value="pending">Pending</option><option value="unavailable">Unavailable</option><option value="stale">Stale</option><option value="metadata_invalid">Metadata invalid</option></select></label>
+        <Button type="submit">Apply filters</Button>
+        {applied && <Button type="button" variant="outline" onClick={() => { setFilters({ capability: "", network: "", asset: "", maxPrice: "", state: "" }); setApplied(""); setFilterError(""); }}>Clear filters</Button>}
+      </form>
+      {filterError && <p role="alert">{filterError}</p>}
       <div className="services-layout">
         <aside className="services-rail" aria-label="Service categories"><span aria-current="page">All Services</span></aside>
         <div className="services-results">
@@ -101,6 +117,8 @@ export default function Services({ detail = false }: { detail?: boolean }) {
             </div>
           </> : result.state !== "ready" ? (
             <p className="services-error" role="alert">Services are unavailable. Please try again later.</p>
+          ) : result.services.length === 0 && applied ? (
+            <Empty className="services-empty"><EmptyHeader><EmptyTitle>No matching services.</EmptyTitle><EmptyDescription>Change or clear your filters.</EmptyDescription></EmptyHeader></Empty>
           ) : result.services.length === 0 ? (
             <Empty className="services-empty"><EmptyHeader><EmptyTitle>No fulfilled services yet.</EmptyTitle><EmptyDescription>Services will appear here when demands are fulfilled.</EmptyDescription></EmptyHeader></Empty>
           ) : filtered.length === 0 ? (
@@ -113,7 +131,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
                     <div className="service-card-header"><Box className="service-glyph" size={20} aria-hidden="true" /><h2 id={`service-title-${item.demandId}`}>{item.capability}</h2></div>
                     <p className="service-card-description">{specificationDescription(item.specification)}</p>
                     <Separator className="services-separator" />
-                    <div className="service-card-meta"><span>Demand #{item.demandId}</span><span>Fulfilled</span></div>
+                    <div className="service-card-meta"><span>Demand #{item.demandId}</span><span>{item.discovery?.state || "pending"}</span></div>
                   </article></Card>
                 </Link>
               </li>)}
@@ -123,4 +141,13 @@ export default function Services({ detail = false }: { detail?: boolean }) {
       </div>
     </>}
   </main></div><UnmetFooter /></>;
+}
+
+function DiscoveryDetails({ discovery }: { discovery?: DiscoveryView }) {
+  if (!discovery) return <p>Discovery metadata unavailable.</p>;
+  return <><dl><dt>Metadata</dt><dd>{discovery.metadataState}</dd><dt>Observation</dt><dd>{discovery.state}</dd><dt>Observed at</dt><dd>{discovery.observedAt || "Not yet observed"}</dd></dl>
+    {discovery.offers.length > 0 && <><h3>{discovery.state === "compatible" ? "Current payment offers" : "Last observed payment offers"}</h3><ul>{discovery.offers.map((offer, index) => <li key={`${offer.network}:${offer.asset}:${offer.payTo}:${index}`}><dl>
+      <dt>Network</dt><dd>{offer.network}</dd><dt>Asset</dt><dd>{offer.asset}</dd><dt>Amount (atomic units)</dt><dd>{offer.amount}</dd><dt>Receiver</dt><dd>{offer.payTo}</dd><dt>Scheme</dt><dd>{offer.scheme}</dd><dt>Transfer method</dt><dd>{offer.transferMethod}</dd><dt>Payment flow</dt><dd>{offer.paymentFlow}</dd><dt>Within originating maximum</dt><dd>{offer.withinOriginatingMaxPrice === null ? "Not comparable" : offer.withinOriginatingMaxPrice ? "Yes" : "No"}</dd>
+    </dl></li>)}</ul></>}
+  </>;
 }

@@ -1,15 +1,18 @@
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import Services from "../Services.tsx";
-import { CHAIN_ID, DEMAND_CONTRACT } from "../contract.ts";
+import { CHAIN_ID, DEMAND_CONTRACT, targetChain } from "../contract.ts";
+import "../theme.css";
+import "../app.css";
 
 type Pending = { resolve: (response: Response) => void; signal?: AbortSignal };
 const pending: Pending[] = [];
-window.fetch = (_input, init) => new Promise<Response>((resolve) => { pending.push({ resolve, signal: init?.signal ?? undefined }); });
+const requested: string[] = [];
+window.fetch = (input, init) => new Promise<Response>((resolve) => { requested.push(String(input)); pending.push({ resolve, signal: init?.signal ?? undefined }); });
 const result = document.getElementById("result")!;
 const root = document.getElementById("root")!;
 const contract = DEMAND_CONTRACT;
-const service = { demandId: "1", capability: "Verify", specification: '{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}', builder: "0x1111111111111111111111111111111111111111", serviceUrl: "https://example.org/path", evidenceHash: `0x${"a".repeat(64)}` };
+const service = { demandId: "1", capability: "Verify", specification: '{"description":"Verify a business.","schemaVersion":"unmet-rfq-v1"}', builder: "0x1111111111111111111111111111111111111111", serviceUrl: "https://example.org/path", evidenceHash: `0x${"a".repeat(64)}`, discovery: { metadataState: "valid", state: "compatible", observedAt: "2026-01-01T00:00:00.000Z", offers: [{ network: "eip155:1", asset: `0x${"1".repeat(40)}`, amount: "100", payTo: `0x${"2".repeat(40)}`, scheme: "exact", maxTimeoutSeconds: 300, transferMethod: "eip3009", paymentFlow: "authorization", extra: { assetTransferMethod: "eip3009", paymentFlow: "authorization" }, validationPolicyId: `0x${"a".repeat(64)}`, withinOriginatingMaxPrice: null }, { network: "eip155:2", asset: `0x${"3".repeat(40)}`, amount: "200", payTo: `0x${"4".repeat(40)}`, scheme: "exact", maxTimeoutSeconds: 300, transferMethod: "permit2", paymentFlow: "authorization", extra: { assetTransferMethod: "permit2", paymentFlow: "authorization" }, validationPolicyId: `0x${"b".repeat(64)}`, withinOriginatingMaxPrice: false }] } };
 const envelope = { chainId: CHAIN_ID, contract, blockNumber: "42", blockHash: `0x${"b".repeat(64)}`, generatedAt: "2026-01-01T00:00:00.000Z" };
 function Harness() {
   const navigate = useNavigate();
@@ -17,8 +20,22 @@ function Harness() {
 }
 function check(condition: unknown, message: string) { if (!condition) throw new Error(message); }
 const tick = () => new Promise((resolve) => setTimeout(resolve, 50));
-async function navigate(id: string) { document.getElementById(id)?.click(); await tick(); }
-async function reply(body: unknown, status = 200) { const request = pending.shift(); check(request, "missing request"); request!.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })); await tick(); }
+async function waitFor(predicate: () => unknown, message: string) {
+  const deadline = Date.now() + 5000;
+  while (!predicate()) { if (Date.now() >= deadline) throw new Error(message); await tick(); }
+}
+async function navigate(id: string) {
+  const before = pending.length;
+  document.getElementById(id)?.click();
+  if (["invalid", "wrong-chain", "wrong-contract"].includes(id)) await waitFor(() => root.textContent?.includes("Invalid service route"), "route did not render");
+  else await waitFor(() => pending.length > before, "route request did not start");
+}
+async function reply(body: unknown, status = 200) {
+  await waitFor(() => pending.length > 0, "missing request");
+  const request = pending.shift()!;
+  request.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
+  await waitFor(() => !root.textContent?.includes("Loading services"), "response did not render");
+}
 function footer() {
   const element = root.querySelector(".services-page + .unmet-footer");
   check(element && root.querySelectorAll(".unmet-footer").length === 1, "one footer after services page");
@@ -28,7 +45,8 @@ void (async () => {
   try {
     check(contract, "Set VITE_DEMAND_CONTRACT and VITE_PAYMENT_TOKEN for fixture");
     createRoot(root).render(<MemoryRouter initialEntries={["/services"]}><Harness /></MemoryRouter>);
-    await tick(); check(root.textContent?.includes("Loading services") && root.querySelector(".services-search") && root.querySelector(".services-rail") && root.querySelectorAll(".service-skeleton").length === 3, "loading shell");
+    await waitFor(() => root.textContent?.includes("Loading services") && pending.length > 0, "loading shell did not render");
+    check(root.querySelector(".services-search") && root.querySelector(".services-rail") && root.querySelectorAll(".service-skeleton").length === 3, "loading shell");
     const listFooter = footer();
     await reply({ ...envelope, services: [] }); check(root.textContent?.includes("No fulfilled services"), "empty");
     await navigate("detail"); check(root.textContent?.includes("Loading services"), "detail loading");
@@ -37,7 +55,9 @@ void (async () => {
     await navigate("other"); await reply({}, 404); check(root.textContent?.includes("not found"), "404");
     await navigate("detail"); await reply({ ...envelope, service });
     check(root.textContent?.includes("Verify a business.") && root.textContent.includes(service.evidenceHash) && root.textContent.includes(service.builder) && root.textContent.includes(service.serviceUrl) && root.textContent.includes(String(CHAIN_ID)) && root.textContent.toLowerCase().includes(contract!.toLowerCase()) && root.textContent.includes("Demand ID"), "detail fields");
+    check(root.textContent?.includes(`${targetChain.name} · ${CHAIN_ID}`), "configured chain label");
     check(root.querySelector('a[href="https://example.org/path"]'), "https link");
+    check(root.textContent?.includes("compatible") && root.textContent.includes("eip155:1") && root.textContent.includes("eip155:2") && root.textContent.includes("Not comparable"), "multiple observed payment offers");
     await navigate("other"); check(!root.textContent?.includes("Verify a business."), "stale route data");
     await reply({ ...envelope, service }, 200); check(root.textContent?.includes("unavailable"), "identity mismatch");
     await navigate("invalid"); check(root.textContent?.includes("Invalid service route"), "invalid route");
@@ -82,6 +102,27 @@ void (async () => {
     root.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')?.click(); await tick();
     check(root.querySelectorAll(".services-grid li").length === 2 && input.value === "" && document.activeElement === input, "clear search and restore focus");
     await search("   "); check(root.querySelectorAll(".services-grid li").length === 2, "whitespace search");
+    const maxPrice = [...root.querySelectorAll<HTMLInputElement>(".services-filters input")][3];
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(maxPrice, "100"); maxPrice.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    root.querySelector<HTMLFormElement>(".services-filters")?.requestSubmit();
+    await waitFor(() => root.textContent?.includes("Maximum price requires"), "price identity feedback");
+    const fields = [...root.querySelectorAll<HTMLInputElement>(".services-filters input")];
+    for (const [index, value] of [[1, "eip155:1"], [2, `0x${"1".repeat(40)}`]] as const) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(fields[index], value); fields[index].dispatchEvent(new Event("input", { bubbles: true })); }
+    await tick(); root.querySelector<HTMLFormElement>(".services-filters")?.requestSubmit();
+    await waitFor(() => pending.length > 0, "filtered request");
+    check(requested.at(-1)?.includes("maxPrice=100") && requested.at(-1)?.includes("network=eip155%3A1"), "filter query");
+    await reply({ ...envelope, services: [] }); check(root.textContent?.includes("No matching services") && !root.textContent.includes("No fulfilled services"), "filtered empty state");
+    root.querySelector<HTMLButtonElement>(".services-filters button[type=button]")?.click();
+    await waitFor(() => pending.length > 0, "clear filters request"); await reply({ ...envelope, services: [service] });
+    await navigate("detail"); await reply({ ...envelope, service: { ...service, discovery: { metadataState: "missing", state: "pending", offers: [] } } });
+    check(root.textContent?.includes("missing") && root.textContent.includes("pending"), "missing metadata");
+    await navigate("list"); await reply({ ...envelope, services: [service] });
+    for (const state of ["pending", "incompatible", "unavailable", "stale", "metadata_invalid"]) {
+      await navigate("detail"); await reply({ ...envelope, service: { ...service, discovery: { ...service.discovery, state, offers: [] } } });
+      check(root.textContent?.includes(state), `discovery state ${state}`);
+      await navigate("list"); await reply({ ...envelope, services: [service] });
+    }
     const menu = root.querySelector<HTMLButtonElement>('[aria-label="Open navigation"]'); menu?.click(); await tick();
     check(root.querySelector('.unmet-mobile-menu a[href="/services"]'), "mobile Services navigation");
     result.textContent = "PASS";

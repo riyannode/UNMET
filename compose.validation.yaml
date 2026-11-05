@@ -5,10 +5,21 @@ services:
       OKX_SECRET_KEY: !reset null
       OKX_PASSPHRASE: !reset null
       OKX_CREDENTIALS_PATH: /run/secrets/okx-credentials.json
+      DISCOVERY_SOCKET_PATH: /run/unmet-discovery/observer.sock
+      DISCOVERY_CONFIG_PATH: /run/config/discovery.json
     volumes:
       - type: bind
         source: ${OKX_CREDENTIALS_FILE:?Configure private OKX_CREDENTIALS_FILE}
         target: /run/secrets/okx-credentials.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: volume
+        source: discovery_socket
+        target: /run/unmet-discovery
+        read_only: true
+      - type: bind
+        source: ${DISCOVERY_CONFIG_FILE:-./config/discovery.json}
+        target: /run/config/discovery.json
         read_only: true
         bind: {create_host_path: false}
   web:
@@ -104,5 +115,48 @@ services:
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
+  observer:
+    image: unmet-validation:${IMAGE_TAG:-local}
+    network_mode: service:web
+    user: "10001:1000"
+    command: ["bun", "run", "backend/discovery-observer.ts"]
+    environment:
+      DISCOVERY_POLICY_PATH: /run/config/discovery-policy.json
+      DISCOVERY_SOCKET_PATH: /run/unmet-discovery/observer.sock
+      DISCOVERY_CONFIG_PATH: /run/config/discovery.json
+    volumes:
+      - type: bind
+        source: ${DISCOVERY_POLICY_FILE:?Configure DISCOVERY_POLICY_FILE}
+        target: /run/config/discovery-policy.json
+        read_only: true
+        bind: {create_host_path: false}
+      - discovery_socket:/run/unmet-discovery
+      - type: bind
+        source: ${DISCOVERY_CONFIG_FILE:-./config/discovery.json}
+        target: /run/config/discovery.json
+        read_only: true
+        bind: {create_host_path: false}
+    depends_on:
+      web: {condition: service_started}
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:size=16m,noexec,nosuid"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const {request}=require('node:http');const r=request({socketPath:'/run/unmet-discovery/observer.sock',path:'/health'},s=>{s.resume();s.on('end',()=>process.exit(s.statusCode===200?0:1))});r.on('error',()=>process.exit(1));r.end()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 20s
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
 volumes:
   signer_socket:
+  discovery_socket:

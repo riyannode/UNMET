@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import Ajv2020 from "ajv/dist/2020.js";
 import { canonicalJSON, hashJSON, parseStrictJSON, parseUint256, ValidationError, type JSONObject, type JSONValue } from "./validation-codec";
-import { validationPolicyId, type PolicyEnvelope } from "./validation-config";
+import { validationPolicyId, type PaymentProfile, type PolicyEnvelope } from "./validation-config";
 
 export type ValidationRequest = {
   schemaVersion: "unmet-x402-validation-v1"; escrowChainId: string; escrowContract: string;
@@ -44,7 +44,7 @@ export function parseValidationRequest(raw: Uint8Array): ParsedValidationRequest
 
 // x402 V2 core wire shape at 3c0a740ef84f5a58215a75b709b2f3332839463c.
 // Optional extra is an object when present; standard padded or unpadded base64 is accepted.
-function challenge(header: string): JSONObject {
+export function parseChallenge(header: string): JSONObject {
   if (header.length > 16384 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(header)) return fail("INVALID_CHALLENGE");
   const bytes = Buffer.from(header, "base64");
   if (bytes.toString("base64").replace(/=+$/, "") !== header.replace(/=+$/, "")) return fail("INVALID_CHALLENGE");
@@ -69,17 +69,39 @@ function challenge(header: string): JSONObject {
   return value;
 }
 
+export function normalizeOffer(offer: JSONObject, profile: PaymentProfile): JSONObject | null {
+  const network = offer.network, asset = offer.asset, payTo = offer.payTo;
+  if (typeof network !== "string" || typeof asset !== "string" || typeof payTo !== "string" || typeof offer.amount !== "string" || !profile.enabled || offer.scheme !== "exact" || !profile.schemes.includes("exact") || !/^eip155:[1-9][0-9]{0,31}$/.test(network) || !address(asset) || !address(payTo) || network !== profile.network) return null;
+  const configured = profile.assets.find(a => a.asset === asset.toLowerCase() && a.enabled);
+  if (!configured) return null;
+  const extra = obj(offer.extra) ? offer.extra : {};
+  const methodName = "assetTransferMethod" in extra ? extra.assetTransferMethod : configured.defaultTransferMethod;
+  const method = configured.transferMethods.find(m => m.method === methodName && m.enabled);
+  if (!method) return null;
+  const flow = "paymentFlow" in extra ? extra.paymentFlow : method.defaultPaymentFlow;
+  if (flow !== "authorization" || !method.paymentFlows.includes("authorization")) return null;
+  if (method.method === "eip3009" && (!method.tokenDomain || extra.name !== method.tokenDomain.name || extra.version !== method.tokenDomain.version)) return null;
+  if (!Number.isSafeInteger(offer.maxTimeoutSeconds) || (offer.maxTimeoutSeconds as number) > profile.paymentRules.maxTimeoutSeconds) return null;
+  let amount: bigint;
+  try { amount = parseUint256(offer.amount); } catch { return null; }
+  return { scheme: offer.scheme, network, asset: asset.toLowerCase(), amount: amount.toString(), payTo: payTo.toLowerCase(), maxTimeoutSeconds: offer.maxTimeoutSeconds, extra: { ...extra, assetTransferMethod: method.method, paymentFlow: flow } };
+}
+
+export function normalizeResource(resource: JSONObject, requestUrl: string): JSONObject {
+  let url: URL;
+  try { url = new URL(resource.url as string, requestUrl); } catch { return fail("INVALID_RESOURCE"); }
+  const requested = new URL(requestUrl);
+  if (url.username || url.password || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:[\\/]*|[\\/]{2,})[^/\\?#]*@/.test(resource.url as string) || (resource.url as string).includes("#") || url.origin !== requested.origin || url.pathname !== requested.pathname || (url.search && url.search !== requested.search)) return fail("INVALID_RESOURCE");
+  return { ...resource, url: url.href };
+}
+
 export function evaluateChallenge(parsed: ParsedValidationRequest, observation: { status: number; paymentRequired: string | null }, policy: PolicyEnvelope, maxUnitPrice: bigint, verifiedDecimals: number) {
   if (policy.escrowChainId !== parsed.input.escrowChainId || policy.escrowContract !== parsed.input.escrowContract || policy.profile.network !== parsed.input.paymentNetwork) return fail("INVALID_POLICY");
   if (observation.status >= 500 && observation.status <= 599) return unavailable("ENDPOINT_UNAVAILABLE");
   if (observation.status !== 402 || observation.paymentRequired === null) return fail("INVALID_CHALLENGE");
-  const value = challenge(observation.paymentRequired);
+  const value = parseChallenge(observation.paymentRequired);
   const resource = value.resource as JSONObject;
-  let url: URL;
-  try { url = new URL(resource.url as string, parsed.requestUrl); } catch { return fail("INVALID_RESOURCE"); }
-  const requested = new URL(parsed.requestUrl);
-  if (url.username || url.password || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:[\\/]*|[\\/]{2,})[^/\\?#]*@/.test(resource.url as string) || (resource.url as string).includes("#") || url.origin !== requested.origin || url.pathname !== requested.pathname || (url.search && url.search !== requested.search)) return fail("INVALID_RESOURCE");
-  const normalizedResource: JSONObject = { ...resource, url: url.href };
+  const normalizedResource = normalizeResource(resource, parsed.requestUrl);
   let incomparable = false;
   let comparable = false;
   for (const [index, item] of (value.accepts as JSONObject[]).entries()) {
@@ -92,18 +114,8 @@ export function evaluateChallenge(parsed: ParsedValidationRequest, observation: 
     if (!configured) continue;
     if (configured.decimals !== policy.demandPriceAsset.decimals || verifiedDecimals !== configured.decimals) { incomparable = true; continue; }
     comparable = true;
-    const extra = obj(offer.extra) ? offer.extra : {};
-    const methodName = "assetTransferMethod" in extra ? extra.assetTransferMethod : configured.defaultTransferMethod;
-    const method = configured.transferMethods.find(m => m.method === methodName && m.enabled);
-    if (!method) continue;
-    const flow = "paymentFlow" in extra ? extra.paymentFlow : method.defaultPaymentFlow;
-    if (flow !== "authorization" || !method.paymentFlows.includes("authorization")) continue;
-    if (method.method === "eip3009" && (!method.tokenDomain || extra.name !== method.tokenDomain.name || extra.version !== method.tokenDomain.version)) continue;
-    if (payTo.toLowerCase() !== parsed.input.authorizedPayTo || !Number.isSafeInteger(offer.maxTimeoutSeconds) || (offer.maxTimeoutSeconds as number) > policy.profile.paymentRules.maxTimeoutSeconds) continue;
-    let amount: bigint;
-    try { amount = parseUint256(offer.amount as string); } catch { continue; }
-    if (amount > maxUnitPrice) continue;
-    const selected: JSONObject = { scheme: offer.scheme, network, asset: asset.toLowerCase(), amount: amount.toString(), payTo: payTo.toLowerCase(), maxTimeoutSeconds: offer.maxTimeoutSeconds, extra: { ...extra, assetTransferMethod: method.method, paymentFlow: flow } };
+    const selected = normalizeOffer(offer, policy.profile);
+    if (!selected || payTo.toLowerCase() !== parsed.input.authorizedPayTo || BigInt(selected.amount as string) > maxUnitPrice) continue;
     const paymentRequirementsHash = hashJSON({ schemaVersion: "unmet-payment-requirements-v2", x402Version: 2, resource: normalizedResource, requestHash: parsed.requestHash, selected });
     return { eligible: true as const, selectedOffer: selected, selectedOfferIndex: index, requestHash: parsed.requestHash, paymentRequirementsHash, validationPolicyId: validationPolicyId(policy) };
   }
