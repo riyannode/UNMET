@@ -58,12 +58,12 @@ test("confirms direct native EIP-3009 inclusion and permits expired-now historic
 
 test("historical proof uses the stored record when current price and recipient config changes", async () => {
   const { client, record } = proof();
-  const priorPrice = process.env.OPPORTUNITY_PRICE, priorRecipient = process.env.OKX_PAY_TO;
-  process.env.OPPORTUNITY_PRICE = "9.99";
+  const priorPrice = process.env.INSIGHTS_PRICE, priorRecipient = process.env.OKX_PAY_TO;
+  process.env.INSIGHTS_PRICE = "9.99";
   process.env.OKX_PAY_TO = "0x3333333333333333333333333333333333333333";
   try { expect(await confirmPayment(record, client)).toBe(true); }
   finally {
-    if (priorPrice === undefined) delete process.env.OPPORTUNITY_PRICE; else process.env.OPPORTUNITY_PRICE = priorPrice;
+    if (priorPrice === undefined) delete process.env.INSIGHTS_PRICE; else process.env.INSIGHTS_PRICE = priorPrice;
     if (priorRecipient === undefined) delete process.env.OKX_PAY_TO; else process.env.OKX_PAY_TO = priorRecipient;
   }
 });
@@ -80,8 +80,8 @@ test("reopened UNKNOWN payment reconciles from stored proof after live terms cha
   initial.transition(reserved.id, "SETTLEMENT_IN_FLIGHT", "UNKNOWN", record.txHash);
   initial.close();
   const reopened = new PaymentStore(path);
-  const priorPrice = process.env.OPPORTUNITY_PRICE, priorRecipient = process.env.OKX_PAY_TO;
-  process.env.OPPORTUNITY_PRICE = "9.99";
+  const priorPrice = process.env.INSIGHTS_PRICE, priorRecipient = process.env.OKX_PAY_TO;
+  process.env.INSIGHTS_PRICE = "9.99";
   process.env.OKX_PAY_TO = "0x3333333333333333333333333333333333333333";
   try {
     const counts = await reconcilePayments(reopened, { getSettleStatus: async (txHash) => ({
@@ -90,7 +90,7 @@ test("reopened UNKNOWN payment reconciles from stored proof after live terms cha
     expect(counts.settled).toBe(1);
     expect(reopened.get(reserved.id)?.state).toBe("SETTLED");
   } finally {
-    if (priorPrice === undefined) delete process.env.OPPORTUNITY_PRICE; else process.env.OPPORTUNITY_PRICE = priorPrice;
+    if (priorPrice === undefined) delete process.env.INSIGHTS_PRICE; else process.env.INSIGHTS_PRICE = priorPrice;
     if (priorRecipient === undefined) delete process.env.OKX_PAY_TO; else process.env.OKX_PAY_TO = priorRecipient;
     reopened.close();
     rmSync(dir, { recursive: true, force: true });

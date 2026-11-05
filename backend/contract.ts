@@ -88,7 +88,14 @@ const rpcFetch = createBoundedFetch({
   maxBytes: rpcConfig.upstreamMaxBytes,
 });
 
-export function getPublicClient(deployment: EscrowDeployment): PublicClient {
+export function withRpcAbort(fetch: typeof globalThis.fetch, signal: AbortSignal): typeof globalThis.fetch {
+  return Object.assign((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const signals = [signal, init?.signal, input instanceof Request ? input.signal : undefined].filter((item): item is AbortSignal => !!item);
+    return fetch(input, { ...init, signal: AbortSignal.any(signals) });
+  }, fetch);
+}
+
+export function getPublicClient(deployment: EscrowDeployment, signal?: AbortSignal): PublicClient {
   validateDeployment(deployment);
   const chain = defineChain({
     id: deployment.chainId, name: deployment.chain.name, nativeCurrency: deployment.chain.nativeCurrency,
@@ -97,7 +104,7 @@ export function getPublicClient(deployment: EscrowDeployment): PublicClient {
   });
   return createPublicClient({
     chain,
-    transport: http(deployment.rpcUrl, { timeout: rpcConfig.rpcTimeoutMs, retryCount: 0, fetchFn: rpcFetch }),
+    transport: http(deployment.rpcUrl, { timeout: rpcConfig.rpcTimeoutMs, retryCount: 0, fetchFn: signal ? withRpcAbort(rpcFetch, signal) : rpcFetch }),
   }) as PublicClient;
 }
 

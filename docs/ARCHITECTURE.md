@@ -33,7 +33,7 @@ The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, che
 
 The demand market selects one deployment: chain, contract, RPC, deployment block, chain metadata and escrow-token address/symbol/decimals. The reviewed acceptance configuration uses faucet `USDC_TEST` on X Layer Testnet (`1952`), with the AgentDemand identity pinned in `.env.example` and the public Gate-0 policy. Activation verifies RPC chain, contract bytecode, immutable `token()` and token decimals. Custom chain metadata supports future deployments without changing wallet identity. One contract holds one immutable exact-transfer ERC-20; token symbols do not prove compatibility.
 
-Only the x402 middleware for `POST /v1/opportunities` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`) and advertises three fixed native EIP-3009 assets. `X402_RPC_URL` independently confirms Mainnet settlement receipts; it is never sourced from the market Testnet RPC. This payment setting is never used by `backend/contract.ts` or demand-market clients.
+Only the x402 middleware for `POST /v1/insights` uses `X402_CHAIN_ID`. Production sets it explicitly to X Layer Mainnet (`196`) and advertises three fixed native EIP-3009 assets. `X402_RPC_URL` independently confirms Mainnet settlement receipts; it is never sourced from the market Testnet RPC. This payment setting is never used by `backend/contract.ts` or demand-market clients.
 
 `backend/AgentDemand.sol` is the canonical escrow source. AgentDemand is the only supported escrow protocol; no dual-version runtime is planned. G0.4 replaces Solidity source/tests without deploying or migrating funds. Frontend and backend consume the reviewed canonical ABI in `shared/abi.ts`, including the five-argument attestation submit and digest-bearing events. `backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` with `DEPLOYMENT_TOOLING_UNAVAILABLE` before deployment work. The obsolete six-argument flow is removed, so the canonical artifact cannot enter it. Offline `plan` validates all eight constructor arguments; read-only `inspect` verifies configured deployment parameters. Actual deployment requires separate owner authorization. Live addresses and onchain state are unchanged. The backend derives demand information from blockchain state. Self-hosted `bun:sqlite` persists x402 payment/idempotency and settlement records; it is not an escrow database. There is no database server, Redis or offchain demand authority.
 
@@ -57,7 +57,9 @@ Exact specification bytes participate in the existing demand key, so whitespace 
 
 `GET /v1/demands` retains its public market fields and legacy score for API compatibility, adding raw onchain `specification` unchanged. The frontend reads the contract directly; its board, detail and analytics views do not consume either API response.
 
-`POST /v1/opportunities` uses the same index and filters, with no additional RPC reads. It adds rank within the full matching pool before the response limit, a reproducible score breakdown, current escrow per historically expected call, remaining deadline/review time, review gaps, and deterministic reasons and cautions. Requested response order remains independent of score rank. Percentile tables are prepared once per pool; premium row enrichment applies only to the returned rows.
+`POST /v1/insights` ranks the same market index and filters from its existing snapshot. It adds rank within the full matching pool before the response limit, a reproducible score breakdown, current escrow per historically expected call, remaining deadline/review time, review gaps, and deterministic reasons and cautions. Requested response order remains independent of score rank. Percentile tables are prepared once per pool; premium row enrichment applies only to the returned rows. The G4 history guard additionally reads the chain ID and checkpoint block before returning trusted history; the history anchor is independent of the market snapshot block.
+
+The API owns one activity SQLite database with `activity_events` and `activity_state` tables. Its single scheduler scans bounded pages and atomically advances the cursor; startup validates stored state and shutdown stops the scheduler before closing storage. A detected reorg invalidates history and triggers a full derived-history rebuild. At the configured event cap the worker stops advancing, marks coverage incomplete and returns null historical quantities; it never silently drops old events. Operators must review capacity and storage before raising the bound or recovering the index.
 
 Premium serialization executes after the existing official payment middleware. SDK response buffering and durable settlement confirmation continue to control release. Free and unpaid challenge responses contain no new premium fields. All existing onchain facts remain public; paid value is the scoped comparison and interpretation. Scores are relative signals, and escrow is not guaranteed builder earnings. See [API calculations and examples](API.md#deterministic-demand-score).
 
@@ -157,7 +159,7 @@ The cache is never used as proof. API results include chain ID, contract and ind
 
 ## OKX x402 flow
 
-`POST /v1/opportunities` is the only paid route.
+`POST /v1/insights` is the only paid route.
 
 ```text
 validated request -> route/IP quota -> admission -> official x402 middleware

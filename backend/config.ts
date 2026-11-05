@@ -20,6 +20,7 @@ export function httpUrl(value: string, key: string) {
 }
 
 export function loadOperationalConfig(env: Env = process.env) {
+  if (env.RATE_OPPORTUNITIES !== undefined || env.OPPORTUNITY_PRICE !== undefined) throw new Error("CONFIG_INVALID: LEGACY_INSIGHTS_ENV");
   const trustedProxies = (env.TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean);
   for (const proxy of trustedProxies) {
     const [ip, prefix, extra] = proxy.split("/");
@@ -38,16 +39,22 @@ export function loadOperationalConfig(env: Env = process.env) {
   if (env.PAYMENT_DB_PATH && !env.PAYMENT_DB_PATH.startsWith("/")) {
     throw new Error("CONFIG_INVALID: PAYMENT_DB_PATH");
   }
+  if (env.ACTIVITY_DB_PATH && !env.ACTIVITY_DB_PATH.startsWith("/")) {
+    throw new Error("CONFIG_INVALID: ACTIVITY_DB_PATH");
+  }
   return {
     x402RpcUrl: httpUrl(env.X402_RPC_URL || "https://rpc.xlayer.tech", "X402_RPC_URL"),
     paymentDbPath: env.PAYMENT_DB_PATH,
+    activityDbPath: env.ACTIVITY_DB_PATH,
+    activityMaxEvents: integer(env, "ACTIVITY_MAX_EVENTS", 100_000, 1, 1_000_000),
+    activityPollMs: integer(env, "ACTIVITY_POLL_MS", 5000, 1000, 60_000),
     paymentRetentionDays: integer(env, "PAYMENT_RETENTION_DAYS", 30, 1, 3650),
     paymentMaxRecords: integer(env, "PAYMENT_MAX_RECORDS", 100_000, 1, 1_000_000),
     port: integer(env, "PORT", 8787, 1, 65535),
     trustedProxies,
     rateWindowMs: integer(env, "RATE_WINDOW_MS", 60_000, 100, 3_600_000),
     demandsPerWindow: integer(env, "RATE_DEMANDS", 60, 1, 100_000),
-    opportunitiesPerWindow: integer(env, "RATE_OPPORTUNITIES", 20, 1, 100_000),
+    insightsPerWindow: integer(env, "RATE_INSIGHTS", 20, 1, 100_000),
     rateMaxKeys: integer(env, "RATE_MAX_KEYS", 10_000, 1, 1_000_000),
     maxInFlight: integer(env, "MAX_IN_FLIGHT", 16, 1, 256),
     rpcMaxInFlight,

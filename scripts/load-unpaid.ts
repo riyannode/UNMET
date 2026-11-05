@@ -6,8 +6,8 @@ const requests = Number(process.env.REQUESTS || 60);
 const concurrency = Number(process.env.CONCURRENCY || 4);
 if (!Number.isInteger(requests) || requests < 1 || requests > 200 ||
     !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) throw new Error("LOAD_BOUNDS");
-const path = process.env.LOAD_PATH || "/v1/opportunities";
-if (!["/v1/opportunities", "/v1/demands"].includes(path)) throw new Error("LOAD_PATH");
+const path = process.env.LOAD_PATH || "/v1/insights";
+if (!["/v1/insights", "/v1/demands"].includes(path)) throw new Error("LOAD_PATH");
 let cursor = 0;
 const statuses: Record<number, number> = {};
 const latencies: number[] = [];
@@ -17,9 +17,9 @@ await Promise.all(Array.from({ length: concurrency }, async () => {
     const start = performance.now();
     try {
       const response = await fetch(new URL(path, base), {
-        method: path === "/v1/opportunities" ? "POST" : "GET",
+        method: path === "/v1/insights" ? "POST" : "GET",
         headers: { "content-type": "application/json" },
-        body: path === "/v1/opportunities" ? "{}" : undefined,
+        body: path === "/v1/insights" ? "{}" : undefined,
         signal: AbortSignal.timeout(25_000),
       });
       await response.arrayBuffer();

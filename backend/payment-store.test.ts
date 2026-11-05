@@ -145,8 +145,8 @@ test("SIGKILL after simulated facilitator success but before hash checkpoint sta
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000_000_000); };
     const handler = durable.wrap(async(_req,res)=>{ await durable.client.verify(payment,requirements);
       await durable.client.settle(payment,requirements); res.json({opportunities:["fixture"]}); });
-    await handler({method:"POST",path:"/v1/opportunities",get:()=>undefined},
-      {locals:{opportunityInput:{}},json:(body)=>{writeFileSync(${JSON.stringify(responseMarker)},JSON.stringify(body));return body;},
+    await handler({method:"POST",path:"/v1/insights",get:()=>undefined},
+      {locals:{insightsInput:{}},json:(body)=>{writeFileSync(${JSON.stringify(responseMarker)},JSON.stringify(body));return body;},
         removeHeader(){},status(){return this;},setHeader(){}},()=>{});`;
   const child = Bun.spawn([process.execPath, "-e", source], { stdout: "pipe", stderr: "pipe" });
   try {

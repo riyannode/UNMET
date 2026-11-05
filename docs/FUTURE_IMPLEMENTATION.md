@@ -176,11 +176,11 @@ Examples:
 - fulfillment history
 - observed service adoption
 
-The existing paid POST /v1/opportunities endpoint remains the initial Demand Intelligence payment surface.
+The existing paid POST /v1/insights endpoint remains the initial Demand Intelligence payment surface.
 
 #### Current implementation baseline
 
-The current free `GET /v1/demands` returns public chain-derived market facts and the legacy `score`. Paid `POST /v1/opportunities` adds `analysis`, `rank`, `scoreBreakdown`, `economicSignals`, and `reasoning` to the matching filtered pool. Production Demand Intelligence billing uses X Layer Mainnet (`eip155:196`) and three ordered native EIP-3009 exact offers (USD₮0, USDC, USDG), each priced at 10000 atomic units (6 decimals, `$0.01`). This current endpoint policy is independent from Gate 0's future reviewed payment profiles and is not a universal transfer-method restriction. See [API](API.md) for the current contract and [STATUS](STATUS.md) for evidence scope.
+The current free `GET /v1/demands` returns public chain-derived market facts and the legacy `score`. Paid `POST /v1/insights` adds `analysis`, `rank`, `scoreBreakdown`, `economicSignals`, and `reasoning` to the matching filtered pool. Production Demand Intelligence billing uses X Layer Mainnet (`eip155:196`) and three ordered native EIP-3009 exact offers (USD₮0, USDC, USDG), each priced at 10000 atomic units (6 decimals, `$0.01`). This current endpoint policy is independent from Gate 0's future reviewed payment profiles and is not a universal transfer-method restriction. See [API](API.md) for the current contract and [STATUS](STATUS.md) for evidence scope.
 
 Demand commitments finance service creation only. They do not buy the Demand Intelligence query or prepay future API usage. After fulfillment, API usage is paid directly to the provider through its x402 endpoint; contributors receive no usage entitlement. UNMET does not custody those service-use payments.
 
@@ -309,7 +309,7 @@ Every payment profile MUST explicitly declare its allowed payment flows per asse
 
 Gate 0 MUST resolve and validate both assetTransferMethod and paymentFlow against the reviewed profile before an offer can qualify. Future upfront or escrow support requires separately reviewed profile/schema semantics and must not be enabled implicitly. These reserved extra fields follow the [x402 V2 mechanism and payment-flow model](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md#61-asset-transfer-methods-and-payment-flow-models); the initial UNMET profile permits only authorization.
 
-The /v1/opportunities billing policy, including PR #17, is not a universal Gate 0 policy. Do not inherit its method restrictions, token choices, or prices. Keep method-specific checks within the reviewed profile model without introducing a generic plugin framework.
+The /v1/insights billing policy, including PR #17, is not a universal Gate 0 policy. Do not inherit its method restrictions, token choices, or prices. Keep method-specific checks within the reviewed profile model without introducing a generic plugin framework.
 
 Accepted assets: Only assets explicitly enabled in the approved deployment configuration.
 
@@ -661,7 +661,7 @@ An offer is comparable only when its network, asset address, and verified decima
 
 For this initial denomination, USD₮0, USDG, Testnet USDC_TEST or native Testnet USDC, another network's token, and any other different asset remain unsupported comparisons, even if independently supported by OKX. Such an offer cannot qualify for PASS. Return UNSUPPORTED_PRICE_COMPARISON when no offer is eligible because its denomination differs; do not apply a conversion rate, oracle, bridge equivalence, symbol-based identity, or stablecoin-parity assumption.
 
-The owner approved this initial denomination change while the canonical Testnet deployment had nextDemandId = 1 and totalEscrowed = 0. AgentDemand stores an unlabeled uint96 price and does not embed the old asset identity, so this configuration/consumer correction requires no contract redeployment or storage migration. It does not change the independent three-offer /v1/opportunities billing surface. Separately, the owner authorized replacement of the empty Testnet escrow deployment to use the actual faucet USDC_TEST token; [deployment evidence](ARCHITECTURE.md#faucet-supported-testnet-acceptance-deployment) records that token/deployment change. Its Mainnet-USDC demandPriceAsset and payment profile remain unchanged.
+The owner approved this initial denomination change while the canonical Testnet deployment had nextDemandId = 1 and totalEscrowed = 0. AgentDemand stores an unlabeled uint96 price and does not embed the old asset identity, so this configuration/consumer correction requires no contract redeployment or storage migration. It does not change the independent three-offer /v1/insights billing surface. Separately, the owner authorized replacement of the empty Testnet escrow deployment to use the actual faucet USDC_TEST token; [deployment evidence](ARCHITECTURE.md#faucet-supported-testnet-acceptance-deployment) records that token/deployment change. Its Mainnet-USDC demandPriceAsset and payment profile remain unchanged.
 
 Every enabled profile must declare its price denomination and comparison policy. Missing or unverified configuration prevents PASS. Future comparison policies require separate review and must preserve the meaning of existing demand economics.
 
@@ -1732,7 +1732,7 @@ External publication is outside UNMET core and is the builder's responsibility. 
 
 Expand the existing paid intelligence API using verifiable market activity.
 
-Preserve current POST /v1/opportunities compatibility unless versioning is approved.
+The approved G4 migration replaces the former paid intelligence route with `POST /v1/insights` without an alias. Existing ranking and opportunity fields remain, with market activity and explicitly unsupported usage-evidence additions. See [API](API.md#post-v1insights) for the implemented contract. The remaining items below are proposals, not implemented usage producers.
 
 
 ### 10.1 Market Metrics

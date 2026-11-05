@@ -12,7 +12,7 @@ for (const path of ["/live", "/ready", "/health", "/v1/demands"]) {
 }
 const missing = await fetch(new URL("/v1/missing", base));
 if (missing.status !== 404 || !missing.headers.get("content-type")?.includes("json")) throw new Error("API_404_FAILED");
-const challenge = await fetch(new URL("/v1/opportunities", base), {
+const challenge = await fetch(new URL("/v1/insights", base), {
   method: "POST", headers: { "content-type": "application/json" }, body: "{}",
   signal: AbortSignal.timeout(20_000),
 });

@@ -7,8 +7,8 @@ const specPath = fileURLToPath(new URL("../frontend/public/openapi.json", import
 const env: Record<string, string | undefined> = { ...process.env, X402_CHAIN_ID: process.env.X402_CHAIN_ID ?? "196" };
 const pay = resolveX402PaymentConfig(env, Number(process.env.CHAIN_ID ?? "1952"));
 const openapi = JSON.parse(await readFile(specPath, "utf8")) as { paths: Record<string, { post?: Record<string, unknown> }> };
-const operation = openapi.paths["/v1/opportunities"]?.post;
-if (!operation) throw new Error("OpenAPI POST /v1/opportunities is missing");
+const operation = openapi.paths["/v1/insights"]?.post;
+if (!operation) throw new Error("OpenAPI POST /v1/insights is missing");
 if (process.argv.includes("--write")) {
   const source = await readFile(specPath, "utf8");
   const line = /^        "x-payment-info": .*,$/m;
