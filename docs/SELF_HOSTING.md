@@ -70,7 +70,7 @@ For a later VPS, retain these images and topology. Change domain/origin, TLS, se
 
 ### Persistent egress on the reviewed VPS
 
-[The repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) is installed as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`. It enforces the **shared web/validator boundary**, not a per-process boundary: both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
+[The repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) is installed as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`. It enforces the **shared web/validator/observer boundary**, not a per-process boundary: validator and observer both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
 
 The reviewed production topology pins IPv4 sources `172.30.80.2` and `172.18.0.3`. Exact TCP exceptions for API `172.30.80.3:8787` and HOROI `172.18.0.2:3000` precede private/reserved/metadata denies; `43.156.68.254` is denied as the VPS public management address. Ingress replies, related traffic and public TCP HTTPS/443 remain allowed. Validator loopback and Docker DNS remain local; API egress is outside this policy and signer retains `network_mode: none`. Both reviewed bridge interfaces have IPv6 disabled: this IPv4 policy does not establish IPv6 protection. Review any IP, topology, port, dependency or IPv6 change before applying it elsewhere.
 
@@ -107,7 +107,9 @@ sudo nft list tables
 sudo nft list table bridge unmet_egress
 ```
 
-Verify the checks below directly after reload, then after the [canonical four-service recreation](#update-rollback-and-stop), which recreates web and validator together using both Compose files. Do not manually reapply nft rules after recreation. On 2026-11-02, this reviewed host passed UFW reload, canonical web/validator recreation and reboot autoload through the existing UFW hook, with required paths and deny counters verified after each and no manual reapplication after recreation or reboot. Repeat this acceptance for future deployments; these results apply only to the tested host and topology.
+Verify the checks below directly after reload, then after the [five-service validation/discovery recreation](#update-rollback-and-stop), which recreates web, validator and observer together using both Compose files. Do not manually reapply nft rules after recreation.
+
+On 2026-11-02, this reviewed host passed UFW reload, canonical web/validator recreation and reboot autoload through the existing UFW hook, with required paths and deny counters verified after each and no manual reapplication after recreation or reboot. That historical acceptance covered web/validator only; it did not include observer. Repeat this acceptance for the current five-service topology on future deployments; the historical results apply only to the tested host and topology.
 
 The one-time migration from historical `unmet-g06.nft` / `bridge unmet_g06` must load and verify the canonical table before deleting the superseded owned table. Remove the old file only after required-path and deny probes succeed. Normal updates use only the canonical names.
 
@@ -135,7 +137,7 @@ Obtain your own OKX API key, secret, passphrase, API fee recipient address, RPC 
 
 ## Configure and start
 
-The following commands start the base API/web stack only. Gate-0 deployments must instead use the [four-service procedure](#gate-0-validator-and-signer), including its lifecycle commands.
+The following commands start the base API/web stack only. Validation/discovery deployments must instead use the [five-service procedure](#gate-0-validator-and-signer), including its lifecycle commands.
 
 ~~~bash
 git clone https://github.com/riyannode/UNMET.git
