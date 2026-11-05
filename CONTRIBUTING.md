@@ -40,7 +40,7 @@ bun --env-file=.env run dev:backend
 bun --env-file=.env run dev:frontend --host 127.0.0.1
 ```
 
-The frontend reads the contract directly through its public RPC and wallet. It does not need the paid intelligence endpoint for normal demand-market actions. Stop both commands with Ctrl-C when finished.
+The frontend reads the contract directly through its public RPC and wallet for market actions; Services uses the free API. Neither requires paid intelligence. Stop both commands with Ctrl-C when finished.
 
 ## Offline validation
 
@@ -62,7 +62,7 @@ For the existing real React wallet-session race fixture, start the frontend loca
 
 ## Local Docker validation
 
-Use a private env file with the original Compose production defaults, your own OKX/Reown configuration, and a free port/subnet. Compose fixes `NODE_ENV=production`. Example from the root:
+This example starts the base two-service API/web stack. For validator, signer and observer, use the [opt-in overlay](docs/SELF_HOSTING.md#gate-0-validator-and-signer). Use a private env file with the original Compose production defaults, your own OKX/Reown configuration, and a free port/subnet. Compose fixes `NODE_ENV=production`. Example from the root:
 
 ```bash
 # Edit .env: HTTP_PORT=18080, HTTPS_PORT=18443,

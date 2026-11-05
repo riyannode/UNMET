@@ -8,13 +8,13 @@ Version: V2.0
 Date: 24 October 2026
 Repository: https://github.com/riyannode/UNMET
 
-Status: PROPOSED — except the local G0.3 and G0.4 source noted below
+Status: Mixed implementation and proposals; see the [gate status table](#14-implementation-order).
 
-Implementation note: the repository contains a local G0.3 validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. It is not deployed or production-ready. This note does not change the policy envelope or approve later roadmap stages. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. Local tests do not establish the planned VPS isolation controls. G0.4 adds the canonical non-upgradeable `AgentDemand.sol`, onchain attestation consumption, verifier rotation and escrow regression coverage. Canonical contract integration remains G0.5; no deployment is included.
+Implementation note: G0.3 introduced the validation runtime and separate signer, documented in [API](API.md#standalone-g02-validation-runtime) and [Architecture](ARCHITECTURE.md#local-g02-validation-source). It verifies builder authorization and issues signed PASS after validation. The strict JSON implementation uses pinned `jsonc-parser` for duplicate-key detection and syntax checks, rather than the implementation task's suggested `lossless-json` candidate, because the latter did not reliably reject identical duplicate values in evaluation. G0.4 added the canonical non-upgradeable `AgentDemand.sol`, onchain attestation consumption, verifier rotation and escrow regression coverage; G0.5 integrated canonical consumers. Local tests do not establish target-host isolation or release acceptance.
 
 ## 0. DOCUMENT PURPOSE
 
-This roadmap defines the future architecture and implementation requirements for UNMET.
+This roadmap records phase status and future architecture and implementation requirements for UNMET. Version and date above are historical design metadata. Its gate table is authoritative for roadmap status only; use [PRD](PRD.md), [API](API.md), [Architecture](ARCHITECTURE.md) and code for current behavior, and [STATUS](STATUS.md) and dated reports for acceptance evidence. Future or deferred proposals do not authorize implementation.
 
 It is intended for:
 
@@ -36,6 +36,8 @@ Current behavior must be verified against the repository before implementation.
 
 ### Implementation Stages
 
+See the [gate status table](#14-implementation-order) for each stage's status and acceptance boundary.
+
 - Gate 0 — Escrow Security and Automatic x402 Validation
 - Phase 1 — Machine-Readable RFQ
 - Phase 2 — Fulfilled Demand Service Registry
@@ -43,7 +45,7 @@ Current behavior must be verified against the repository before implementation.
 - Phase 4 — Demand Intelligence Expansion
 - Phase 5 — Automatic Capability Resolver
 
-The stages must be implemented incrementally.
+Remaining stages must be implemented incrementally when approved.
 
 Do not implement the complete roadmap in one change.
 
@@ -104,7 +106,7 @@ The resulting service may become discoverable through the UNMET Service Registry
 
 Agents purchase future API usage directly from the builder through x402.
 
-Verified market activity and appropriately attributed usage evidence improve future Demand Intelligence.
+Verified market activity informs current Demand Intelligence. Appropriately attributed usage evidence is future work; no usage producer is currently supported.
 
 
 ### Core Thesis
@@ -113,6 +115,8 @@ UNMET turns funded unmet demand into purchasable AI-agent services.
 
 
 ### Complete Lifecycle
+
+This extended future vision includes unsupported usage evidence; the implemented phases do not depend on completing the entire loop.
 
 ```text
 Unmet Capability
@@ -170,17 +174,17 @@ Examples:
 - funded opportunities
 - capital distribution
 - capability demand
-- expected usage
+- expected calls (intent, not observed usage)
 - funding history
 - submission history
 - fulfillment history
-- observed service adoption
+- future observed service adoption (no current usage producer)
 
 The existing paid POST /v1/insights endpoint remains the initial Demand Intelligence payment surface.
 
 #### Current implementation baseline
 
-The current free `GET /v1/demands` returns public chain-derived market facts and the legacy `score`. Paid `POST /v1/insights` adds `analysis`, `rank`, `scoreBreakdown`, `economicSignals`, and `reasoning` to the matching filtered pool. Production Demand Intelligence billing uses X Layer Mainnet (`eip155:196`) and three ordered native EIP-3009 exact offers (USD₮0, USDC, USDG), each priced at 10000 atomic units (6 decimals, `$0.01`). This current endpoint policy is independent from Gate 0's future reviewed payment profiles and is not a universal transfer-method restriction. See [API](API.md) for the current contract and [STATUS](STATUS.md) for evidence scope.
+The current free `GET /v1/demands` returns public chain-derived market facts and the legacy `score`. Paid `POST /v1/insights` adds `analysis`, `rank`, `scoreBreakdown`, `economicSignals`, and `reasoning` to the matching filtered pool. Production Demand Intelligence billing uses X Layer Mainnet (`eip155:196`) and three ordered native EIP-3009 exact offers (USD₮0, USDC, USDG), each priced at 10000 atomic units (6 decimals, `$0.01`). This endpoint policy is independent from Gate 0's reviewed payment profiles and is not a universal transfer-method restriction. See [API](API.md) for the current contract and [STATUS](STATUS.md) for evidence scope.
 
 Demand commitments finance service creation only. They do not buy the Demand Intelligence query or prepay future API usage. After fulfillment, API usage is paid directly to the provider through its x402 endpoint; contributors receive no usage entitlement. UNMET does not custody those service-use payments.
 
@@ -199,8 +203,8 @@ Service records connect:
 - service endpoint
 - x402 payment requirements
 - compatibility observations
-- availability observations
-- usage evidence
+- cached unpaid challenge observations (not an availability guarantee)
+- future usage evidence (currently unsupported)
 
 The builder hosts and operates the service.
 
@@ -416,6 +420,8 @@ No builder staking or bond is required.
 
 
 ### G0.1 runtime boundary and deployment identity
+
+This section and the original G0.1 impact map record the historical design milestone. G0.2-G0.5 subsequently implemented the validator, signer and canonical consumers; see the gate table for status and the current API and Architecture for behavior. Target-host acceptance remains release-specific.
 
 The initial validation runtime is a dedicated Bun service on an isolated VPS. It is separate from the existing Bun API, its payment database, and x402 settlement. The service has no signing key in its process or environment: a separately protected signer accepts only authenticated, narrowly scoped requests from the validation service and enforces its own policy before signing. Authentication, isolation and signer policy must be independently reviewed and tested on the target VPS before use. A local test cannot establish that host firewall rules or signer isolation are deployed.
 
@@ -708,7 +714,7 @@ No successful attestation may be issued.
 
 ### 4.8 Validation Service Endpoint
 
-Proposed endpoint:
+Validation endpoint (historical design; see [API](API.md#standalone-g02-validation-runtime) for current behavior):
 
 POST /v1/x402/validate
 
@@ -782,7 +788,7 @@ It must read and verify the relevant onchain demand state. Trusted configuration
 Return the complete typed attestation fields and signature so the frontend can recompute the digest and bind submission to its originating wallet, demand, URL, evidence, and nonce. PASS uses HTTP 200; FAIL uses HTTP 400; UNAVAILABLE uses HTTP 503. Neither failure response contains an attestation.
 
 
-The proposed response field names are defined by [validation-response.json](schemas/validation-response.json): PASS includes `profileId`, `selectedOffer`, `selectedOfferIndex`, `requestHash`, `validationPolicyId`, `paymentRequirementsHash`, `validatedAt`, `expiresAt`, `attestation`, and `signature`. FAIL and UNAVAILABLE contain `code`, `message`, and boolean `retryable`, and cannot contain an attestation. The request and policy schemas are [validation-request.json](schemas/validation-request.json) and [validation-policy.json](schemas/validation-policy.json). These schemas specify structural constraints only. Duplicate raw keys, invalid Unicode, safe integer and uint256 bounds, UTF-8 byte limits, depth, exact URL serialization, ordering and cross-field constraints require semantic checks before canonicalization. They do not enforce connect-time network safety.
+The response field names are defined by [validation-response.json](schemas/validation-response.json): PASS includes `profileId`, `selectedOffer`, `selectedOfferIndex`, `requestHash`, `validationPolicyId`, `paymentRequirementsHash`, `validatedAt`, `expiresAt`, `attestation`, and `signature`. FAIL and UNAVAILABLE contain `code`, `message`, and boolean `retryable`, and cannot contain an attestation. The request and policy schemas are [validation-request.json](schemas/validation-request.json) and [validation-policy.json](schemas/validation-policy.json). These schemas specify structural constraints only. Duplicate raw keys, invalid Unicode, safe integer and uint256 bounds, UTF-8 byte limits, depth, exact URL serialization, ordering and cross-field constraints require semantic checks before canonicalization. They do not enforce connect-time network safety.
 
 ### Failure Response
 
@@ -1557,7 +1563,7 @@ There is one canonical escrow implementation and test suite. Git history preserv
 
 G0.4 implements the non-upgradeable attestation-gated escrow and contract tests. It does not deploy the canonical contract, change live addresses, migrate funds or modify existing onchain contracts and balances.
 
-G0.5 covers canonical AgentDemand frontend/backend, indexer and deployment-tool integration: ABI consumers, validation/submission flow, event indexing and multi-deployment identity. The G0.5 source uses a shared canonical ABI, deployment-scoped identity and attestation submission. The configuration remains unavailable for escrow writes until a separately approved canonical contract address is supplied.
+G0.5 covers canonical AgentDemand frontend/backend, indexer and deployment-tool integration: ABI consumers, validation/submission flow, event indexing and multi-deployment identity. The G0.5 source uses a shared canonical ABI, deployment-scoped identity and attestation submission. `.env.example` contains the reviewed canonical Testnet address; configuration alone does not establish the currently served deployment.
 
 `backend/admin.ts` disables `deploy-testnet` and `deploy-mainnet` locally with `DEPLOYMENT_TOOLING_UNAVAILABLE`, before key, RPC, artifact or transaction work. The obsolete six-argument deployment flow has been removed. G0.5 adds offline eight-argument planning and read-only parameter verification; broadcast commands remain disabled. No current repository command may deploy canonical AgentDemand.
 
@@ -1620,7 +1626,7 @@ G2 minimally implements a public Services directory and free read-only API from 
 
 `GET /v1/services` returns up to 50 fulfilled services ordered by descending demand ID. `GET /v1/services/:id` looks up the complete index. Both expose the original capability, raw specification, builder, submitted service URL and opaque evidence hash, alongside the snapshot block number and hash and response generation time. The snapshot is not a fulfillment receipt or timestamp. The public `/services` and `/services/:chainId/:contract/:demandId` pages present these records without fetching the provider.
 
-G3 adds authenticated metadata and current observations. External distribution is outside UNMET core and belongs to builders.
+G3 adds authenticated metadata and cached observations from an isolated observer. External distribution is outside UNMET core and belongs to builders. See [API](API.md) and [Architecture](ARCHITECTURE.md) for current behavior.
 
 
 ## 9. PHASE 3 — x402 SERVICE DISCOVERY
@@ -1679,14 +1685,7 @@ The G3 routes retain the G2 paths and add cached observations and structured fil
 
 GET /v1/services
 
-Optional filters:
-
-- capability
-- payment network
-- asset
-- maximum price
-- availability
-- verification level
+Optional filters are `capability`, `network`, `asset`, `maxPrice` and `state`; see [API](API.md) for their contract. Observation state is not an availability or verification guarantee.
 
 
 GET /v1/services/:id
@@ -1732,12 +1731,12 @@ External publication is outside UNMET core and is the builder's responsibility. 
 
 Expand the existing paid intelligence API using verifiable market activity.
 
-The approved G4 migration replaces the former paid intelligence route with `POST /v1/insights` without an alias. Existing ranking and opportunity fields remain, with market activity and explicitly unsupported usage-evidence additions. See [API](API.md#post-v1insights) for the implemented contract. The remaining items below are proposals, not implemented usage producers.
+The approved reduced G4 scope provides `POST /v1/insights` without an alias for the removed former route. Existing ranking and opportunity fields remain. Current market snapshots, deterministic AgentDemand event history and G2/G3 snapshot metrics are described in [API](API.md#post-v1insights) and [Architecture](ARCHITECTURE.md). History is gated by canonical anchors, coverage and reorg checks; incomplete history yields null quantities and makes no finality claim. All four usage producers are unsupported: no declared usage producer, deterministic service-payment attribution, execution-attestation producer or independent verifier exists. Expected calls, taxonomy and discovery metadata are not usage evidence; no observed service purchase volume or evidence-backed usage totals are provided. The following usage designs are future requirements.
 
 
 ### 10.1 Market Metrics
 
-Potential metrics:
+Historical design candidates (see the current API for shipped definitions):
 
 - funded demand by capability
 - committed capital
@@ -1765,6 +1764,8 @@ Fulfillment is not permanent service availability.
 
 
 ### 10.2 Usage Evidence Levels
+
+These levels describe a future design; none has a current producer.
 
 ### Level 1 — Declared
 
@@ -1816,6 +1817,8 @@ Do not infer unrelated quality or availability guarantees.
 
 ### 10.3 Attribution
 
+Deferred future requirements for service payment and execution attribution:
+
 Every evidence record must identify:
 
 - service
@@ -1834,6 +1837,8 @@ Ambiguous attribution must not enter verified usage totals.
 
 
 ### 10.4 Chain Indexing
+
+The following finality requirements are future design, not claims about current market history:
 
 Chain-derived records must track:
 
@@ -1894,6 +1899,8 @@ Do not combine these flows into one accounting category.
 
 
 ## 11. PHASE 5 — AUTOMATIC CAPABILITY RESOLVER
+
+Status: DEFERRED — DEMAND-DRIVEN. G2, G3 and G4 are usable without this orchestration convenience. Real agent and client demand must establish unified resolution and matching semantics. This resolver is NOT IMPLEMENTED, has NO CURRENT PUBLIC API and carries NO COMMITMENT TO THIS EXACT CONTRACT; a future API may change.
 
 ### Objective
 
@@ -2005,25 +2012,20 @@ Canonical settlement provenance comes from blockchain state.
 
 ### Backend Database
 
-Stores:
-
-- derived chain indexes
-- service metadata
-- analytics materialization
-- operational observations
+The current separate payment, discovery and derived activity stores are described in [Architecture](ARCHITECTURE.md). The in-memory demand index is also derived.
 
 It is not authoritative for moving escrow funds.
 
 
 ### Payment And Execution Evidence
 
-Provides:
+Future unsupported producers could provide:
 
 - observed payments
 - authenticated execution claims
 - independent benchmark results
 
-Every record must preserve its evidence strength.
+Any future record must preserve its evidence strength.
 
 
 ## 13. API AND ERROR REQUIREMENTS
@@ -2086,19 +2088,21 @@ Deliver:
 
 Execution is serial: one gate, branch and Draft PR at a time, with owner review before the next gate. Merge, deployment, paid tests and Mainnet activation require separate authorization.
 
-| Gate | Scope and dependency | Acceptance |
-| --- | --- | --- |
-| G0.1 | Architecture, policy schemas, threat model, vectors and impact map; owner approval | Review schemas, vectors and transport evidence in Sections 3-6. |
-| G0.2 | Configuration-driven x402 validation service; G0.1 | Unpaid bounded challenge inspection and adversarial transport tests. |
-| G0.3 | Builder authorization, EIP-712 and verifier security; G0.1-G0.2 | Authorization, replay, signer policy and isolation tests. |
-| G0.4 | Canonical non-upgradeable AgentDemand; G0.1 and G0.3 | Attestation, nonce/replay, verifier authority and escrow regression tests. |
-| G0.5 | Canonical AgentDemand frontend/backend, indexer and deployment-tool integration; G0.2-G0.4 | Canonical ABI, attestation submission, multi-deployment identity and recovery tests. |
-| G0.6 | Full Gate 0 E2E, adversarial and release readiness; all prior G0 gates | Independent target-host, signer and end-to-end evidence. |
-| G1 | Machine-readable RFQ; G0.6 | Section 7 acceptance. |
-| G2 | Fulfilled service registry; G1 and canonical fulfillment | Section 8 acceptance. |
-| G3 | x402 service discovery; G2 and G0 validator | Section 9 acceptance. External publication is builder-owned. |
-| G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
-| G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
+| Gate | Status | Scope and dependency | Acceptance |
+| --- | --- | --- | --- |
+| G0.1 | IMPLEMENTED — source/integration | Architecture, policy schemas, threat model, vectors and impact map; owner approval | Review schemas, vectors and transport evidence in Sections 3-6. |
+| G0.2 | IMPLEMENTED — source/integration | Configuration-driven x402 validation service; G0.1 | Unpaid bounded challenge inspection and adversarial transport tests. |
+| G0.3 | IMPLEMENTED — source/integration | Builder authorization, EIP-712 and verifier security; G0.1-G0.2 | Authorization, replay, signer policy and isolation tests. |
+| G0.4 | IMPLEMENTED — source/integration | Canonical non-upgradeable AgentDemand; G0.1 and G0.3 | Attestation, nonce/replay, verifier authority and escrow regression tests. |
+| G0.5 | IMPLEMENTED — source/integration | Canonical AgentDemand frontend/backend, indexer and deployment-tool integration; G0.2-G0.4 | Canonical ABI, attestation submission, multi-deployment identity and recovery tests. |
+| G0.6 | RELEASE ACCEPTANCE GATE | Full Gate 0 E2E, adversarial and release readiness; all prior G0 gates | Independent target-host, signer and end-to-end evidence per release. |
+| G1 | IMPLEMENTED — minimal RFQ v1 | Machine-readable RFQ in `shared/rfq.ts` and unsigned preparation in `backend/demand-prepare.ts` | Section 7 acceptance. |
+| G2 | IMPLEMENTED | Fulfilled service registry; G1 and canonical fulfillment | Section 8 acceptance. |
+| G3 | IMPLEMENTED — core discovery | x402 service discovery; G2 and G0 validator | Section 9 acceptance. External publication is builder-owned. |
+| G4 | IMPLEMENTED — owner-approved reduced scope | Demand Intelligence expansion; G1-G3 | Section 10 describes shipped and deferred scope. |
+| G5 | DEFERRED — DEMAND-DRIVEN | Automatic capability resolver; G1, G3 and G4 | Section 11 is future design. |
+
+Implemented source/integration indicates code and tests exist, not blanket production acceptance. G0.6 is evaluated independently for each release.
 
 The local G0.3 source implements builder authorization and a separate authenticated attestation signer. G0.4 implements onchain attestation consumption and monotonic nonce replay prevention in the canonical AgentDemand escrow. G0.5 integrates these canonical consumers; local signer, consumer and contract tests do not establish target-host isolation or G0.6 readiness.
 
@@ -2140,18 +2144,20 @@ Deliver:
 
 ### Phase 4
 
-Deliver:
+Shipped reduced scope:
 
 - historical funding analytics
 - submission and fulfillment history
-- evidence-classified usage
 - deterministic indexing
 - reorg-aware metrics
+- current G2/G3 snapshot metrics
+
+Deferred: usage evidence producers and service-payment or execution attribution.
 
 
 ### Phase 5
 
-Deliver:
+Deferred, demand-driven design:
 
 - capability matching
 - compatible service search
@@ -2330,6 +2336,8 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 
 ## 18. DEFINITION OF DONE
 
+These full-roadmap goals include future work and are not prerequisites for the implemented G2-G4 scope. Gate 0 release acceptance remains release-specific.
+
 ### Gate 0 Is Complete When:
 
 1. Builders can submit through the frontend
@@ -2387,7 +2395,7 @@ Do not turn UNMET into a generic API marketplace without funded demand provenanc
 
 3. Fulfilled services preserve onchain provenance.
 
-4. Future provider metadata, if added, requires authenticated updates.
+4. G3 provider metadata uses authenticated updates.
 
 5. Agents can discover compatible services.
 
@@ -2432,6 +2440,8 @@ Financial invariants and transaction outcomes require independent verification.
 
 
 ## 20. FINAL PRODUCT POSITIONING
+
+The full loop below is an extended future vision, not a prerequisite for current G2-G4 completeness; usage evidence producers remain unsupported.
 
 ### Short Description
 
@@ -2542,7 +2552,7 @@ https://www.rfc-editor.org/rfc/rfc8785
 
 Documentation ownership is explicit:
 
-1. Label this [Future Implementation](FUTURE_IMPLEMENTATION.md) document as the exclusive owner of proposed implementation plans.
+1. Label this [Future Implementation](FUTURE_IMPLEMENTATION.md) document as the exclusive owner of proposed implementation plans and the record of per-phase roadmap status. Roadmap status is not acceptance evidence.
 
 2. Keep future features separate from the current product. [PRD.md](PRD.md) owns current Post-Hackathon requirements and may link here for navigation only; do not duplicate proposed plans. [STATUS.md](STATUS.md) and dated records own implementation and acceptance evidence.
 
@@ -2578,6 +2588,6 @@ Documentation ownership is explicit:
 
 UNMET — Future Implementation Roadmap v2.0
 
-Status: PROPOSED
+Status: Mixed implementation and proposals; see the [gate status table](#14-implementation-order).
 
 This roadmap does not authorize deployment, production transactions, or fund migration.

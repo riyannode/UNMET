@@ -36,11 +36,11 @@
 <p>Browse <a href="/market">Market</a> for requirements you can meet. Compare current escrow, specifications, maximum unit price, expected calls, and deadline. Paid <a href="/docs/api/intelligence/">Demand Intelligence</a> can help compare opportunities.</p>
 <p>Escrow is not guaranteed earnings. Expected calls are a demand signal, not an order for future usage.</p>
 <h2 id="build-and-propose">Build and propose</h2>
-<ol><li>Choose an open demand before its deadline.</li><li>Build and host a service that meets the request.</li><li>Connect the wallet that should be recorded as the builder.</li><li>Open <strong>Builder Proposal</strong>, provide the HTTPS service URL and evidence, and select <strong>Submit Service Proposal</strong>.</li></ol>
-<p>The current flow does not require prior builder registration. Automatic x402 validation and signed attestations are <a href="/docs/roadmap/#automatic-validation">proposed</a>, not part of current proposal acceptance.</p>
+<ol><li>Choose an open demand before its deadline.</li><li>Build and host a service that meets the request.</li><li>Connect the builder wallet.</li><li>Provide the service URL, evidence, receiver, network and request details. Sign builder authorization for unpaid validation; the frontend verifies the signed PASS before requesting separate wallet approval of the attestation-gated proposal transaction.</li></ol>
+<p>Prior builder registration is not required. After fulfillment, signed discovery metadata can be published programmatically; see <a href="/docs/api/#service-discovery">service discovery</a>.</p>
 <h2 id="review-and-payment">Review and payment</h2>
 <p>Supporters approve or reject your proposal. Reaching quorum allows finalization; it does not automatically transfer funds. The builder receives only explicitly approved funds less the configured protocol fee.</p>
-<p>A demand contribution does not prepay service calls. Any later provider usage is a separate arrangement. UNMET does not currently provide a fulfilled-service registry or capability resolver.</p>
+<p>A demand contribution does not prepay service calls. Any later provider usage is a separate arrangement. The <a href="/services">Services directory</a> lists fulfilled services; the capability resolver is deferred.</p>
 <p>Read <a href="/docs/demand-market/proposals/">proposal requirements</a> and <a href="/docs/demand-market/review/">review and fulfillment</a>.</p>
           </article>
           <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>

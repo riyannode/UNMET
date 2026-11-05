@@ -227,7 +227,7 @@ describe("Vite documentation MPA", () => {
     }
   });
 
-  test("keeps consumer API constraints and future status visible", async () => {
+  test("keeps consumer API constraints and phase status visible", async () => {
     const api = await readFile(path.join(directory, "docs/api/intelligence/index.html"), "utf8");
     const schema = JSON.parse(await readFile(path.join(directory, "openapi.json"), "utf8"));
     for (const name of ["DemandsResponse", "InsightsResponse"]) {
@@ -244,14 +244,20 @@ describe("Vite documentation MPA", () => {
     for (const sort of schema.components.schemas.InsightsQuery.properties.sort.enum) expect(api).toContain(sort);
     for (const value of ["32 KiB", "4,294,967,295", "1 to 50", "scoreBreakdown", "economicSignals", "reasoning"]) expect(api).toContain(value);
     const roadmap = await readFile(path.join(directory, "docs/roadmap/index.html"), "utf8");
-    expect(roadmap).toContain('<h2 id="rfq">Machine-readable RFQ</h2>\n<p class="docs-status">MINIMAL RFQ V1</p>');
     expect(schema.paths["/v1/demands/prepare"].post.operationId).toBe("prepareDemand");
     expect(schema.components.schemas.DemandsResponse.properties.demands.items.$ref).toBe("#/components/schemas/PublicDemand");
-    expect(roadmap).toContain('<h2 id="service-registry">Service Registry</h2>\n<p class="docs-status">MINIMAL G2</p>');
-    expect(roadmap).toContain('<h2 id="service-discovery">x402 Service Discovery</h2>\n<p class="docs-status">G3 DISCOVERY</p>');
-    for (const id of ["automatic-validation", "intelligence-expansion", "capability-resolver"]) {
-      expect(roadmap).toMatch(new RegExp('id="' + id + '">[^<]+</h2>\\s*<p class="docs-status">PROPOSED — NOT IMPLEMENTED</p>'));
+    expect(schema.paths["/v1/services"].get.responses["400"].content["application/json"].schema.$ref).toBe("#/components/schemas/ErrorResponse");
+    const phase = (id: string) => roadmap.match(new RegExp('<h2 id="' + id + '">[\\s\\S]*?(?=<h2|</article>)'))?.[0] ?? "";
+    for (const id of ["automatic-validation", "rfq", "service-registry", "service-discovery", "intelligence-expansion"]) {
+      expect(phase(id)).toMatch(/IMPLEMENTED/);
+      expect(phase(id)).not.toContain("PROPOSED — NOT IMPLEMENTED");
     }
+    expect(phase("automatic-validation")).toMatch(/source\/integration/i);
+    expect(phase("automatic-validation")).toContain("G0.6");
+    expect(phase("intelligence-expansion")).toMatch(/reduced scope/i);
+    expect(phase("intelligence-expansion")).toMatch(/unsupported/i);
+    expect(phase("capability-resolver")).toContain("DEFERRED — DEMAND-DRIVEN");
+    expect(phase("capability-resolver")).toContain("NOT IMPLEMENTED");
     const payments = await readFile(path.join(directory, "docs/api/payments/index.html"), "utf8");
     for (const value of ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE", "1952", "196", "L1 finality"]) expect(payments).toContain(value);
     expect(payments).toContain("x-payment-info");
@@ -260,6 +266,32 @@ describe("Vite documentation MPA", () => {
     const recovery = await readFile(path.join(directory, "docs/api/errors/index.html"), "utf8");
     expect(recovery).toContain("There is no public UNMET recovery endpoint");
     expect(recovery).toContain("Do not create a fresh authorization");
+  });
+
+  test("documents current preparation, guarded proposals and cached discovery", async () => {
+    const article = (file: string) => readFile(path.join(directory, "docs", file, "index.html"), "utf8");
+    const agents = await article("getting-started/agents");
+    expect(agents).toContain("POST /v1/demands/prepare");
+    expect(agents).toMatch(/unsigned/i);
+    expect(agents).not.toContain("There is no current HTTP RFQ preparation endpoint");
+    const builders = await article("getting-started/builders");
+    expect(builders).not.toContain("does not currently provide a fulfilled-service registry");
+    for (const html of [builders, await article("demand-market/proposals")]) {
+      expect(html).toContain("PASS");
+      expect(html).toMatch(/attestation/i);
+      expect(html).not.toMatch(/validation[^<.]*is proposed/i);
+    }
+    const api = await article("api");
+    expect(api).toContain("POST /v1/x402/validate");
+    expect(api).toContain("PUT /v1/services/:chainId/:contract/:demandId/discovery");
+    for (const filter of ["capability", "network", "asset", "maxPrice", "state"]) expect(api).toContain(`<code>${filter}</code>`);
+    const discovery = api.match(/<h2 id="service-discovery">[\s\S]*?(?=<h2|<\/article>)/)?.[0] ?? "";
+    for (const state of ["pending", "metadata_invalid", "compatible", "incompatible", "unavailable", "stale"]) expect(discovery).toMatch(new RegExp("\\b" + state + "\\b"));
+    expect(api).toMatch(/activity.storage/i);
+    const intelligence = await article("api/intelligence");
+    for (const field of ["blockHash", "marketActivity", "usageEvidence"]) expect(intelligence).toContain(`<code>${field}</code>`);
+    expect(intelligence).toMatch(/unsupported/i);
+    expect(intelligence).toMatch(/finality/i);
   });
 
 });

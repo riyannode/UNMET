@@ -5,7 +5,7 @@ Coding agents start with [AGENTS](../AGENTS.md). Repository setup and validation
 ## Current reference
 
 - [Product requirements](PRD.md): current Post-Hackathon product.
-- [Future Implementation](FUTURE_IMPLEMENTATION.md): proposed roadmap; not current implementation evidence.
+- [Future Implementation](FUTURE_IMPLEMENTATION.md): proposed plans and per-phase roadmap status; not acceptance evidence.
 - [Architecture](ARCHITECTURE.md): chain authority, index, two network contexts and deployment paths.
 - [API](API.md): public/paid routes, schemas and response behavior.
 - [Frontend product](PRODUCT.md) and [design conventions](DESIGN.md).
@@ -23,7 +23,7 @@ Coding agents start with [AGENTS](../AGENTS.md). Repository setup and validation
 
 These reports describe their recorded commits/dates, not guaranteed current endpoints or latest-release acceptance.
 
-The supported public site is [unmetxyz.my.id](https://unmetxyz.my.id). Older deployment checks are historical and do not establish current availability; use the self-hosting instructions for the supported deployment path.
+The reference public origin is [unmetxyz.my.id](https://unmetxyz.my.id). Older deployment checks are historical and do not establish current availability; use the self-hosting instructions for the supported deployment path.
 
 - [Status](STATUS.md): September hackathon/deployment receipts and verification gaps; dated implementation snapshot is separate at the top.
 - [Self-hosting validation](SELF_HOSTING_VALIDATION.md): PR #13 local build/container and trust/admission evidence.
