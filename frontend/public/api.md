@@ -49,4 +49,6 @@ The `200` response includes chain metadata, paid `analysis` metadata, and ranked
 
 `GET /v1/services` returns up to 50 fulfilled demands as services, ordered by descending numeric demand ID. `GET /v1/services/:id` reads any fulfilled demand in the index. The ID is a canonical positive decimal uint256; invalid IDs return 400, missing or nonfulfilled demands return 404, and unavailable index or chain returns 503. Both routes are free.
 
-Each response includes chain ID, contract, snapshot block number and hash, and generation time. Each service contains demandId, capability, raw specification, builder, original serviceUrl and evidenceHash. Snapshot hash and generation time are not fulfillment block or time. A listing does not assert current provider availability or compatibility.
+Each response includes chain ID, contract, snapshot block number and hash, and generation time. Each service contains demandId, capability, raw specification, builder, original serviceUrl and evidenceHash, plus discovery metadata and cached observation state. Snapshot hash and generation time are not fulfillment block or time. An observation is an unpaid challenge check, not proof of paid execution or guaranteed availability. List filters include capability, state, network, asset and exact maximum price; see [API reference](/docs/api/) for their requirements.
+
+Builders can publish signed metadata using `PUT /v1/services/:chainId/:contract/:demandId/discovery`. See [OpenAPI](/openapi.json) for the request schema and full identity binding.

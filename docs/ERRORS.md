@@ -1,5 +1,21 @@
 # Errors
 
+## Service discovery
+
+| Code | Meaning |
+| --- | --- |
+| `DISCOVERY_INVALID_METADATA` | Metadata is malformed, outside its bounds, or fails its schema. |
+| `DISCOVERY_IDENTITY_MISMATCH` | Route, signed identity and configured deployment do not match. |
+| `DISCOVERY_BINDING_MISMATCH` | Signed builder, URL or evidence does not match canonical service state. |
+| `DISCOVERY_INVALID_SIGNATURE` | The builder signature is invalid. |
+| `DISCOVERY_REVISION_CONFLICT` | A lower revision or a different payload at the same revision was submitted. |
+| `DISCOVERY_INVALID_FILTER` | A discovery filter is invalid or a price filter lacks exact identity. |
+| `DISCOVERY_UNAVAILABLE` | Discovery storage, observer or a required dependency is unavailable. |
+| `CANONICAL_INACTIVE` | The cached metadata no longer matches an active canonical service. |
+| `CANONICAL_UNAVAILABLE` | Canonical state could not be checked for the observation. |
+| `CANONICAL_CHANGED` | The service index generation changed while an observation was in flight. |
+| `OBSERVER_UNAVAILABLE`, `INVALID_OBSERVER_RESPONSE` | The private observer could not be reached or returned an invalid response. |
+
 Canonical recovery reference for API, durable payment, wallet and contract errors. See [API](API.md) for response shapes and [payment recovery](PAYMENT_RECOVERY.md) for operator procedures.
 
 ## Backend / frontend

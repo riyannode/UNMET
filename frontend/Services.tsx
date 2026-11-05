@@ -7,22 +7,24 @@ import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./components/ui/empty.tsx";
 import { Separator } from "./components/ui/separator.tsx";
-import { CHAIN_ID, DEMAND_CONTRACT } from "./contract.ts";
+import { CHAIN_ID, DEMAND_CONTRACT, targetChain } from "./contract.ts";
 import { parseDemandId, parseDemandRoute, ROUTES, serviceHref } from "./routing.ts";
 import { specificationDescription } from "../shared/rfq.ts";
 import UnmetNavigation from "./UnmetNavigation.tsx";
 import UnmetFooter from "./UnmetFooter.tsx";
 import "./unmet-landing.css";
 import "./services.css";
+import { isDiscoveryView, type DiscoveryView } from "../shared/discovery-types.ts";
 
-type Service = { demandId: string; capability: string; specification: string; builder: string; serviceUrl: string; evidenceHash: string };
+type Service = { demandId: string; capability: string; specification: string; builder: string; serviceUrl: string; evidenceHash: string; discovery?: DiscoveryView };
 type Result = { state: "loading" | "error" | "notfound" } | { state: "ready"; services: Service[] };
 
 function isService(value: unknown): value is Service {
   if (typeof value !== "object" || value === null) return false;
   const row = value as Record<string, unknown>;
   return typeof row.demandId === "string" && parseDemandId(row.demandId) !== null &&
-    [row.capability, row.specification, row.builder, row.serviceUrl, row.evidenceHash].every((field) => typeof field === "string");
+    [row.capability, row.specification, row.builder, row.serviceUrl, row.evidenceHash].every((field) => typeof field === "string") &&
+    (row.discovery === undefined || isDiscoveryView(row.discovery));
 }
 
 export function safeServiceUrl(value: string): string | null {
@@ -79,9 +81,10 @@ export default function Services({ detail = false }: { detail?: boolean }) {
           <dt>Builder</dt><dd>{service.builder}</dd>
         </dl></section>
         <section><h2>Provenance</h2><Separator className="services-separator" /><dl>
-          <dt>Demand ID</dt><dd>{service.demandId}</dd><dt>Chain</dt><dd>{CHAIN_ID === 1952 ? "X Layer · 1952" : CHAIN_ID}</dd>
+          <dt>Demand ID</dt><dd>{service.demandId}</dd><dt>Chain</dt><dd>{targetChain.name} · {CHAIN_ID}</dd>
           <dt>AgentDemand contract</dt><dd>{DEMAND_CONTRACT}</dd><dt>Evidence hash</dt><dd>{service.evidenceHash}</dd>
         </dl></section>
+        <section><h2>Discovery</h2><Separator className="services-separator" /><DiscoveryDetails discovery={service.discovery} /></section>
       </article>}
     </> : <>
       <header className="services-header"><h1>Services</h1><p>Services created from fulfilled UNMET demands.</p></header>
@@ -113,7 +116,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
                     <div className="service-card-header"><Box className="service-glyph" size={20} aria-hidden="true" /><h2 id={`service-title-${item.demandId}`}>{item.capability}</h2></div>
                     <p className="service-card-description">{specificationDescription(item.specification)}</p>
                     <Separator className="services-separator" />
-                    <div className="service-card-meta"><span>Demand #{item.demandId}</span><span>Fulfilled</span></div>
+                    <div className="service-card-meta"><span>Demand #{item.demandId}</span><span>{item.discovery?.state || "pending"}</span></div>
                   </article></Card>
                 </Link>
               </li>)}
@@ -123,4 +126,13 @@ export default function Services({ detail = false }: { detail?: boolean }) {
       </div>
     </>}
   </main></div><UnmetFooter /></>;
+}
+
+function DiscoveryDetails({ discovery }: { discovery?: DiscoveryView }) {
+  if (!discovery) return <p>Discovery metadata unavailable.</p>;
+  return <><dl><dt>Metadata</dt><dd>{discovery.metadataState}</dd><dt>Observation</dt><dd>{discovery.state}</dd><dt>Observed at</dt><dd>{discovery.observedAt || "Not yet observed"}</dd></dl>
+    {discovery.offers.length > 0 && <><h3>{discovery.state === "compatible" ? "Current payment offers" : "Last observed payment offers"}</h3><ul>{discovery.offers.map((offer, index) => <li key={`${offer.network}:${offer.asset}:${offer.payTo}:${index}`}><dl>
+      <dt>Network</dt><dd>{offer.network}</dd><dt>Asset</dt><dd>{offer.asset}</dd><dt>Amount (atomic units)</dt><dd>{offer.amount}</dd><dt>Receiver</dt><dd>{offer.payTo}</dd><dt>Scheme</dt><dd>{offer.scheme}</dd><dt>Transfer method</dt><dd>{offer.transferMethod}</dd><dt>Payment flow</dt><dd>{offer.paymentFlow}</dd><dt>Within originating maximum</dt><dd>{offer.withinOriginatingMaxPrice === null ? "Not comparable" : offer.withinOriginatingMaxPrice ? "Yes" : "No"}</dd>
+    </dl></li>)}</ul></>}
+  </>;
 }

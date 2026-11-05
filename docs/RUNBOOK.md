@@ -1,10 +1,10 @@
 # Production runbook
 
-For the four-service Gate-0 runtime, use the canonical [validation overlay procedure](SELF_HOSTING.md#gate-0-validator-and-signer). Use the same overlay/images for local and later VPS deployments, with reviewed host-specific configuration. Do not enable frontend validation until validator and signer readiness and the exact deployment/policy bindings pass independent checks.
+For the validation and discovery runtime, use the canonical [validation overlay procedure](SELF_HOSTING.md#gate-0-validator-and-signer). Use the same overlay/images for local and later VPS deployments, with reviewed host-specific configuration. Do not enable frontend validation until validator and signer readiness and the exact deployment/policy bindings pass independent checks.
 
 For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands` to describe the configured deployment. POST `{}` as JSON to `/v1/x402/validate` must return `400 INVALID_REQUEST`; unsupported deployment/network requests must fail closed. Probe the signer through its authenticated Unix socket without issuing a synthetic attestation for a live demand. Unpaid `/v1/opportunities` smoke must return 402 without payment proof. Wallet protocol actions are separate owner tests.
 
-Use both `compose.yaml` and `compose.validation.yaml` for every Gate-0 build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the exact [four-service lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web and validator together so validator joins the current web network namespace.
+Use both `compose.yaml` and `compose.validation.yaml` for every build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the [lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web, validator and observer together so both join the current web network namespace.
 
 On the reviewed VPS, [persistent host egress](SELF_HOSTING.md#persistent-egress-on-the-reviewed-vps) is loaded by the existing UFW hook. Check UFW status and `sudo nft list table bridge unmet_egress` before/after deployment, then verify required traffic and deny counters. Keep both pinned web addresses and exact internal exceptions. Do not manually reapply a namespace policy after normal recreation or reboot; retain the namespace fallback only in the reviewed emergency rollback.
 

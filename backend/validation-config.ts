@@ -30,6 +30,8 @@ export interface Deployment {
   paymentProfiles: (PaymentProfile & { paymentRpcUrl: string })[];
 }
 export interface ValidationConfig { maxInFlight: number; managementAddresses: string[]; deployments: Deployment[]; signerSocketPath: string; signerAuthTokenPath: string }
+export type ObserverDeployment = Omit<Deployment, "verifier">;
+export interface ObserverPolicyConfig { managementAddresses: string[]; deployments: ObserverDeployment[] }
 
 const ajv = new Ajv2020();
 const validatePolicy = ajv.compile<PolicyEnvelope>(schema);
@@ -51,6 +53,18 @@ const configSchema = {
   },
 };
 const validateConfig = ajv.compile<ValidationConfig>(configSchema);
+const observerSchema = {
+  type: "object", additionalProperties: false, required: ["managementAddresses", "deployments"],
+  properties: {
+    managementAddresses: configSchema.properties.managementAddresses,
+    deployments: { ...configSchema.properties.deployments, items: {
+      ...configSchema.properties.deployments.items,
+      required: ["escrowChainId", "escrowContract", "escrowRpcUrl", "demandPriceAsset", "paymentProfiles"],
+      properties: Object.fromEntries(Object.entries(configSchema.properties.deployments.items.properties).filter(([key]) => key !== "verifier")),
+    } },
+  },
+};
+const validateObserverConfig = ajv.compile<ObserverPolicyConfig>(observerSchema);
 function invalid(): never { throw new ValidationError("FAIL", "INVALID_CONFIG"); }
 function sorted(values: string[]): boolean { return values.every((value, i) => i === 0 || values[i - 1] < value); }
 function validUrl(value: string): boolean {
@@ -78,13 +92,10 @@ function validateEnvelope(policy: PolicyEnvelope): void {
     }
   }
 }
-export function parseValidationConfig(raw: Uint8Array): ValidationConfig {
-  const config = parseStrictJSON(raw, 12);
-  if (!validateConfig(config)) invalid();
+function validateDeployments(config: { managementAddresses: string[]; deployments: ObserverDeployment[] }): void {
   if (config.managementAddresses.some(address => !isIP(address))) invalid();
   const deployments = new Set<string>();
   for (const deployment of config.deployments) {
-    if (deployment.verifier.length !== 42 || !/^0x[0-9a-f]{40}$/.test(deployment.verifier) || deployment.verifier === `0x${"0".repeat(40)}`) invalid();
     if (!validUrl(deployment.escrowRpcUrl)) invalid();
     const key = `${deployment.escrowChainId}:${deployment.escrowContract}`;
     if (deployments.has(key)) invalid();
@@ -99,6 +110,17 @@ export function parseValidationConfig(raw: Uint8Array): ValidationConfig {
       networks.add(profile.network);
     }
   }
+}
+export function parseValidationConfig(raw: Uint8Array): ValidationConfig {
+  const config = parseStrictJSON(raw, 12);
+  if (!validateConfig(config)) invalid();
+  validateDeployments(config);
+  return config;
+}
+export function parseObserverPolicyConfig(raw: Uint8Array): ObserverPolicyConfig {
+  const config = parseStrictJSON(raw, 12);
+  if (!validateObserverConfig(config)) invalid();
+  validateDeployments(config);
   return config;
 }
 export function resolvePolicy(config: ValidationConfig, chainId: string, contract: string, network: string): { policy: PolicyEnvelope; escrowRpcUrl: string; paymentRpcUrl: string; verifier:string } | undefined {

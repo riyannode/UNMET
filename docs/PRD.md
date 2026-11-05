@@ -178,7 +178,7 @@ Routes:
 - `GET /health` free dependency health check
 - `GET /ready` public payment readiness plus health check
 - `GET /v1/demands` free chain-derived board with raw specification preserved
-- `GET /v1/services` and `GET /v1/services/:id` free fulfilled-demand service reads from the canonical index; `/services` provides a public directory without provider probing
+- `GET /v1/services` and `GET /v1/services/:id` free fulfilled-demand service reads from the canonical index; `/services` displays builder-signed metadata and cached unpaid x402 observations. Provider probing occurs in the isolated observer, not in GET requests.
 - `POST /v1/demands/prepare` free unsigned creation intent; structured v1 description and existing onchain economic arguments
 - `POST /v1/opportunities` paid OKX.AI/A2MCP route
 

@@ -22,7 +22,7 @@
 .service-card-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; margin: 12px 0 22px; color: var(--unmet-theme-muted); font-size: calc(0.875rem + 4px); line-height: 1.55; }
 .service-card article > .services-separator { margin-top: auto; }
 .services-separator { height: 1px; width: 100%; background: var(--unmet-theme-border); }
-.service-card-meta { display: flex; justify-content: space-between; gap: 12px; padding-top: 14px; color: var(--unmet-theme-muted); font-size: calc(0.75rem + 4px); }
+.service-card-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 14px; color: var(--unmet-theme-muted); font-size: calc(0.75rem + 4px); }
 .services-empty { min-height: 210px; border: 1px dashed var(--unmet-theme-border); color: var(--unmet-theme-text); }
 .services-empty [data-slot="empty-description"] { color: var(--unmet-theme-muted); }
 .services-empty [data-slot="empty-title"], .services-empty [data-slot="empty-description"] { font-size: calc(0.875rem + 4px); }

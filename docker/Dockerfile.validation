@@ -11,8 +11,9 @@ ENV NODE_ENV=production
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/backend/node_modules ./backend/node_modules
 COPY backend/package.json backend/validation-service.ts backend/validation-signer.ts backend/validation-config.ts backend/validation-transport.ts backend/validation-evaluator.ts backend/validation-crypto.ts backend/validation-codec.ts ./backend/
-COPY shared/validation-types.ts ./shared/validation-types.ts
-COPY docs/schemas/validation-policy.json docs/schemas/validation-request.json docs/schemas/validation-response.json ./docs/schemas/
-RUN mkdir -p /run/unmet-signer && chown 1000:1000 /run/unmet-signer && chmod 2770 /run/unmet-signer
+COPY backend/discovery-config.ts backend/discovery-metadata.ts backend/discovery-evaluator.ts backend/discovery-observer.ts ./backend/
+COPY shared ./shared
+COPY docs/schemas/validation-policy.json docs/schemas/validation-request.json docs/schemas/validation-response.json docs/schemas/discovery-metadata.json ./docs/schemas/
+RUN mkdir -p /run/unmet-signer /run/unmet-discovery && chown 1000:1000 /run/unmet-signer && chmod 2770 /run/unmet-signer && chown 10001:1000 /run/unmet-discovery && chmod 2770 /run/unmet-discovery
 USER 10001:1000
 CMD ["bun", "run", "backend/validation-service.ts"]

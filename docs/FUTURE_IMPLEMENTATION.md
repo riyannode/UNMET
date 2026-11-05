@@ -1,5 +1,7 @@
 # UNMET Future Implementation Roadmap
 
+G3 core discovery covers builder-authenticated metadata, cached x402 observations, filtering and the Services UI. External marketplace publication is outside UNMET core and remains the individual builder's responsibility. G3 does not execute paid service calls, provide multi-endpoint services or aggregate multiple chains.
+
 Demand-to-Supply Protocol
 
 Version: V2.0
@@ -1618,7 +1620,7 @@ G2 minimally implements a public Services directory and free read-only API from 
 
 `GET /v1/services` returns up to 50 fulfilled services ordered by descending demand ID. `GET /v1/services/:id` looks up the complete index. Both expose the original capability, raw specification, builder, submitted service URL and opaque evidence hash, alongside the snapshot block number and hash and response generation time. The snapshot is not a fulfillment receipt or timestamp. The public `/services` and `/services/:chainId/:contract/:demandId` pages present these records without fetching the provider.
 
-G3 covers current observations, compatibility and external distribution. Mutable provider metadata, publication states, availability, technical verification, provider schemas and their storage or authentication are not G2 requirements.
+G3 adds authenticated metadata and current observations. External distribution is outside UNMET core and belongs to builders.
 
 
 ## 9. PHASE 3 — x402 SERVICE DISCOVERY
@@ -1673,7 +1675,7 @@ Discovery must report current observations and their timestamps.
 
 ### 9.3 Discovery API
 
-The filters and observations below are proposed G3 behavior. The implemented G2 routes have no query filters.
+The G3 routes retain the G2 paths and add cached observations and structured filters.
 
 GET /v1/services
 
@@ -1683,8 +1685,6 @@ Optional filters:
 - payment network
 - asset
 - maximum price
-- input format
-- output format
 - availability
 - verification level
 
@@ -1723,15 +1723,7 @@ Do not blindly retry unknown payments.
 
 ### 9.5 External Distribution
 
-OKX.AI HTTP A2MCP is the initial external distribution integration for suitable fulfilled APIs. Publication is optional and non-canonical. The provider supplies service name, description including returned results, GET/POST method, input parameter names/types/meaning/required status, and the public endpoint. Price and payment requirements come from the endpoint's actual x402 behavior, not a replacement listing price declared by UNMET.
-
-Initial OKX.AI distribution does not assume a public programmatic listing API. Publication must use the currently supported OKX registration flow unless a programmatic interface is separately verified and approved.
-
-Gate 0 compatibility does not imply OKX registration approval or successful paid execution. Registration, publication, and paid acceptance require their own approval and evidence; Gate 0 does not perform them.
-
-The G2 Service Registry preserves canonical demand-to-service references; provider metadata is outside its implemented scope. Direct x402 consumption remains supported, and other compatible marketplaces or discovery protocols may be added through separately reviewed integrations. A distribution channel does not require AgentDemand to fetch its APIs or change its payment policy.
-
-External listing is not fulfillment evidence. Listing failure, delisting, and marketplace outages cannot modify historical provenance or block demand creation, funding, supporter voting, finalize(), reopen(), or refund(). UNMET does not add marketplace checkout, service-payment custody, or a generalized payment router for this integration. Future API consumption remains a separate direct x402 payment to the provider's authorized receiver.
+External publication is outside UNMET core and is the builder's responsibility. Listing status is not fulfillment evidence and cannot alter canonical chain state. UNMET does not publish listings, perform marketplace checkout, or custody service payments.
 
 
 ## 10. PHASE 4 — DEMAND INTELLIGENCE EXPANSION
@@ -2104,7 +2096,7 @@ Execution is serial: one gate, branch and Draft PR at a time, with owner review 
 | G0.6 | Full Gate 0 E2E, adversarial and release readiness; all prior G0 gates | Independent target-host, signer and end-to-end evidence. |
 | G1 | Machine-readable RFQ; G0.6 | Section 7 acceptance. |
 | G2 | Fulfilled service registry; G1 and canonical fulfillment | Section 8 acceptance. |
-| G3 | x402 service discovery and optional A2MCP distribution; G2 and G0 validator | Section 9 acceptance. |
+| G3 | x402 service discovery; G2 and G0 validator | Section 9 acceptance. External publication is builder-owned. |
 | G4 | Demand Intelligence expansion; G1-G3 | Section 10 acceptance. |
 | G5 | Automatic capability resolver; G1, G3 and G4 | Section 11 acceptance. |
 
@@ -2143,7 +2135,7 @@ Deliver:
 - current x402 compatibility checks
 - direct provider payment metadata
 - agent purchase safety
-- optional OKX.AI HTTP A2MCP distribution with canonical escrow independence
+- builder-owned external distribution remains outside UNMET core
 
 
 ### Phase 4

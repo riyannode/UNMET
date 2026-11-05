@@ -7,6 +7,8 @@ services:
       dockerfile: docker/Dockerfile.api
     environment:
       PAYMENT_DB_PATH: /data/payments.sqlite
+      DISCOVERY_DB_PATH: /data/discovery.sqlite
+      DISCOVERY_CONFIG_PATH: ${DISCOVERY_CONFIG_PATH:-}
       PAYMENT_RETENTION_DAYS: ${PAYMENT_RETENTION_DAYS:-30}
       PAYMENT_MAX_RECORDS: ${PAYMENT_MAX_RECORDS:-100000}
       NODE_ENV: production

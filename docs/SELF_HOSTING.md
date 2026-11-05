@@ -2,7 +2,19 @@
 
 ## Gate-0 validator and signer
 
-The opt-in `compose.validation.yaml` overlay extends the same API/web images with one reusable validation image, run as two separate services. Use this topology locally and on a later approved VPS; target-host security still needs independent validation.
+The validation overlay also starts a discovery observer in the web network namespace. It has no signer socket, signer credentials, payment database or OKX credentials. The API and observer communicate through a dedicated Unix socket volume; only the observer accesses provider HTTPS targets using the Gate-0 transport. Recreate the observer together with web when replacing the shared network namespace. The observer requires `DISCOVERY_POLICY_FILE`, a read-only JSON file with `managementAddresses` and `deployments` using the validation deployment policy fields except `verifier`; it does not require signer paths. Review the policy and RPC endpoints before use.
+
+The observer policy has the shape `{"managementAddresses":[],"deployments":[{"escrowChainId":"...","escrowContract":"...","escrowRpcUrl":"...","demandPriceAsset":{...},"paymentProfiles":[{...,"paymentRpcUrl":"..."}]}]}`. Populate it with reviewed policy values and RPC URLs; the ellipses are explanatory and are not valid JSON. Enabled profile assets are checked for chain, code and decimals on startup. The configured demand denomination must retain the historical meaning for that deployment.
+
+The API owns `/data/discovery.sqlite` separately from `/data/payments.sqlite` on the existing persistent volume. Preserve both databases and their WAL/SHM files through restart; use a SQLite-consistent backup. Discovery records are operational cache and never replace chain state or settlement records. The API runs as UID/GID 1000; observer runs as 10001:1000. The dedicated socket directory uses 10001:1000 mode 2770 and the socket mode 0660. Inspect existing volume ownership before deployment.
+
+Discovery timing defaults are a 30-second tick, five-minute refresh, fifteen-minute stale threshold, two concurrent probes and a ten-second provider timeout. The overlay mounts `DISCOVERY_CONFIG_FILE` read-only into both API and observer at `/run/config/discovery.json`; it defaults to the repository's empty `config/discovery.json`. Fields are `tickMs`, `refreshMs`, `staleMs`, `maxInFlight`, and `timeoutMs`; malformed, unknown, out-of-range or inconsistent settings fail startup. Without the observer socket, service reads retain canonical data and show pending/unavailable discovery. No provider calls occur on a service GET.
+
+All settings are integer values. Inclusive bounds are `tickMs` 1,000–3,600,000, `refreshMs` 1,000–86,400,000, `staleMs` 1,000–604,800,000, `maxInFlight` 1–16, and `timeoutMs` 1–10,000. The values must satisfy `tickMs <= refreshMs < staleMs`.
+
+The refresh interval makes a record eligible; it does not guarantee that every service is observed in each interval. Work is bounded per tick and ordered by oldest attempt, so a large registry or unavailable dependencies can cause observations to become stale. After restart, persisted records are eligible for bounded revalidation before being presented as current.
+
+The opt-in `compose.validation.yaml` overlay extends the API/web images with one reusable validation image, run as validator, signer and observer services. Use this topology locally and on a later approved VPS; target-host security still needs independent validation.
 
 ```bash
 UNMET_ENV_FILE=.env.gate0-local # Use the reviewed private environment file on each host.
@@ -14,15 +26,16 @@ docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validatio
 
 Set `IMAGE_TAG` to the reviewed source plus a packaging revision. Local-only port overrides can publish only `127.0.0.1:18080:8080`; the base configuration also maps its configured HTTPS port. Do not reuse unrelated Compose projects or volumes.
 
-For every four-service operation, retain both Compose files, the same project name, private environment file and any host-specific `-f` overrides. Follow [update, rollback and stop](#update-rollback-and-stop) for the complete lifecycle. Whenever web is replaced, validator must also be recreated: it shares web's network namespace. The four-service `up --force-recreate` procedure deliberately recreates all four containers, including that pair, while preserving named volumes.
+For every five-service operation, retain both Compose files, the same project name, private environment file and any host-specific `-f` overrides. Follow [update, rollback and stop](#update-rollback-and-stop) for the complete lifecycle. Whenever web is replaced, validator and observer must also be recreated because they share web's network namespace. The `up --force-recreate` procedure recreates all five containers while preserving named volumes.
 
-The four services have these boundaries:
+The five services have these boundaries:
 
 | Service | Network / ingress | Private storage |
 | --- | --- | --- |
 | web | Only published ingress; Caddy serves frontend and proxies normal API traffic | Existing Caddy data/config volumes |
 | api | Application bridge, no published port | Its own durable payment volume and read-only OKX credential file |
 | validator | `network_mode: service:web`; unchanged `127.0.0.1:3001` listener | Read-only validator configuration, auth token and signer socket volume; no key or payment database |
+| observer | `network_mode: service:web`; private Unix socket only | Read-only policy and settings, dedicated socket volume; no signer or payment storage |
 | signer | `network_mode: none`; authenticated Unix socket only | Read-only signer configuration, key and auth token; writable socket volume |
 
 Caddy routes exactly `/v1/x402/validate` to loopback only when the overlay sets `VALIDATION_UPSTREAM`. Without the overlay, that path retains the API upstream. Ordinary API routes still use `api:8787`. No internal service publishes a host port.
@@ -57,7 +70,7 @@ For a later VPS, retain these images and topology. Change domain/origin, TLS, se
 
 ### Persistent egress on the reviewed VPS
 
-[The repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) is installed as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`. It enforces the **shared web/validator boundary**, not a per-process boundary: both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
+[The repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) is installed as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`. It enforces the **shared web/validator/observer boundary**, not a per-process boundary: validator and observer both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
 
 The reviewed production topology pins IPv4 sources `172.30.80.2` and `172.18.0.3`. Exact TCP exceptions for API `172.30.80.3:8787` and HOROI `172.18.0.2:3000` precede private/reserved/metadata denies; `43.156.68.254` is denied as the VPS public management address. Ingress replies, related traffic and public TCP HTTPS/443 remain allowed. Validator loopback and Docker DNS remain local; API egress is outside this policy and signer retains `network_mode: none`. Both reviewed bridge interfaces have IPv6 disabled: this IPv4 policy does not establish IPv6 protection. Review any IP, topology, port, dependency or IPv6 change before applying it elsewhere.
 
@@ -94,7 +107,9 @@ sudo nft list tables
 sudo nft list table bridge unmet_egress
 ```
 
-Verify the checks below directly after reload, then after the [canonical four-service recreation](#update-rollback-and-stop), which recreates web and validator together using both Compose files. Do not manually reapply nft rules after recreation. On 2026-11-02, this reviewed host passed UFW reload, canonical web/validator recreation and reboot autoload through the existing UFW hook, with required paths and deny counters verified after each and no manual reapplication after recreation or reboot. Repeat this acceptance for future deployments; these results apply only to the tested host and topology.
+Verify the checks below directly after reload, then after the [five-service validation/discovery recreation](#update-rollback-and-stop), which recreates web, validator and observer together using both Compose files. Do not manually reapply nft rules after recreation.
+
+On 2026-11-02, this reviewed host passed UFW reload, canonical web/validator recreation and reboot autoload through the existing UFW hook, with required paths and deny counters verified after each and no manual reapplication after recreation or reboot. That historical acceptance covered web/validator only; it did not include observer. Repeat this acceptance for the current five-service topology on future deployments; the historical results apply only to the tested host and topology.
 
 The one-time migration from historical `unmet-g06.nft` / `bridge unmet_g06` must load and verify the canonical table before deleting the superseded owned table. Remove the old file only after required-path and deny probes succeed. Normal updates use only the canonical names.
 
@@ -122,7 +137,7 @@ Obtain your own OKX API key, secret, passphrase, API fee recipient address, RPC 
 
 ## Configure and start
 
-The following commands start the base API/web stack only. Gate-0 deployments must instead use the [four-service procedure](#gate-0-validator-and-signer), including its lifecycle commands.
+The following commands start the base API/web stack only. Validation/discovery deployments must instead use the [five-service procedure](#gate-0-validator-and-signer), including its lifecycle commands.
 
 ~~~bash
 git clone https://github.com/riyannode/UNMET.git
@@ -289,7 +304,7 @@ Local validation changes no DNS, production certificates or production configura
 
 Record the current commit/image tag before updating. Retain known-good images with an explicit tag and matching private configuration securely. Never commit .env.
 
-These commands manage the canonical four-service Gate-0 stack on local and VPS hosts. Set `UNMET_ENV_FILE` to that host's reviewed private environment file; retain the same project name and any extra host-specific Compose overrides on every command. Do not fall back to base Compose only. A base API/web installation without Gate-0 may omit the validation overlay; that is not the four-service lifecycle.
+These commands manage the five-service validation and discovery stack on local and VPS hosts. Set `UNMET_ENV_FILE` to that host's reviewed private environment file; retain the same project name and any extra host-specific Compose overrides on every command. Do not fall back to base Compose only. A base API/web installation without Gate-0 may omit the validation overlay.
 
 ~~~bash
 UNMET_ENV_FILE=.env.gate0-local
@@ -306,7 +321,7 @@ docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validatio
 
 After update or rollback, repeat the [health and unpaid verification](#health-smoke-checks-and-logs) against the actual configured origin. Use the automated smoke script only for a local HTTP origin with its configured port; use the manual curl checks for public HTTPS.
 
-Rollback: restore the previous reviewed four-service source/config combination and set IMAGE_TAG to its retained known-good tag. If the images are missing, rebuild that commit with the merged-file build command above. Then recreate all four services, including web and validator together:
+Rollback: restore the previous reviewed source/config combination and set IMAGE_TAG to its retained known-good tag. If the images are missing, rebuild that commit with the merged-file build command above. Recreate web, validator and observer together:
 
 ~~~bash
 docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml config --quiet
@@ -314,9 +329,9 @@ docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validatio
 docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml ps
 ~~~
 
-Never complete a web replacement without recreating validator, even when its image/configuration is unchanged. Otherwise it can retain the previous web network namespace and Caddy cannot reach its loopback listener. Public frontend settings must match the selected build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
+Never complete a web replacement without recreating validator and observer, even when their image/configuration is unchanged. Otherwise they can retain the previous web network namespace. Public frontend settings must match the selected build. The chain index rebuilds from the contract. Payment storage uses schema version 1; retain a schema-compatible image and the payment volume. Restoring an older snapshot can forget settled operations: follow [backup and rollback safety](PAYMENT_RECOVERY.md#backup-restore-and-rollback) before resuming paid traffic. Never roll back chain state.
 
-For a graceful stop, manage all four services with the same merged configuration:
+For a graceful stop, manage all five services with the same merged configuration:
 
 ~~~bash
 docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validation.yaml stop
