@@ -10,8 +10,9 @@ flowchart TD
     C -->|static files / SPA fallback| F[React / Vite build]
     C -->|API paths| B[Bun / Express API]
     B -->|pinned demand reads and logs| R[X Layer Testnet RPC]
-    B -->|operation records| S[SQLite WAL/FULL: payment_data volume]
-    S --- I[x402 idempotency and settlement records]
+    B -->|payment operations| S["/data/payments.sqlite: idempotency and settlement"]
+    B -->|metadata and observations| D["/data/discovery.sqlite"]
+    B -->|derived events and coverage| A["/data/activity.sqlite"]
     B -->|official verify / settle / status| O[Official OKX x402: Mainnet billing rail]
 ```
 
@@ -19,13 +20,13 @@ The browser's demand actions use `frontend/contract.ts` directly, not the Bun AP
 
 The free Services API projects only raw Fulfilled demands from the existing canonical index. Builder-signed discovery metadata and cached unpaid x402 observations are stored separately from payment records. A bounded scheduler sends jobs over a private Unix socket to an isolated observer using the Gate-0 transport; GET requests and the standalone `/services` pages do not fetch providers. The pages check the configured chain and contract. Snapshot block hash and generation time describe the API read, not fulfillment time or block. Observation state and timestamp describe a recent unpaid challenge, not paid execution or guaranteed availability. See [API](API.md) and [Self-hosting](SELF_HOSTING.md) for metadata, state and runtime details.
 
-Docker starts `backend/start.ts` through `docker/Dockerfile.api`; Caddy serves the web image and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready`. One **Bun API replica** owns a local payment volume. Indexes, quotas and admission limits are process-local. SQLite and OKX do not share an atomic transaction; no distributed exactly-once guarantee is made. See [Self-hosting](SELF_HOSTING.md) and [Payment recovery](PAYMENT_RECOVERY.md).
+Docker starts `backend/start.ts` through `docker/Dockerfile.api`; Caddy serves the web image and proxies `/v1`, `/v1/*`, `/live`, `/health` and `/ready`. One **Bun API replica** owns the separate SQLite stores on persistent `/data`. Quotas and admission limits are process-local. SQLite and OKX do not share an atomic transaction; no distributed exactly-once guarantee is made. See [Self-hosting](SELF_HOSTING.md) and [Payment recovery](PAYMENT_RECOVERY.md).
 
-The active public site is [https://unmetxyz.my.id](https://unmetxyz.my.id). Repository G0.5 changes do not update that running release.
+Repository source does not establish what a served release contains. Release-specific deployment evidence and runbook checks establish deployment state.
 
 ## Local G0.2 validation source
 
-The repository also contains a separate Bun validation runtime, described in [API](API.md#standalone-g02-validation-runtime). Its dependency path is `validation-service` → `validation-config`, `validation-evaluator`, `validation-codec` and `validation-transport`. It uses a local read-only ABI for chain reads and does not import the existing payment runtime, SQLite storage or API entrypoint. It is not wired into the production Compose deployment.
+The repository also contains a separate Bun validation runtime, described in [API](API.md#standalone-g02-validation-runtime). Its dependency path is `validation-service` → `validation-config`, `validation-evaluator`, `validation-codec` and `validation-transport`. It uses a local read-only ABI for chain reads and does not import the existing payment runtime, SQLite storage or API entrypoint. The validation and observer runtimes use an opt-in Compose overlay.
 
 The runtime pins demand, nonce and ERC-1271 reads to a canonical block hash, checks the block again after evaluation, and verifies enabled token decimals at startup. It verifies builder authorization before unpaid target inspection. A separate authenticated Unix-socket signer owns the verifier key, accepts only the attestation type and allowlisted deployment/policy, and returns a signature the validator independently recovers before PASS. Isolation protects the key but does not establish the truth of a compromised validator's observations. No deployment or production readiness follows from local tests; they do not establish VPS firewall, namespace, mount, secret or egress isolation. Onchain consumption and replay prevention are implemented in the G0.4 AgentDemand source. G0.5 consumers use the same attestation schema; the browser signs builder authorization before requesting validation and separately signs the onchain submission after PASS.
 
@@ -59,7 +60,7 @@ Exact specification bytes participate in the existing demand key, so whitespace 
 
 `POST /v1/insights` ranks the same market index and filters from its existing snapshot. It adds rank within the full matching pool before the response limit, a reproducible score breakdown, current escrow per historically expected call, remaining deadline/review time, review gaps, and deterministic reasons and cautions. Requested response order remains independent of score rank. Percentile tables are prepared once per pool; premium row enrichment applies only to the returned rows. The G4 history guard additionally reads the chain ID and checkpoint block before returning trusted history; the history anchor is independent of the market snapshot block.
 
-The API owns one activity SQLite database with `activity_events` and `activity_state` tables. Its single scheduler scans bounded pages and atomically advances the cursor; startup validates stored state and shutdown stops the scheduler before closing storage. A detected reorg invalidates history and triggers a full derived-history rebuild. At the configured event cap the worker stops advancing, marks coverage incomplete and returns null historical quantities; it never silently drops old events. Operators must review capacity and storage before raising the bound or recovering the index.
+The API owns the derived, rebuildable `/data/activity.sqlite` database with `activity_events` and `activity_state` tables; chain state remains authoritative. Its single scheduler scans bounded pages and atomically advances the cursor; startup validates stored state and shutdown stops the scheduler before closing storage. A detected reorg invalidates history and triggers a full derived-history rebuild. At the configured event cap the worker stops advancing, marks coverage incomplete and returns null historical quantities; it never silently drops old events. This history does not prove finality, service usage, service payments or execution. Operators must review capacity and storage before raising the bound or recovering the index.
 
 Premium serialization executes after the existing official payment middleware. SDK response buffering and durable settlement confirmation continue to control release. Free and unpaid challenge responses contain no new premium fields. All existing onchain facts remain public; paid value is the scoped comparison and interpretation. Scores are relative signals, and escrow is not guaranteed builder earnings. See [API calculations and examples](API.md#deterministic-demand-score).
 

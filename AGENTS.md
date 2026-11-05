@@ -199,13 +199,13 @@ Use [Self-hosting](docs/SELF_HOSTING.md#health-smoke-checks-and-logs) for custom
 ## Documentation ownership
 
 - [PRD](docs/PRD.md) owns the current Post-Hackathon product requirements.
-- [Future Implementation](docs/FUTURE_IMPLEMENTATION.md) owns proposed plans; its contents are not evidence of implementation.
+- [Future Implementation](docs/FUTURE_IMPLEMENTATION.md) owns proposed plans and per-phase roadmap status; it is not acceptance evidence.
 - [Status](docs/STATUS.md) and dated verification records retain implementation and acceptance evidence with their original dates and limits.
 
 ## Documentation index
 
 - [Documentation home](docs/README.md): current references, operations/security and historical evidence.
-- [Current product requirements](docs/PRD.md), [proposed Future Implementation](docs/FUTURE_IMPLEMENTATION.md), [frontend behavior](docs/PRODUCT.md), [design/accessibility](docs/DESIGN.md).
+- [Current product requirements](docs/PRD.md), [roadmap and phase status](docs/FUTURE_IMPLEMENTATION.md), [frontend behavior](docs/PRODUCT.md), [design/accessibility](docs/DESIGN.md).
 - [Architecture](docs/ARCHITECTURE.md), [API](docs/API.md), [canonical error reference](docs/ERRORS.md).
 - [Self-hosting](docs/SELF_HOSTING.md), [payment recovery](docs/PAYMENT_RECOVERY.md), [runbook](docs/RUNBOOK.md), [wallet sessions](docs/WALLET_DISCONNECT.md).
 - [Status](docs/STATUS.md), [self-hosting verification](docs/SELF_HOSTING_VALIDATION.md), [payment verification](docs/PAYMENT_VERIFICATION.md), [cleanup audit](docs/CLEANUP_AUDIT.md).

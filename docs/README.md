@@ -5,7 +5,7 @@ Coding agents start with [AGENTS](../AGENTS.md). Repository setup and validation
 ## Current reference
 
 - [Product requirements](PRD.md): current Post-Hackathon product.
-- [Future Implementation](FUTURE_IMPLEMENTATION.md): proposed roadmap; not current implementation evidence.
+- [Future Implementation](FUTURE_IMPLEMENTATION.md): proposed plans and per-phase roadmap status; not acceptance evidence.
 - [Architecture](ARCHITECTURE.md): chain authority, index, two network contexts and deployment paths.
 - [API](API.md): public/paid routes, schemas and response behavior.
 - [Frontend product](PRODUCT.md) and [design conventions](DESIGN.md).

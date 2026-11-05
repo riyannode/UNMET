@@ -1,6 +1,6 @@
 # UNMET frontend
 
-Current frontend behavior is described here. See [PRD](PRD.md) for the current demand model, [Future Implementation](FUTURE_IMPLEMENTATION.md) for proposed plans, and [Design](DESIGN.md) for UI conventions and acceptance targets.
+Current frontend behavior is described here. See [PRD](PRD.md) for the current demand model, [Future Implementation](FUTURE_IMPLEMENTATION.md) for proposed plans and phase status, and [Design](DESIGN.md) for UI conventions and acceptance targets.
 
 UNMET is a market for unmet AI-agent demand. Supporters commit test USD₮0 to capabilities; builders submit services for weighted approval or rejection. Only explicit approver funds settle. Other eligible commitments remain refundable.
 

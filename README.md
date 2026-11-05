@@ -58,7 +58,7 @@ bun run build:frontend
 
 ## Documentation and limitations
 
-[PRD](docs/PRD.md) describes the current Post-Hackathon product; [Future Implementation](docs/FUTURE_IMPLEMENTATION.md) contains proposals only; [STATUS](docs/STATUS.md) and dated reports retain evidence and its limits. Coding agents should read [AGENTS](AGENTS.md) first. Start with the [documentation index](docs/README.md), [contributor guide](CONTRIBUTING.md), [API](docs/API.md), [self-hosting guide](docs/SELF_HOSTING.md), and [payment recovery](docs/PAYMENT_RECOVERY.md).
+[PRD](docs/PRD.md) describes the current Post-Hackathon product; [Future Implementation](docs/FUTURE_IMPLEMENTATION.md) owns proposed plans and per-phase roadmap status; [STATUS](docs/STATUS.md) and dated reports retain evidence and its limits. Coding agents should read [AGENTS](AGENTS.md) first. Start with the [documentation index](docs/README.md), [contributor guide](CONTRIBUTING.md), [API](docs/API.md), [self-hosting guide](docs/SELF_HOSTING.md), and [payment recovery](docs/PAYMENT_RECOVERY.md).
 
 The contract is unaudited and the demand market remains on Testnet. Self-hosted payment protection assumes one API replica and a local WAL/FULL SQLite volume. It provides neither distributed exactly-once settlement nor original paid-response replay. Hashless ambiguous settlements require operator investigation; never retry payment automatically. Interactive wallet acceptance and fresh paid acceptance for any current production deployment remain separate production gates; historical staging acceptance is recorded in [STATUS](docs/STATUS.md).
 

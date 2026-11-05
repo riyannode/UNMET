@@ -97,7 +97,9 @@ Secondary revenue: paid `POST /v1/insights`, protected with official OKX x402 mi
 
 ## Canonical storage
 
-No offchain escrow/demand database. Self-hosted `bun:sqlite` persists operational x402 idempotency and settlement records; it does not replace contract state. See [Payment recovery](PAYMENT_RECOVERY.md).
+No offchain escrow/demand database. Separate SQLite stores persist x402 payment operations, discovery metadata and observations, and derived activity history; none replaces contract state. See [Architecture](ARCHITECTURE.md) and [Payment recovery](PAYMENT_RECOVERY.md).
+
+G4 adds coverage- and reorg-gated market history and current discovery snapshot metrics to paid intelligence. Usage evidence producers remain unsupported. See [API](API.md#post-v1insights) for current definitions.
 
 Current economic state: configured onchain escrow. Canonical repository source: `AgentDemand.sol`; frontend/backend consumers use the canonical attestation interface (see [Architecture](ARCHITECTURE.md#canonical-attestation)).
 History: contract events.  
@@ -176,11 +178,11 @@ Runtime: Bun. HTTP: Express only because the official OKX x402 package provides 
 Routes:
 - `GET /live` public process liveness
 - `GET /health` free dependency health check
-- `GET /ready` public payment readiness plus health check
+- `GET /ready` public payment and activity-storage readiness, then dependency health check; storage readiness does not establish complete backfill
 - `GET /v1/demands` free chain-derived board with raw specification preserved
 - `GET /v1/services` and `GET /v1/services/:id` free fulfilled-demand service reads from the canonical index; `/services` displays builder-signed metadata and cached unpaid x402 observations. Provider probing occurs in the isolated observer, not in GET requests.
 - `POST /v1/demands/prepare` free unsigned creation intent; structured v1 description and existing onchain economic arguments
-- `POST /v1/insights` paid OKX.AI/A2MCP route
+- `POST /v1/insights` paid OKX.AI/A2MCP route with market history and snapshot metrics; see [API](API.md#post-v1insights)
 
 Requirements:
 - official `@okxweb3/x402-*` packages
@@ -304,4 +306,4 @@ Evidence is transaction receipt + state readback, not transaction submission alo
 
 ## Documentation ownership
 
-Proposed plans and requirements are maintained exclusively in the [Future Implementation roadmap](FUTURE_IMPLEMENTATION.md). This PRD describes the current Post-Hackathon product; [STATUS](STATUS.md) and dated verification records describe evidence and its limits.
+Proposed plans, requirements and per-phase roadmap status are maintained in the [Future Implementation roadmap](FUTURE_IMPLEMENTATION.md). This PRD describes the current Post-Hackathon product; [STATUS](STATUS.md) and dated verification records describe evidence and its limits.
