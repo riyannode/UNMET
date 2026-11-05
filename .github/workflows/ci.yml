@@ -92,6 +92,7 @@ jobs:
       OKX_PASSPHRASE: ci-dummy-passphrase
       OKX_CREDENTIALS_FILE: /tmp/unmet-ci/okx-credentials.json
       VALIDATION_CONFIG_FILE: /tmp/unmet-ci/validator.json
+      DISCOVERY_POLICY_FILE: /tmp/unmet-ci/discovery-policy.json
       SIGNER_CONFIG_FILE: /tmp/unmet-ci/signer.json
       SIGNER_AUTH_TOKEN_FILE: /tmp/unmet-ci/signer-auth.token
       SIGNER_PRIVATE_KEY_FILE: /tmp/unmet-ci/operator.key
@@ -108,7 +109,7 @@ jobs:
         with:
           persist-credentials: false
       - run: docker compose config --quiet
-      - name: Validate four-service Compose configuration
+      - name: Validate five-service Compose configuration
         run: docker compose -f compose.yaml -f compose.validation.yaml config --quiet
       - run: docker compose build api
       - name: Smoke test packaged API payment discovery
@@ -120,7 +121,7 @@ jobs:
             -e NODE_ENV=production -e X402_CHAIN_ID=196 \
             "unmet-api:${IMAGE_TAG}" bun /app/backend/payment-discovery-smoke.ts
       - run: docker compose build web
-      - name: Build validation and signer image
+      - name: Build validation, signer and observer image
         run: docker compose -f compose.yaml -f compose.validation.yaml build validator
       - name: Smoke test packaged discovery routes
         run: |
