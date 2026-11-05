@@ -62,6 +62,15 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 
 | Code | HTTP / context | Recovery |
 | --- | --- | --- |
+| `ACTIVITY_STORAGE_UNAVAILABLE` | 503 or startup | Check private activity database path, ownership, permissions, integrity and deployment binding. |
+| `ACTIVITY_DEPLOYMENT_MISMATCH` | Startup / operation | The existing activity database belongs to a different chain, contract, token or deploy block; preserve it and select the correct database. |
+| `ACTIVITY_OPERATION_FAILED` | Activity CLI | Check the command, deployment configuration, private paths and database; run operations with the API stopped. |
+| `ACTIVITY_BACKUP_INVALID` | Activity backup | Destination must be an absolute new path in a private owner-only directory. |
+| `ACTIVITY_DEPLOYMENT_INVALID`, `ACTIVITY_STATE_INVALID`, `ACTIVITY_INVALID_LOG` | Internal activity validation | Deployment identity, persisted state or a chain event failed validation. |
+| `ACTIVITY_CHAIN_MISMATCH`, `ACTIVITY_RPC`, `ACTIVITY_BUDGET`, `ACTIVITY_CAPACITY` | Internal activity indexing | RPC chain/header, work deadline or configured bounds prevented a complete scan. |
+| `ACTIVITY_REORG`, `ACTIVITY_EVENT_CONFLICT`, `ACTIVITY_CHECKPOINT_CONFLICT` | Internal activity indexing | Canonical anchors, replayed events or the expected cursor changed. History stays unavailable until validated recovery. |
+| `INSIGHTS_INVALID_STATUS` | Internal aggregation | A demand has a raw status outside the supported contract statuses. |
+| `NOT_INITIALIZED`, `UNVERIFIED_CHECKPOINT`, `BACKFILL_INCOMPLETE`, `REORG_REBUILD`, `RPC_UNAVAILABLE`, `CAPACITY`, `INVALID_LOG`, `COVERAGE_MISMATCH`, `WINDOW_NOT_COVERED` | History coverage reason | History is incomplete, untrusted or outside the covered window; quantities remain null until the cause is resolved and the index catches up. |
 | `BODY_TOO_LARGE` | 413; body exceeds 32 KiB | Send a smaller JSON body |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Use application/json and supported encoding |
 | `RATE_LIMITED` | 429 | Respect Retry-After |
@@ -73,7 +82,7 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `INDEX_REORG` | 503; pinned block changed | Retry; previous checkpoint remains intact |
 | `INDEX_DEPLOYMENT_MISMATCH` | 503; checkpoint belongs to another chain or contract | Initialize a fresh disposable index for the selected deployment |
 | `PAYMENT_UNAVAILABLE` | 503 readiness | Check official facilitator initialization |
-| `CONFIG_INVALID: PAYMENT_DISCOVERY` | Startup/readiness failure | Synchronize `frontend/public/openapi.json` with the configured `X402_CHAIN_ID` and `OPPORTUNITY_PRICE` using `bun run sync:payment-discovery`, then run `bun run check:payment-discovery`. |
+| `CONFIG_INVALID: PAYMENT_DISCOVERY` | Startup/readiness failure | Synchronize `frontend/public/openapi.json` with the configured `X402_CHAIN_ID` and `INSIGHTS_PRICE` using `bun run sync:payment-discovery`, then run `bun run check:payment-discovery`. |
 | `CONFIG_INVALID` | Startup failure | Correct the named environment field |
 | `STARTUP_UNAVAILABLE` | Nonzero startup exit | Verify required config/dependencies |
 | `DRAIN_TIMEOUT` | Nonzero shutdown exit | Deadline elapsed; do not blindly retry signed payments |

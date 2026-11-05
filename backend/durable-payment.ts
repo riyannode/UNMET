@@ -272,7 +272,7 @@ export function durablePayment(store: PaymentStore, official: Facilitator,
       res.status(400).json({ error: { code: "IDEMPOTENCY_KEY_INVALID", message: "Invalid Idempotency-Key" } });
       return;
     }
-    const ctx: Context = { method: req.method, route: req.path, input: res.locals.opportunityInput, key };
+    const ctx: Context = { method: req.method, route: req.path, input: res.locals.insightsInput, key };
     const json = res.json.bind(res);
     res.json = (body) => {
       if (ctx.failure) {

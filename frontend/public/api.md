@@ -8,7 +8,7 @@ UNMET exposes public chain-derived demand data and a separate paid intelligence 
 | --- | --- | --- |
 | `GET /v1/demands` | Free | Up to 50 current public demands, sorted by current escrow descending and demand ID descending. |
 | `POST /v1/demands/prepare` | Free | Validate a structured demand and return unsigned transaction data. |
-| `POST /v1/opportunities` | OKX x402 payment required | Filtered and ranked demand intelligence. |
+| `POST /v1/insights` | OKX x402 payment required | Filtered and ranked demand intelligence. |
 
 See [OpenAPI](./openapi.json) for request and response schemas, or [Payment guide](./payment.md) for the paid request flow. API clients should send `Accept: application/json`. Markdown negotiation does not change API responses. The pinned x402 SDK can return an HTML payment page for requests that include both `Accept: text/html` and a Mozilla browser user agent; this browser-specific 402 may omit `PAYMENT-REQUIRED`.
 
@@ -39,7 +39,9 @@ Success is HTTP 200 with exactly `{ chainId, to, data, value: "0" }`. `data` enc
 
 Preparation reserves nothing and is not an execution guarantee. The caller must review decoded arguments and target, use the intended account/chain, arrange any required token allowance, and recheck deadline, deployment and current contract state before explicitly signing. Account, allowance, active duplicate demand and contract state can change after preparation. An active duplicate may revert at execution. Demand identity still depends on exact capability and specification bytes; economics do not change that key.
 
-## POST /v1/opportunities
+## POST /v1/insights
+
+The paid response includes the snapshot block hash, all-market activity snapshots and separately anchored event history. Untrusted or incomplete historical quantities are null. All four usage evidence levels are unsupported; expected calls are not measured usage. See [OpenAPI](./openapi.json) for the complete response.
 
 Send an `application/json` object with optional `minBounty` (decimal string, up to six fractional digits), `minSupporters` (uint32), `status` (`open`, `submitted`, `ready`, `rejected`, `expired`, `fulfilled`, or `closed`), `sort` (`bounty`, `supporters`, `calls`, `deadline`, `score`), and `limit` (1–50). Defaults are `0`, `1`, `open`, `bounty`, and `10`. Status comparisons are case-insensitive; omit `status` to use the default filter. A supplied `null` is invalid.
 

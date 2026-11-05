@@ -2,7 +2,7 @@
 
 For the validation and discovery runtime, use the canonical [validation overlay procedure](SELF_HOSTING.md#gate-0-validator-and-signer). Use the same overlay/images for local and later VPS deployments, with reviewed host-specific configuration. Do not enable frontend validation until validator and signer readiness and the exact deployment/policy bindings pass independent checks.
 
-For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands` to describe the configured deployment. POST `{}` as JSON to `/v1/x402/validate` must return `400 INVALID_REQUEST`; unsupported deployment/network requests must fail closed. Probe the signer through its authenticated Unix socket without issuing a synthetic attestation for a live demand. Unpaid `/v1/opportunities` smoke must return 402 without payment proof. Wallet protocol actions are separate owner tests.
+For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands` to describe the configured deployment. POST `{}` as JSON to `/v1/x402/validate` must return `400 INVALID_REQUEST`; unsupported deployment/network requests must fail closed. Probe the signer through its authenticated Unix socket without issuing a synthetic attestation for a live demand. Unpaid `/v1/insights` smoke must return 402 without payment proof. Wallet protocol actions are separate owner tests.
 
 Use both `compose.yaml` and `compose.validation.yaml` for every build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the [lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web, validator and observer together so both join the current web network namespace.
 
@@ -129,7 +129,7 @@ OKX_API_KEY=...
 OKX_SECRET_KEY=...
 OKX_PASSPHRASE=...
 OKX_PAY_TO=0x...
-OPPORTUNITY_PRICE=0.01
+INSIGHTS_PRICE=0.01
 X402_CHAIN_ID=196
 X402_RPC_URL=https://rpc.xlayer.tech
 ```
@@ -150,7 +150,7 @@ Verify:
 
 ```bash
 curl -i http://127.0.0.1:8787/health
-curl -i -X POST http://127.0.0.1:8787/v1/opportunities \
+curl -i -X POST http://127.0.0.1:8787/v1/insights \
   -H 'content-type: application/json' \
   -d '{"minBounty":"0","minSupporters":1,"sort":"bounty","limit":5}'
 ```
@@ -163,7 +163,7 @@ Second request must produce the official x402 HTTP 402 challenge. A paid accepta
 
 There is no demo-payment bypass. If facilitator credentials are unavailable, payment verification is **incomplete**, not passed.
 
-Network separation: `CHAIN_ID=1952` selects X Layer Testnet by default; the demand market remains unavailable until a reviewed canonical contract, token address and decimals are supplied. Only `POST /v1/opportunities` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The application advertises three ordered native EIP-3009 exact Mainnet offers: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`). Each costs `10000` atomic units (6 decimals) and uses `OKX_PAY_TO`. Nonproduction `X402_CHAIN_ID=1952` may be used to inspect its existing Testnet challenge, but durable paid acceptance is Mainnet-only. Never change `CHAIN_ID` to move the billing rail.
+Network separation: `CHAIN_ID=1952` selects X Layer Testnet by default; the demand market remains unavailable until a reviewed canonical contract, token address and decimals are supplied. Only `POST /v1/insights` uses `X402_CHAIN_ID`; production must explicitly set `X402_CHAIN_ID=196`. The application advertises three ordered native EIP-3009 exact Mainnet offers: USD₮0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`), USDC (`0xb6ceceab302e2e4948951ee7843fc24e92933061`), and USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8`). Each costs `10000` atomic units (6 decimals) and uses `OKX_PAY_TO`. Nonproduction `X402_CHAIN_ID=1952` may be used to inspect its existing Testnet challenge, but durable paid acceptance is Mainnet-only. Never change `CHAIN_ID` to move the billing rail.
 
 Do not sign or replay the current production mainnet challenge as part of smoke verification. Unpaid `402` verification does not spend funds. A paid mainnet replay needs separate authorization and a receipt-based check.
 

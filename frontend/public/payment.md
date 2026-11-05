@@ -1,6 +1,6 @@
 # UNMET API payment guide
 
-Only `POST /v1/opportunities` is paid. It sells demand ranking and interpretation through OKX x402. Payment does not fund a demand, buy capability execution, or change escrow.
+Only `POST /v1/insights` is paid. It sells demand ranking and interpretation through OKX x402. Payment does not fund a demand, buy capability execution, or change escrow.
 
 ## Request flow
 
@@ -8,7 +8,7 @@ Start with an unpaid JSON request. An empty object is valid and uses the documen
 
 ```sh
 API_ORIGIN=https://unmetxyz.my.id
-curl -i "$API_ORIGIN/v1/opportunities" \
+curl -i "$API_ORIGIN/v1/insights" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json' \
   --data '{}'

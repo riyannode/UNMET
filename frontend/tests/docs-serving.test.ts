@@ -212,7 +212,7 @@ describe("Vite documentation MPA", () => {
     const examples = [
       ["docs/api/index.html", "curl -sS \"https://unmetxyz.my.id/v1/demands\" \\\n  -H \"Accept: application/json\""],
       ["docs/api/errors/index.html", "{\n  \"error\": {\n    \"code\": \"INVALID_LIMIT\",\n    \"message\": \"limit must be between 1 and 50\"\n  }\n}"],
-      ["docs/api/intelligence/index.html", "curl -i \"https://unmetxyz.my.id/v1/opportunities\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json\" \\\n  --data '{\"minBounty\":\"10.000000\",\"status\":\"open\",\"sort\":\"score\",\"limit\":10}'"]
+      ["docs/api/intelligence/index.html", "curl -i \"https://unmetxyz.my.id/v1/insights\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json\" \\\n  --data '{\"minBounty\":\"10.000000\",\"status\":\"open\",\"sort\":\"score\",\"limit\":10}'"]
     ];
     for (const [file, expected] of examples) {
       const html = await readFile(path.join(directory, file!), "utf8");
@@ -230,18 +230,18 @@ describe("Vite documentation MPA", () => {
   test("keeps consumer API constraints and future status visible", async () => {
     const api = await readFile(path.join(directory, "docs/api/intelligence/index.html"), "utf8");
     const schema = JSON.parse(await readFile(path.join(directory, "openapi.json"), "utf8"));
-    for (const name of ["DemandsResponse", "OpportunitiesResponse"]) {
+    for (const name of ["DemandsResponse", "InsightsResponse"]) {
       const response = schema.components.schemas[name];
       expect(response.required).toContain("escrowToken");
       expect(response.properties.escrowToken.$ref).toBe("#/components/schemas/EscrowToken");
     }
     expect(schema.components.schemas.EscrowToken.required).toEqual(["address", "symbol", "decimals"]);
     expect(schema.components.schemas.EscrowToken.properties.decimals).toMatchObject({ minimum: 0, maximum: 255 });
-    const bountyPattern = new RegExp(schema.components.schemas.OpportunityQuery.properties.minBounty.pattern);
+    const bountyPattern = new RegExp(schema.components.schemas.InsightsQuery.properties.minBounty.pattern);
     expect(bountyPattern.test("1.12345678")).toBe(true);
     expect(bountyPattern.test("1.")).toBe(false);
-    for (const field of Object.keys(schema.components.schemas.OpportunityQuery.properties)) expect(api).toContain(field);
-    for (const sort of schema.components.schemas.OpportunityQuery.properties.sort.enum) expect(api).toContain(sort);
+    for (const field of Object.keys(schema.components.schemas.InsightsQuery.properties)) expect(api).toContain(field);
+    for (const sort of schema.components.schemas.InsightsQuery.properties.sort.enum) expect(api).toContain(sort);
     for (const value of ["32 KiB", "4,294,967,295", "1 to 50", "scoreBreakdown", "economicSignals", "reasoning"]) expect(api).toContain(value);
     const roadmap = await readFile(path.join(directory, "docs/roadmap/index.html"), "utf8");
     expect(roadmap).toContain('<h2 id="rfq">Machine-readable RFQ</h2>\n<p class="docs-status">MINIMAL RFQ V1</p>');
@@ -256,7 +256,7 @@ describe("Vite documentation MPA", () => {
     for (const value of ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE", "1952", "196", "L1 finality"]) expect(payments).toContain(value);
     expect(payments).toContain("x-payment-info");
     expect(payments).toContain('href="/openapi.json"');
-    expect(schema.paths["/v1/opportunities"].post["x-payment-info"].price).toEqual({ mode: "fixed", currency: "USD", amount: "0.01" });
+    expect(schema.paths["/v1/insights"].post["x-payment-info"].price).toEqual({ mode: "fixed", currency: "USD", amount: "0.01" });
     const recovery = await readFile(path.join(directory, "docs/api/errors/index.html"), "utf8");
     expect(recovery).toContain("There is no public UNMET recovery endpoint");
     expect(recovery).toContain("Do not create a fresh authorization");

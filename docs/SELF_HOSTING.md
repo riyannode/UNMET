@@ -173,7 +173,7 @@ Local defaults serve http://localhost and bind host ports only to 127.0.0.1. For
 | DEMAND_DEPLOY_BLOCK | Optional nonnegative integer | Existing metadata; index rebuild reads current contract state |
 | X402_CHAIN_ID | Required API runtime | **Must be 196 in production containers**, independently of Testnet market 1952 |
 | X402_RPC_URL | API runtime, public default `https://rpc.xlayer.tech` | Bounded Mainnet receipt confirmation RPC; must return chain ID 196; a credential-bearing provider URL is private configuration; never use the market RPC |
-| OPPORTUNITY_PRICE | Public, default 0.01 | Mainnet must remain exactly `0.01`; other values fail configuration |
+| INSIGHTS_PRICE | Public, default 0.01 | Mainnet must remain exactly `0.01`; other values fail configuration |
 | OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE | Required private API runtime | Your official OKX facilitator credentials |
 | OKX_PAY_TO | Required public nonzero address | API fee recipient; does not change contract treasury/escrow beneficiary |
 | FRONTEND_ORIGIN | Required API runtime | Comma-separated exact browser origins including scheme/port |
@@ -192,6 +192,21 @@ Docker host/daemon administrators can inspect runtime environment values. Docker
 The template pins the reviewed faucet-supported Testnet AgentDemand at `0x4411c49f8a3efcc671a1b11e651cc82abeadace5`, deployment block `45074702`, and escrow `USDC_TEST` at `0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d` with six decimals; see [deployment evidence](ARCHITECTURE.md#faucet-supported-testnet-acceptance-deployment). It retains independent Mainnet x402 billing and does not authorize payment or wallet actions. Testnet 1952 retains its existing challenge configuration, while durable paid acceptance is currently Mainnet-only; Compose preserves the production X402_CHAIN_ID=196 invariant.
 
 Paid responses require a healthy durable SQLite store. Without `PAYMENT_DB_PATH`, unpaid requests retain the official 402 challenge, but submitted payment headers fail with `503 PAYMENT_STORAGE_UNAVAILABLE`; `/ready` also fails closed. Mainnet responses are released after the official facilitator reports strict success and `X402_RPC_URL` confirms a matching successful canonical L2 inclusion. This check does not wait for safe/finalized or L1 finality.
+
+The API also requires `ACTIVITY_DB_PATH`, a private API-owned SQLite file; Compose sets it to `/data/activity.sqlite` in the existing persistent volume. `ACTIVITY_MAX_EVENTS` defaults to 100000 and `ACTIVITY_POLL_MS` to 5000. The directory must be owned by the API user with mode 700, and the file mode is 600. Schema v1 contains only activity events and state; SQLite uses WAL and FULL synchronization. The index begins at `DEMAND_DEPLOY_BLOCK`, pages at most 100 blocks, validates persisted anchors on restart and rebuilds derived history after a reorg. Incomplete or untrusted history is returned as null, not zero.
+
+For integrity and a consistent SQLite backup, stop the API using the approved lifecycle and run the following as the same API user with the same deployment configuration and `ACTIVITY_DB_PATH`; the backup destination must be a new absolute path in an owner-only directory:
+
+```bash
+bun run --cwd backend activity:ops integrity
+bun run --cwd backend activity:ops backup /absolute/private/backup/activity.sqlite
+```
+
+Opening an existing activity database marks its checkpoint unverified until the worker validates it again. Preserve the backup and WAL-aware volume state before rollback. Restore only a matching chain, contract, token, decimals and deploy block to a schema-compatible image, with the API stopped; verify ownership and permissions before restarting. A restored checkpoint is revalidated and may be rebuilt on reorg. Activity data is separate from durable payment records: never replace or roll back the payment database as part of activity recovery. See [payment recovery](PAYMENT_RECOVERY.md) for its separate rollback rules.
+
+At `ACTIVITY_MAX_EVENTS`, the worker stops advancing and reports `CAPACITY`; incomplete history remains null. Review capacity and available disk before raising the configured limit, then allow the worker to resume. No event retention policy silently discards history.
+
+The route rename changes the operation binding used by durable idempotency. Existing payment records keep their original terms: a retained old-route authorization or key conflicts with a new-route operation instead of being rewritten or replayed. Preserve the payment database across migration and rollback; resolve ambiguous operations using [payment recovery](PAYMENT_RECOVERY.md) rather than retrying a signed payment.
 
 ## Routing and proxy trust
 
@@ -223,7 +238,7 @@ Record the tested configuration and runtime evidence before requesting the produ
 | --- | --- | --- |
 | RATE_WINDOW_MS | 60000 | 100..3600000 ms, fixed window per route/client |
 | RATE_DEMANDS | 60 | 1..100000 demands requests/window/IP |
-| RATE_OPPORTUNITIES | 20 | 1..100000 opportunities requests/window/IP, including unpaid challenges |
+| RATE_INSIGHTS | 20 | 1..100000 insights requests/window/IP, including unpaid challenges |
 | RATE_MAX_KEYS | 10000 | 1..1000000 live route/IP keys; new keys get 503 when full |
 | MAX_IN_FLIGHT | 16 | 1..256 admitted requests, no waiting queue |
 | RPC_MAX_IN_FLIGHT | 16 | 4..128 outbound RPC transports shared process-wide |
@@ -273,7 +288,7 @@ curl -fsS "$app_origin/live"
 curl -fsS "$app_origin/ready"
 curl -fsS "$app_origin/health"
 curl -fsS "$app_origin/v1/demands"
-curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/opportunities"
+curl -i -H 'Content-Type: application/json' -d '{}' "$app_origin/v1/insights"
 # Expect official HTTP 402 + PAYMENT-REQUIRED; no signed payment.
 ~~~
 

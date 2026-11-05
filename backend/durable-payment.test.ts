@@ -7,10 +7,11 @@ import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import type { PaymentPayload, PaymentRequirements, SettleResponse, SettleStatusResponse } from "@okxweb3/x402-core/types";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import { PaymentStore } from "./payment-store.ts";
+import { ActivityStore } from "./activity-store.ts";
 import { durablePayment, reconcilePayments } from "./durable-payment.ts";
 import { PaymentConfirmationUnavailable } from "./payment-confirmation.ts";
 import { paymentIdentity } from "./payment-identity.ts";
-import { createApp, createDemandIndexState, type IndexEntry, type DemandIndexState } from "./server.ts";
+import { createApp, createDemandIndexState, validateInsightsInput, type IndexEntry, type DemandIndexState } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
 import { loadConfig } from "./contract.ts";
 import { withBoundedFetch } from "./upstream.ts";
@@ -44,6 +45,7 @@ function nonemptyMarket() {
   state.ready = true;
   state.deploymentKey = `1952:${fixtureContract}`;
   state.lastIndexedBlock = 42n;
+  state.lastIndexedBlockHash = hash;
   for (const id of [1n, 2n]) state.entries.set(id.toString(), {
     demandId: id,
     data: { creator: recipient, builder: "0x0000000000000000000000000000000000000000", maxUnitPrice: 200_000n,
@@ -69,7 +71,7 @@ function deferred() {
 
 type Official = Pick<OKXFacilitatorClient, "getSupported" | "verify" | "settle" | "getSettleStatus">;
 async function fixture(run: (ctx: {
-  store: PaymentStore; path: string; post: (p?: PaymentPayload, body?: string, key?: string, signal?: AbortSignal) => Promise<Response>;
+  store: PaymentStore; activity: ActivityStore; path: string; post: (p?: PaymentPayload, body?: string, key?: string, signal?: AbortSignal) => Promise<Response>;
   calls: { verify: number; settle: number; status: number }; marketCalls: () => number; official: Official; url: string;
 }) => Promise<void>, options: {
   failExecution?: () => boolean;
@@ -83,6 +85,7 @@ async function fixture(run: (ctx: {
 } = {}) {
   const dir = mkdtempSync(tmpdir() + "/unmet-durable-");
   const path = dir + "/payments.sqlite", store = new PaymentStore(path, 100_000, options.storeNow);
+  const activity = new ActivityStore(dir + "/activity.sqlite", { chainId: "1952", contract: fixtureContract, escrowToken: fixtureToken, tokenDecimals: 6, deployBlock: "0" });
   const calls = { verify: 0, settle: 0, status: 0 };
   const official: Official = {
     getSupported: async () => ({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }], extensions: [], signers: {} }),
@@ -101,7 +104,7 @@ async function fixture(run: (ctx: {
   const resource = new x402ResourceServer(durable.client).register("eip155:196", new ExactEvmScheme());
   await resource.initialize();
   const paid = paymentMiddleware({
-    "POST /v1/opportunities": { accepts: paymentOptions.map(({ scheme, network, payTo, asset, amount, extra }) => ({
+    "POST /v1/insights": { accepts: paymentOptions.map(({ scheme, network, payTo, asset, amount, extra }) => ({
       scheme, network, payTo, price: { asset, amount, extra },
     })) },
   }, resource, undefined, undefined, false);
@@ -116,36 +119,40 @@ async function fixture(run: (ctx: {
   const client = { getChainId: async () => 1952, getBytecode: async () => "0x1234", getBlockNumber: async () => 1n, getBlock: async () => { marketReadCount++; return { number: 1n, hash }; },
     readContract: async ({ functionName }: { functionName: string }) => { if (functionName === "token") return fixtureToken; if (functionName === "decimals") return 6; marketReadCount++; return 1n; } } as unknown as PublicClient;
   const app = createApp({ middleware }, {
-    config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1000" }), client,
-    market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment }, indexState: options.indexState, now: options.now,
+    config: loadOperationalConfig({ RATE_INSIGHTS: "1000" }), client,
+    market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment }, indexState: options.indexState, now: options.now, activity,
   });
   const server = app.listen(0, "127.0.0.1"), address = server.address();
   if (!address || typeof address === "string") throw new Error();
   const url = "http://127.0.0.1:" + address.port;
-  const post = (p?: PaymentPayload, body = "{}", key?: string, signal?: AbortSignal) => fetch(url + "/v1/opportunities", {
+  const post = (p?: PaymentPayload, body = "{}", key?: string, signal?: AbortSignal) => fetch(url + "/v1/insights", {
     method: "POST", body, signal, headers: { "content-type": "application/json",
       ...(p ? { "payment-signature": Buffer.from(JSON.stringify(p)).toString("base64") } : {}),
       ...(key ? { "idempotency-key": key } : {}) },
   });
-  try { await run({ store, path, post, calls, marketCalls: () => marketReadCount, official, url }); }
+  try { await run({ store, activity, path, post, calls, marketCalls: () => marketReadCount, official, url }); }
   finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close(); rmSync(dir, { recursive: true });
+    activity.close(); store.close(); rmSync(dir, { recursive: true });
   }
 }
 
 test("semantic nonce identity ignores serialization/signature variants but binds request", () => {
   const original = payload();
   (original.payload.authorization as Record<string, unknown>).validBefore = "4102444800";
-  const first = paymentIdentity(original, requirements, payer, { method: "POST", route: "/v1/opportunities", input: { limit: 10 } });
+  const first = paymentIdentity(original, requirements, payer, { method: "POST", route: "/v1/insights", input: { limit: 10 } });
   expect(first.payment).toBe("e07195d9540db6b08ac46df215bc97959b6c00f27875f16317209c91b2941707");
-  expect(first.binding).toBe("a54595158e63c3b07cf7c7dacb105544fae9473c49c026af4eb85d4ea87a0388");
+  expect(first.binding).toBe("52782a62833bdcbfd6822d11ce1eed425521cf28233302cd190d61670d9e41ce");
+  const legacy = paymentIdentity(original, requirements, payer, { method: "POST", route: ["", "v1", "opportunities"].join("/"), input: { limit: 10 } });
+  expect(legacy.payment).toBe(first.payment);
+  expect(legacy.binding).toBe("a54595158e63c3b07cf7c7dacb105544fae9473c49c026af4eb85d4ea87a0388");
+  expect(legacy.binding).not.toBe(first.binding);
   expect(first.validBefore).toBe(4_102_444_800_000);
   const auth = original.payload.authorization as Record<string, unknown>;
   const variant = { ...original, payload: { signature: "different", authorization: { ...auth, from: payer.toUpperCase().replace("0X", "0x"), value: "010000" } } };
-  expect(paymentIdentity(variant, requirements, payer, { method: "POST", route: "/v1/opportunities", input: { limit: 10 } }).payment).toBe(first.payment);
-  const changed = paymentIdentity(original, requirements, payer, { method: "POST", route: "/v1/opportunities", input: { limit: 20 } });
+  expect(paymentIdentity(variant, requirements, payer, { method: "POST", route: "/v1/insights", input: { limit: 10 } }).payment).toBe(first.payment);
+  const changed = paymentIdentity(original, requirements, payer, { method: "POST", route: "/v1/insights", input: { limit: 20 } });
   expect(changed.payment).toBe(first.payment);
   expect(changed.binding).not.toBe(first.binding);
   expect(() => paymentIdentity(original, requirements, recipient, { method: "POST", route: "/", input: {} })).toThrow();
@@ -154,11 +161,40 @@ test("semantic nonce identity ignores serialization/signature variants but binds
 test("nonce identity is token-scoped while logical request keys remain payer/network-scoped", () => {
   const usdc: PaymentRequirements = { ...requirements, asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061",
     extra: { name: "USDC", version: "2" } };
-  const first = paymentIdentity(payload("d"), requirements, payer, { method: "POST", route: "/v1/opportunities", input: {}, key: "same" });
+  const first = paymentIdentity(payload("d"), requirements, payer, { method: "POST", route: "/v1/insights", input: {}, key: "same" });
   const secondPayload = { ...payload("d"), accepted: usdc };
-  const second = paymentIdentity(secondPayload, usdc, payer, { method: "POST", route: "/v1/opportunities", input: {}, key: "same" });
+  const second = paymentIdentity(secondPayload, usdc, payer, { method: "POST", route: "/v1/insights", input: {}, key: "same" });
   expect(second.payment).not.toBe(first.payment);
   expect(second.logicalKey).toBe(first.logicalKey);
+});
+
+test("activity storage failure prevents settlement and paid content release", async () => {
+  await fixture(async ({ post, activity, calls }) => {
+    const original = activity.state.bind(activity);
+    activity.state = () => { throw new Error("ACTIVITY_STORAGE_UNAVAILABLE"); };
+    try {
+      const response = await post(payload());
+      expect(response.status).toBe(503);
+      expect((await response.json()).error.code).toBe("ACTIVITY_STORAGE_UNAVAILABLE");
+      expect(calls.settle).toBe(0);
+    } finally { activity.state = original; }
+  }, { indexState: nonemptyMarket() });
+});
+
+test("retained legacy route binding conflicts with the same authorization and key on insights", async () => {
+  await fixture(async ({ store, post, calls }) => {
+    const payment = payload();
+    const parsed = validateInsightsInput({});
+    if (!parsed.ok) throw new Error("fixture input invalid");
+    const old = paymentIdentity(payment, requirements, payer, { method: "POST",
+      route: ["", "v1", "opportunities"].join("/"), input: parsed.value, key: "retained-key" });
+    store.reserve(old);
+    const response = await post(payment, "{}", "retained-key");
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("IDEMPOTENCY_CONFLICT");
+    expect(calls.settle).toBe(0);
+    expect(store.findPayment(old.payment)?.binding).toBe(old.binding);
+  }, { indexState: nonemptyMarket() });
 });
 
 test("official unpaid challenge over nonempty market never reveals paid response", async () => {
@@ -177,6 +213,7 @@ test("confirmed paid responses include full intelligence for each supported asse
   indexState.ready = true;
   indexState.deploymentKey = `1952:${fixtureContract}`;
   indexState.lastIndexedBlock = 42n;
+  indexState.lastIndexedBlockHash = hash;
   for (const id of [1n, 2n, 3n]) {
     indexState.entries.set(id.toString(), {
       demandId: id,
@@ -308,13 +345,13 @@ test("durable Express adapter polls SDK pending/timeout once and never retries s
       const durable = durablePayment(store, sdk, async () => true, { confirmationBudgetMs: 100 });
       const resource = new x402ResourceServer(durable.client).register("eip155:196", new ExactEvmScheme());
       await withBoundedFetch(fakeFetch, () => resource.initialize());
-      const paid = paymentMiddleware({ "POST /v1/opportunities": { accepts: [{ scheme: "exact", network: "eip155:196", payTo: recipient,
+      const paid = paymentMiddleware({ "POST /v1/insights": { accepts: [{ scheme: "exact", network: "eip155:196", payTo: recipient,
         price: { asset, amount: "10000", extra: { name: "USD₮0", version: "1" } } }] } }, resource, undefined, undefined, false);
       const app = express();
       app.use(express.json());
       const protectedRoute = durable.wrap(paid);
-      app.post("/v1/opportunities", (req, res, next) => {
-        res.locals.opportunityInput = {};
+      app.post("/v1/insights", (req, res, next) => {
+        res.locals.insightsInput = {};
         return withBoundedFetch(fakeFetch, () => protectedRoute(req, res, (error) => {
           if (error) next(error);
           else res.json({ opportunities: ["fixture"] });
@@ -322,7 +359,7 @@ test("durable Express adapter polls SDK pending/timeout once and never retries s
       });
       const server = app.listen(0, "127.0.0.1"), address = server.address();
       if (!address || typeof address === "string") throw new Error("test listener unavailable");
-      const post = () => fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, { method: "POST",
+      const post = () => fetch(`http://127.0.0.1:${address.port}/v1/insights`, { method: "POST",
         headers: { "content-type": "application/json", "payment-signature": Buffer.from(JSON.stringify(payload())).toString("base64") }, body: "{}" });
       try {
         const first = await post();
@@ -353,7 +390,7 @@ for (const initialStatus of ["pending", "timeout"] as const) {
       expect(calls.status).toBe(1);
       expect(confirmationCalls).toBe(1);
       const row = store.findPayment(paymentIdentity(payload(), requirements, payer,
-        { method: "POST", route: "/v1/opportunities", input: {} }).payment);
+        { method: "POST", route: "/v1/insights", input: {} }).payment);
       expect(row?.state).toBe("SETTLED");
       expect(diagnostics).toContainEqual(expect.objectContaining({
         event: "payment_settlement_status_classified", classification: initialStatus, pollRequired: true,
@@ -382,7 +419,7 @@ test("a timed out status read can recover to success without another settlement"
     expect(calls.status).toBe(2);
     expect(confirmations).toBe(1);
     expect(store.findPayment(paymentIdentity(payload(), requirements, payer,
-      { method: "POST", route: "/v1/opportunities", input: {} }).payment)?.state).toBe("SETTLED");
+      { method: "POST", route: "/v1/insights", input: {} }).payment)?.state).toBe("SETTLED");
     expect(diagnostics).toContainEqual(expect.objectContaining({
       event: "payment_settlement_status_poll", attempt: 1, classification: "transient_error",
     }));
@@ -456,7 +493,7 @@ test("invalid settlement hash and mismatched polled identity never reach confirm
       expect(response.status).toBe(409);
       expect((await response.text()).includes('"opportunities":')).toBe(false);
       const row = store.findPayment(paymentIdentity(payload(), requirements, payer,
-        { method: "POST", route: "/v1/opportunities", input: {} }).payment)!;
+        { method: "POST", route: "/v1/insights", input: {} }).payment)!;
       expect(row.state).toBe("UNKNOWN");
       expect(row.txHash).toBe(outcome === "invalid hash" ? null : hash);
       expect(calls.settle).toBe(1);
@@ -532,7 +569,7 @@ test("failed official verification never reserves or settles", async () => {
     expect(calls.settle).toBe(0);
     expect(store.pending()).toEqual([]);
     expect(store.reserve(paymentIdentity(payload(), requirements, payer,
-      { method: "POST", route: "/v1/opportunities", input: {} })).state).toBe("VERIFIED");
+      { method: "POST", route: "/v1/insights", input: {} })).state).toBe("VERIFIED");
   }, { verify: async () => ({ isValid: false, payer }) });
 });
 
@@ -659,7 +696,7 @@ test("retries a temporarily unavailable confirmation once, releases content only
     expect(confirmCalls).toBe(2);
     expect(calls.settle).toBe(1);
     const row = store.findPayment(paymentIdentity(p, requirements, payer,
-      { method: "POST", route: "/v1/opportunities", input: {} }).payment)!;
+      { method: "POST", route: "/v1/insights", input: {} }).payment)!;
     expect(row.state).toBe("SETTLED");
     expect(row.txHash).toBe(hash);
     expect(diagnostics).toContainEqual(expect.objectContaining({ event: "payment_confirmation_recovered", attempts: 2 }));
@@ -773,7 +810,7 @@ test("hash checkpoint failure plus failed UNKNOWN write leaves in-flight marker 
     const response = await post(payload());
     expect(response.status).toBe(409);
     expect((await response.text()).includes('"opportunities":')).toBe(false);
-    const row = store.findPayment(paymentIdentity(payload(), requirements, payer, { method: "POST", route: "/v1/opportunities", input: {} }).payment)!;
+    const row = store.findPayment(paymentIdentity(payload(), requirements, payer, { method: "POST", route: "/v1/insights", input: {} }).payment)!;
     expect(row.state).toBe("SETTLEMENT_IN_FLIGHT");
     expect(row.txHash).toBeNull();
     expect(calls.settle).toBe(1);
@@ -855,7 +892,7 @@ test("confirmed fixture settlement is durable before paid response delivery", as
   await fixture(async ({ post, store }) => {
     const p = payload();
     expect((await post(p)).status).toBe(200);
-    const identity = paymentIdentity(p, requirements, payer, { method: "POST", route: "/v1/opportunities", input: {} });
+    const identity = paymentIdentity(p, requirements, payer, { method: "POST", route: "/v1/insights", input: {} });
     expect(store.findPayment(identity.payment)?.state).toBe("SETTLED");
     expect(store.findPayment(identity.payment)?.txHash).toBe(hash);
   });
@@ -949,7 +986,7 @@ test("confirmed cancellation permits one concurrent new authorization with the s
     const failed = await post(p, "{}", key);
     expect(failed.status).toBe(503);
     expect((await failed.text()).includes('"opportunities":')).toBe(false);
-    const identity = paymentIdentity(p, requirements, payer, { method: "POST", route: "/v1/opportunities", input: {} });
+    const identity = paymentIdentity(p, requirements, payer, { method: "POST", route: "/v1/insights", input: {} });
     const original = store.findPayment(identity.payment)!;
     expect(original.state).toBe("CANCELLED");
     expect(original.txHash).toBeNull();

@@ -2,16 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { encodeEventTopics, toFunctionSelector, toEventSelector, type Address, type PublicClient } from "viem";
+import { encodeAbiParameters, encodeEventTopics, parseAbiParameters, toFunctionSelector, toEventSelector, type Address, type PublicClient } from "viem";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-core/server";
 import { paymentMiddleware } from "@okxweb3/x402-express";
 import express from "express";
 import { statusLabel, getPublicClient, isoFromUnix, loadConfig, AGENT_DEMAND_ABI, formatUnits6, type DemandTuple } from "./contract.ts";
-import { app, changedDemandIds, createApp, createDemandIndexState, createPaymentMiddleware, filterAndSort, opportunityPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateOpportunitiesInput, type IndexEntry } from "./server.ts";
+import { app, changedDemandIds, createApp, createDemandIndexState, createPaymentMiddleware, filterAndSort, insightsPaymentOptions, paymentStorageGuard, refreshIndex, resolveX402PaymentConfig, scoreOpportunity, validateInsightsInput, type IndexEntry } from "./server.ts";
 import { loadOperationalConfig } from "./config.ts";
 import { assertPublishedPaymentDiscovery, paymentDiscovery, validatePaymentDiscovery } from "./payment-discovery.ts";
 import { DiscoveryStore } from "./discovery-store.ts";
+import { ActivityStore } from "./activity-store.ts";
+import { refreshActivity } from "./activity-index.ts";
 import { discoveryIdentity, discoveryPayload, parseDiscoveryMetadata } from "./discovery-metadata.ts";
 import { discoveryRequest } from "./discovery-evaluator.ts";
 
@@ -38,6 +40,8 @@ function syntheticEntry(id: bigint, overrides: Partial<DemandTuple> & Partial<Pi
 }
 
 async function routeFixture(entries: IndexEntry[], run: (url: string, marketCalls: () => number) => Promise<void>, discovery?: DiscoveryStore) {
+  const activityDir = mkdtempSync(join(tmpdir(), "unmet-insights-"));
+  const activity = new ActivityStore(join(activityDir, "activity.sqlite"), { chainId: "1952", contract: demandContract.toLowerCase(), escrowToken: marketToken.toLowerCase(), tokenDecimals: 6, deployBlock: "0" });
   const state = createDemandIndexState();
   state.ready = true;
   state.deploymentKey = `1952:${demandContract.toLowerCase()}`;
@@ -47,9 +51,9 @@ async function routeFixture(entries: IndexEntry[], run: (url: string, marketCall
   let marketCalls = 0;
   const client = fakeClient({ getBlock: () => { marketCalls++; return { number: 42n, hash: hashA }; }, readContract: () => { marketCalls++; return 0n; } });
   const server = createApp({ middleware: (_req, _res, next) => next() }, {
-    config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_OPPORTUNITIES: "1000" }),
+    config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_INSIGHTS: "1000" }),
     market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment }, client,
-    indexState: state, now: () => fixedNow, discovery,
+    indexState: state, now: () => fixedNow, discovery, activity,
   }).listen(0, "127.0.0.1");
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("test listener unavailable");
@@ -57,6 +61,7 @@ async function routeFixture(entries: IndexEntry[], run: (url: string, marketCall
   finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    activity.close(); rmSync(activityDir, { recursive: true });
   }
 }
 
@@ -96,11 +101,11 @@ function closedLog(demandId: bigint) {
 
 test("cancellation status and event are indexed", async () => {
   expect(statusLabel(4)).toBe("CANCELLED");
-  expect(validateOpportunitiesInput({ status: "CaNcElLeD" }).ok).toBe(true);
+  expect(validateInsightsInput({ status: "CaNcElLeD" }).ok).toBe(true);
   const log = { ...closedLog(7n), topics: encodeEventTopics({ abi: AGENT_DEMAND_ABI, eventName: "SettlementCancelled", args: { demandId: 7n } }) };
   expect(await changedDemandIds(fakeClient({ getLogs: () => [log] }), testContract, 1n, 1n)).toEqual(new Set([7n]));
   const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
-  expect(new RegExp(spec.components.schemas.OpportunityQuery.properties.status.pattern).test("CaNcElLeD")).toBe(true);
+  expect(new RegExp(spec.components.schemas.InsightsQuery.properties.status.pattern).test("CaNcElLeD")).toBe(true);
 });
 
 function fakeClient(overrides: {
@@ -249,7 +254,7 @@ describe("Express app entrypoint", () => {
     try {
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
-      const response = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/insights`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
@@ -265,12 +270,89 @@ describe("Express app entrypoint", () => {
 });
 
 describe("free and paid discovery responses", () => {
+  test("paid insights return trusted indexed history and suppress it on a cutoff reorg without changing ranking", async () => {
+    const activityDir = mkdtempSync(join(tmpdir(), "unmet-insights-history-"));
+    const activity = new ActivityStore(join(activityDir, "activity.sqlite"), { chainId: "1952", contract: demandContract.toLowerCase(), escrowToken: marketToken.toLowerCase(), tokenDecimals: 6, deployBlock: "0" });
+    const indexState = createDemandIndexState();
+    indexState.ready = true;
+    indexState.deploymentKey = `1952:${demandContract.toLowerCase()}`;
+    indexState.lastIndexedBlock = 42n;
+    indexState.lastIndexedBlockHash = hashA;
+    indexState.entries.set("1", syntheticEntry(1n));
+    const eventBase = { address: demandContract, blockNumber: 1n, blockHash: hashA, transactionHash: hashB, transactionIndex: 0, removed: false };
+    const logs = [
+      { ...eventBase, logIndex: 0, topics: encodeEventTopics({ abi: AGENT_DEMAND_ABI, eventName: "DemandCreated",
+        args: { demandId: 1n, demandKey: hashA, creator: testContract } }),
+        data: encodeAbiParameters(parseAbiParameters("string, uint96, uint64, uint64, uint96"), ["fixture-1", 1n, 1n, 90000n, 100n]) },
+      { ...eventBase, logIndex: 1, topics: encodeEventTopics({ abi: AGENT_DEMAND_ABI, eventName: "DemandSupported",
+        args: { demandId: 1n, supporter: testContract } }),
+        data: encodeAbiParameters(parseAbiParameters("uint96, uint64, uint128, uint32"), [100n, 1n, 100n, 1]) },
+    ];
+    let reorg = false;
+    const client = {
+      getChainId: async () => 1952,
+      getBytecode: async () => "0x1234",
+      getBlockNumber: async () => 42n,
+      getBlock: async ({ blockNumber }: { blockNumber?: bigint } = {}) => {
+        const number = blockNumber ?? 42n;
+        return { number, hash: reorg && number === 42n ? hashB : hashA,
+          timestamp: number === 42n ? 100000n : number === 1n ? 2000n : 1000n, transactions: [hashB] };
+      },
+      getLogs: async () => logs,
+      readContract: async ({ functionName }: { functionName: string }) =>
+        functionName === "token" ? marketToken : functionName === "decimals" ? 6 : 2n,
+    } as unknown as PublicClient;
+    await refreshActivity(activity, client, demandContract, { indexMaxLogWindows: 1, indexBudgetMs: 10000, indexMaxDemands: 10 });
+    expect(activity.state()).toMatchObject({ coverageStatus: "complete", reorgState: "clear" });
+    const server = createApp({ middleware: (_req, res, next) => { res.setHeader("PAYMENT-RESPONSE", "e30="); next(); } }, {
+      config: loadOperationalConfig({ RATE_INSIGHTS: "1000" }),
+      market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment },
+      client, indexState, now: () => fixedNow, activity,
+    }).listen(0, "127.0.0.1");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test listener unavailable");
+    try {
+      const post = () => fetch(`http://127.0.0.1:${address.port}/v1/insights`, {
+        method: "POST", headers: { "content-type": "application/json", "payment-signature": "synthetic" }, body: "{}",
+      });
+      const first = await post();
+      expect(first.status).toBe(200);
+      expect(first.headers.get("payment-response")).toBe("e30=");
+      const available = await first.json();
+      expect(available.blockNumber).toBe("42");
+      expect(available.blockHash).toBe(hashA);
+      expect(available.marketActivity.history.wholeHistory).toMatchObject({
+        status: "available", createdDemandCount: "1", grossSupportInflowAtomic: "100", submissionCount: "0",
+      });
+      expect(available.marketActivity.history.trailing24h).toMatchObject({ status: "available", grossSupportInflowAtomic: "0", newDemandSupporterPairs: "0" });
+      expect(available.opportunities).toHaveLength(1);
+      reorg = true;
+      const second = await post();
+      expect(second.status).toBe(200);
+      const invalidated = await second.json();
+      expect(invalidated.blockHash).toBe(hashA);
+      expect(invalidated.analysis).toEqual(available.analysis);
+      expect(invalidated.opportunities).toEqual(available.opportunities);
+      expect(invalidated.marketActivity.history.reorg.state).toBe("detected");
+      expect(invalidated.marketActivity.history.wholeHistory).toMatchObject({ status: "unavailable", reason: "REORG_REBUILD", createdDemandCount: null, grossSupportInflowAtomic: null });
+      expect(invalidated.marketActivity.history.trailing24h).toMatchObject({ status: "unavailable", grossSupportInflowAtomic: null, newDemandSupporterPairs: null });
+      expect(activity.state().reorgState).toBe("detected");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      activity.close(); rmSync(activityDir, { recursive: true });
+    }
+  });
+
   test("API discovery links preserve synthetic x402 challenge and settlement headers", async () => {
     const indexState = createDemandIndexState();
     indexState.ready = true;
     indexState.deploymentKey = `1952:${demandContract.toLowerCase()}`;
     indexState.entries.set("1", syntheticEntry(1n));
     indexState.lastIndexedBlock = 42n;
+    indexState.lastIndexedBlockHash = hashA;
+    const activityDir = mkdtempSync(join(tmpdir(), "unmet-insights-"));
+    const activity = new ActivityStore(join(activityDir, "activity.sqlite"), { chainId: "1952", contract: demandContract.toLowerCase(), escrowToken: marketToken.toLowerCase(), tokenDecimals: 6, deployBlock: "0" });
     const app = createApp({ middleware: (req, res, next) => {
       if (!req.get("payment-signature")) {
         res.setHeader("PAYMENT-REQUIRED", "e30=");
@@ -280,9 +362,9 @@ describe("free and paid discovery responses", () => {
       res.setHeader("PAYMENT-RESPONSE", "e30=");
       next();
     } }, {
-      config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_OPPORTUNITIES: "1000" }),
+      config: loadOperationalConfig({ RATE_DEMANDS: "1000", RATE_INSIGHTS: "1000" }),
       market: { ...loadConfig(), contract: demandContract, paymentToken: marketToken, deployment: marketDeployment },
-      client: fakeClient(), indexState, now: () => fixedNow,
+      client: fakeClient(), indexState, now: () => fixedNow, activity,
     });
     const server = app.listen(0, "127.0.0.1");
     const address = server.address();
@@ -299,7 +381,7 @@ describe("free and paid discovery responses", () => {
       const head = await fetch(base + "/v1/demands", { method: "HEAD" });
       expect(head.status).toBe(200);
       expect(head.headers.get("link")).toContain("rel=\"service-desc\"");
-      const paid = await fetch(base + "/v1/opportunities", {
+      const paid = await fetch(base + "/v1/insights", {
         method: "POST", headers: { "content-type": "application/json", accept: "text/markdown", origin: "http://localhost:5173" }, body: "{}",
       });
       expect(paid.status).toBe(402);
@@ -309,7 +391,7 @@ describe("free and paid discovery responses", () => {
       expect(paid.headers.get("payment-required")).toBe("e30=");
       expect(paid.headers.get("access-control-expose-headers")).toContain("link");
       expect(await paid.text()).toBe("");
-      const settled = await fetch(base + "/v1/opportunities", {
+      const settled = await fetch(base + "/v1/insights", {
         method: "POST", headers: { "content-type": "application/json", "payment-signature": "synthetic", accept: "text/markdown" }, body: "{}",
       });
       expect(settled.status).toBe(200);
@@ -319,12 +401,17 @@ describe("free and paid discovery responses", () => {
       expect(settled.headers.get("payment-response")).toBe("e30=");
       const result = await settled.json();
       expect(result.opportunities).toHaveLength(1);
+      expect(result.blockHash).toBe(hashA);
+      expect(result.marketActivity.history.wholeHistory.status).toBe("unavailable");
+      expect(result.marketActivity.history.wholeHistory.createdDemandCount).toBeNull();
+      expect(result.usageEvidence.status).toBe("unsupported");
       expect(result.chainId).toBe(1952);
       expect(result.contract).toBe(demandContract);
       expect(result.escrowToken).toEqual(marketDeployment.escrowToken);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      activity.close(); rmSync(activityDir, { recursive: true });
     }
   });
 
@@ -332,7 +419,7 @@ describe("free and paid discovery responses", () => {
     const catalog = JSON.parse(readFileSync(new URL("../frontend/public/.well-known/api-catalog", import.meta.url), "utf8"));
     expect(catalog.linkset[0].anchor).toBe("https://unmetxyz.my.id/.well-known/api-catalog");
     expect(catalog.linkset[0].item.map((link: { href: string }) => link.href)).toEqual([
-      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/demands/prepare", "https://unmetxyz.my.id/v1/opportunities", "https://unmetxyz.my.id/v1/services",
+      "https://unmetxyz.my.id/v1/demands", "https://unmetxyz.my.id/v1/demands/prepare", "https://unmetxyz.my.id/v1/insights", "https://unmetxyz.my.id/v1/services",
     ]);
     expect(catalog.linkset.every((entry: { anchor: string }) => new URL(entry.anchor).protocol === "https:")).toBe(true);
     expect(catalog.linkset.slice(1).every((entry: Record<string, Array<{ href: string }>>) =>
@@ -340,7 +427,7 @@ describe("free and paid discovery responses", () => {
     expect(catalog.linkset[2]["service-doc"].some((link: { href: string }) => link.href === "https://unmetxyz.my.id/payment.md")).toBe(true);
     const spec = JSON.parse(readFileSync(new URL("../frontend/public/openapi.json", import.meta.url), "utf8"));
     expect(spec.info.description).toContain("Mozilla browser user agent");
-    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/opportunities", "/v1/services", "/v1/services/{chainId}/{contract}/{demandId}/discovery", "/v1/services/{id}"]);
+    expect(Object.keys(spec.paths)).toEqual(["/.well-known/api-catalog", "/live", "/health", "/ready", "/v1/demands", "/v1/demands/prepare", "/v1/insights", "/v1/services", "/v1/services/{chainId}/{contract}/{demandId}/discovery", "/v1/services/{id}"]);
     expect(spec.components.schemas.DiscoveryMetadata).toEqual(JSON.parse(readFileSync(new URL("../docs/schemas/discovery-metadata.json", import.meta.url), "utf8")));
     expect(spec.paths["/v1/services/{chainId}/{contract}/{demandId}/discovery"].put.parameters.map((parameter: { name: string; in: string; required: boolean }) => [parameter.name, parameter.in, parameter.required])).toEqual([["chainId", "path", true], ["contract", "path", true], ["demandId", "path", true]]);
     expect(spec.paths["/v1/services/{id}/discovery"]).toBeUndefined();
@@ -355,17 +442,17 @@ describe("free and paid discovery responses", () => {
     }
     for (const status of ["400", "404"]) expect(spec.paths["/v1/services/{id}"].get.responses[status].content["application/json"].schema.$ref).toBe("#/components/schemas/ErrorResponse");
     expect(spec.paths["/.well-known/api-catalog"].get.responses["200"].content).toHaveProperty("application/linkset+json");
-    expect(spec.paths["/v1/opportunities"].post.responses).toHaveProperty("402");
-    expect(spec.paths["/v1/opportunities"].post.responses["402"].headers).toHaveProperty("PAYMENT-REQUIRED");
-    expect(Object.keys(spec.paths["/v1/opportunities"].post.responses["402"].content)).toEqual(["application/json", "text/html"]);
-    expect(spec.paths["/v1/opportunities"].post.responses["200"].headers).toHaveProperty("PAYMENT-RESPONSE");
-    expect(spec.paths["/v1/opportunities"].post.parameters).toContainEqual(expect.objectContaining({ name: "PAYMENT-SIGNATURE", required: false }));
-    expect(spec.paths["/v1/opportunities"].post.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", required: false }));
-    const query = spec.components.schemas.OpportunityQuery;
+    expect(spec.paths["/v1/insights"].post.responses).toHaveProperty("402");
+    expect(spec.paths["/v1/insights"].post.responses["402"].headers).toHaveProperty("PAYMENT-REQUIRED");
+    expect(Object.keys(spec.paths["/v1/insights"].post.responses["402"].content)).toEqual(["application/json", "text/html"]);
+    expect(spec.paths["/v1/insights"].post.responses["200"].headers).toHaveProperty("PAYMENT-RESPONSE");
+    expect(spec.paths["/v1/insights"].post.parameters).toContainEqual(expect.objectContaining({ name: "PAYMENT-SIGNATURE", required: false }));
+    expect(spec.paths["/v1/insights"].post.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", required: false }));
+    const query = spec.components.schemas.InsightsQuery;
     expect(query.additionalProperties).toBe(false);
     expect(query.properties.status.description).toContain("case-insensitive");
     expect(query.properties.status.description).toContain("Omit the property");
-    expect(spec.paths["/v1/opportunities"].post.responses["200"].content["application/json"].schema.$ref).toBe("#/components/schemas/OpportunitiesResponse");
+    expect(spec.paths["/v1/insights"].post.responses["200"].content["application/json"].schema.$ref).toBe("#/components/schemas/InsightsResponse");
     expect(Object.keys(spec.components.schemas.Demand.properties)).toEqual([
       "demandId", "capability", "currentEscrow", "fundedBounty", "reviewCommitted", "supporters", "expectedCalls", "maxUnitPrice", "deadline", "status", "creator", "builder", "approvalWeight", "approvalRequired", "rejectionWeight", "rejectionThreshold", "candidateRejected", "score",
     ]);
@@ -617,7 +704,7 @@ describe("free and paid discovery responses", () => {
       expect(body.demands.map((row: { specification: string }) => row.specification)).toEqual([...specifications].reverse());
       expect(body.demands[0].maxUnitPrice).toBe("1.000000");
       expect(body.demands[0].expectedCalls).toBe("6");
-      const paid = await (await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
+      const paid = await (await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
       expect(paid.opportunities.every((row: Record<string, unknown>) => !Object.hasOwn(row, "specification"))).toBe(true);
     });
   });
@@ -629,18 +716,18 @@ describe("free and paid discovery responses", () => {
     }));
     await routeFixture(entries, async (url) => {
       for (const sort of ["bounty", "supporters", "calls", "deadline", "score"]) {
-        const response = await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sort, limit: 2 }) });
+        const response = await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sort, limit: 2 }) });
         const body = await response.json();
         expect(body.analysis).toMatchObject({ poolSize: 3, rankingScope: "matching_filters_before_limit", marketToken, tokenDecimals: 6 });
         expect(body.opportunities.map((row: { demandId: string; rank: number }) => [row.demandId, row.rank])).toEqual([
           [(first + 2n).toString(), 1], [(first + 1n).toString(), 2],
         ]);
       }
-      const filtered = await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minBounty":"5.000000","limit":1,"sort":"deadline"}' });
+      const filtered = await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minBounty":"5.000000","limit":1,"sort":"deadline"}' });
       const filteredBody = await filtered.json();
       expect(filteredBody.analysis.poolSize).toBe(3);
       expect(filteredBody.opportunities[0]).toMatchObject({ demandId: (first + 2n).toString(), rank: 1 });
-      const emptied = await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minBounty":"5.000001"}' });
+      const emptied = await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minBounty":"5.000001"}' });
       expect(await emptied.json()).toMatchObject({ analysis: { poolSize: 0 }, opportunities: [] });
     });
   });
@@ -662,7 +749,7 @@ describe("free and paid discovery responses", () => {
     const getRows = async (entries: IndexEntry[], limit = 20) => {
       let rows: ReasoningRow[] = [];
       await routeFixture(entries, async (base) => {
-        const response = await fetch(base + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minSupporters: 0, limit }) });
+        const response = await fetch(base + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minSupporters: 0, limit }) });
         const body: { opportunities: ReasoningRow[] } = await response.json();
         rows = body.opportunities;
       });
@@ -758,7 +845,7 @@ describe("free and paid discovery responses", () => {
     const id = 9_007_199_254_740_993n;
     const zeroEntry = syntheticEntry(id, { committed: 0n, expectedCalls: 0n, supporterCount: 0, deadline: BigInt(fixedNow / 1000) + 500n });
     await routeFixture([zeroEntry], async (url) => {
-      const zeroResponse = await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minSupporters":0}' });
+      const zeroResponse = await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minSupporters":0}' });
       const zeroBody = await zeroResponse.json();
       const zero = zeroBody.opportunities[0];
       expect(zeroBody.analysis.poolSize).toBe(1);
@@ -773,7 +860,7 @@ describe("free and paid discovery responses", () => {
 
     const hugeEscrow = (1n << 128n) - 1n, hugeCalls = (1n << 64n) - 1n, hugeDeadline = (1n << 64n) - 1n;
     await routeFixture([syntheticEntry(id, { committed: hugeEscrow, expectedCalls: hugeCalls, supporterCount: 0xffff_ffff, deadline: hugeDeadline })], async (url) => {
-      const response = await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minSupporters":0}' });
+      const response = await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: '{"minSupporters":0}' });
       const body = await response.json();
       const row = body.opportunities[0];
       expect(row.currentEscrow).toBe(formatUnits6(hugeEscrow));
@@ -805,7 +892,7 @@ describe("free and paid discovery responses", () => {
         rejectionThreshold: 4_000_000n, rejectionWeight: 1_000_000n }),
     ];
     await routeFixture(entries, async (url) => {
-      const get = async (body: object) => (await fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+      const get = async (body: object) => (await fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
       const openPool = await get({ status: "open", sort: "score" });
       const fractional = openPool.opportunities.find((row: { demandId: string }) => row.demandId === "2");
       expect(fractional.scoreBreakdown.funding.percentile).toBe(1 / 3);
@@ -846,7 +933,7 @@ describe("independent market and x402 networks", () => {
       PAYMENT_TOKEN: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
       PAYMENT_TOKEN_DECIMALS: "6",
       X402_CHAIN_ID: "196",
-      OPPORTUNITY_PRICE: "0.01",
+      INSIGHTS_PRICE: "0.01",
       NODE_ENV: "test",
     }, () => {
       const market = loadConfig();
@@ -881,6 +968,7 @@ describe("independent market and x402 networks", () => {
   });
 
   test("fails closed for unsupported x402 chains and non-mainnet production config", () => {
+    expect(() => resolveX402PaymentConfig({ OPPORTUNITY_PRICE: "0.01", INSIGHTS_PRICE: "0.01" }, 1952)).toThrow("CONFIG_INVALID: LEGACY_INSIGHTS_ENV");
     expect(resolveX402PaymentConfig({ NODE_ENV: "test" }, 1952).network).toBe("eip155:1952");
     const legacyPreview = { NODE_ENV: "production", VERCEL_ENV: "preview" };
     const legacyProduction = { NODE_ENV: "test", VERCEL_ENV: "production" };
@@ -896,7 +984,7 @@ describe("independent market and x402 networks", () => {
         { asset: "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", extra: { name: "Global Dollar", version: "1" } },
       ],
     });
-    expect(() => resolveX402PaymentConfig({ X402_CHAIN_ID: "196", OPPORTUNITY_PRICE: "1" }, 1952)).toThrow("CONFIG_INVALID: OPPORTUNITY_PRICE");
+    expect(() => resolveX402PaymentConfig({ X402_CHAIN_ID: "196", INSIGHTS_PRICE: "1" }, 1952)).toThrow("CONFIG_INVALID: INSIGHTS_PRICE");
   });
 
   test("official x402 scheme resolves network-specific stablecoin and amount", async () => {
@@ -909,7 +997,7 @@ describe("independent market and x402 networks", () => {
 
   test("Mainnet opportunity accepts are the exact ordered native token options", () => {
     const payTo = "0x1111111111111111111111111111111111111111" as const;
-    expect(opportunityPaymentOptions(resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952), payTo)).toEqual([
+    expect(insightsPaymentOptions(resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952), payTo)).toEqual([
       { scheme: "exact", network: "eip155:196", payTo, price: { asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736", amount: "10000", extra: { name: "USD₮0", version: "1" } } },
       { scheme: "exact", network: "eip155:196", payTo, price: { asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", amount: "10000", extra: { name: "USDC", version: "2" } } },
       { scheme: "exact", network: "eip155:196", payTo, price: { asset: "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", amount: "10000", extra: { name: "Global Dollar", version: "1" } } },
@@ -918,21 +1006,21 @@ describe("independent market and x402 networks", () => {
 
   test("official SDK 402 challenge carries all three Mainnet options in order", async () => {
     const payTo = "0x1111111111111111111111111111111111111111" as const;
-    const accepts = opportunityPaymentOptions(resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952), payTo);
+    const accepts = insightsPaymentOptions(resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952), payTo);
     const resource = new x402ResourceServer({
       getSupported: async () => ({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }], extensions: [], signers: {} }),
       verify: async () => ({ isValid: false }), settle: async () => { throw new Error("not called"); },
       getSettleStatus: async () => ({ success: false }),
     }).register("eip155:196", new ExactEvmScheme());
     await resource.initialize();
-    const paid = paymentMiddleware({ "POST /v1/opportunities": { accepts } }, resource, undefined, undefined, false);
+    const paid = paymentMiddleware({ "POST /v1/insights": { accepts } }, resource, undefined, undefined, false);
     const app = express();
-    app.post("/v1/opportunities", paid, (_req, res) => res.json({}));
+    app.post("/v1/insights", paid, (_req, res) => res.json({}));
     const server = app.listen(0, "127.0.0.1");
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test listener unavailable");
     try {
-      const response = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, { method: "POST" });
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/insights`, { method: "POST" });
       expect(response.status).toBe(402);
       const challenge = JSON.parse(Buffer.from(response.headers.get("payment-required")!, "base64").toString());
       expect(challenge.accepts).toEqual(accepts.map((option) => ({
@@ -961,13 +1049,13 @@ describe("independent market and x402 networks", () => {
         await expect(validatePaymentDiscovery(changed, resolveX402PaymentConfig({ X402_CHAIN_ID: "196" }, 1952)))
           .rejects.toThrow("CONFIG_INVALID: PAYMENT_DISCOVERY");
       }
-      const browser = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
+      const browser = await fetch(`http://127.0.0.1:${address.port}/v1/insights`, {
         method: "POST", headers: { accept: "text/html", "user-agent": "Mozilla/5.0" },
       });
       expect(browser.status).toBe(402);
       expect(browser.headers.get("content-type")).toContain("text/html");
       expect(browser.headers.get("payment-required")).toBeNull();
-      const alias = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities/`, {
+      const alias = await fetch(`http://127.0.0.1:${address.port}/v1/insights/`, {
         method: "POST", headers: { accept: "application/json" },
       });
       expect(alias.status).toBe(402);
@@ -1016,7 +1104,7 @@ describe("independent market and x402 networks", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test listener unavailable");
     try {
-      const response = await fetch(`http://127.0.0.1:${address.port}/v1/opportunities`, {
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/insights`, {
         method: "POST", headers: { "content-type": "application/json", "x-payment": "fixture" }, body: "{}",
       });
       expect(response.status).toBe(503);
@@ -1121,7 +1209,7 @@ describe("Unix deadline serialization", () => {
 
 describe("opportunity request validation", () => {
   test("accepts the documented default request", () => {
-    const result = validateOpportunitiesInput({});
+    const result = validateInsightsInput({});
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.limit).toBe(10);
@@ -1131,20 +1219,20 @@ describe("opportunity request validation", () => {
   });
 
   test("rejects out-of-range limit", () => {
-    const result = validateOpportunitiesInput({ limit: 51 });
+    const result = validateInsightsInput({ limit: 51 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("INVALID_LIMIT");
   });
 
   test("rejects unknown status and sort", () => {
-    const status = validateOpportunitiesInput({ status: "pending" });
-    const sort = validateOpportunitiesInput({ sort: "random" });
+    const status = validateInsightsInput({ status: "pending" });
+    const sort = validateInsightsInput({ sort: "random" });
     expect(status.ok).toBe(false);
     expect(sort.ok).toBe(false);
   });
 
   test("parses six-decimal bounty exactly", () => {
-    const result = validateOpportunitiesInput({ minBounty: "123.456789" });
+    const result = validateInsightsInput({ minBounty: "123.456789" });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.minBounty).toBe(123_456_789n);
   });
@@ -1160,9 +1248,9 @@ test("index checkpoint cannot cross contract or chain", async () => {
 });
 
 test("escrow output uses configured decimals while service price retains Mainnet USDC units", () => {
-  const parsed = validateOpportunitiesInput({ minBounty: "1.23" }, 2);
+  const parsed = validateInsightsInput({ minBounty: "1.23" }, 2);
   expect(parsed.ok && parsed.value.minBounty).toBe(123n);
-  expect(validateOpportunitiesInput({ minBounty: "1.234" }, 2).ok).toBe(false);
+  expect(validateInsightsInput({ minBounty: "1.234" }, 2).ok).toBe(false);
   const rows = filterAndSort([syntheticEntry(1n, { committed: 123n, maxUnitPrice: 5n })], { minBounty: 0n, minSupporters: 0, sort: "bounty", limit: 1 }, BigInt(fixedNow / 1000), 2);
   expect(rows[0]?.currentEscrow).toBe("1.23");
   expect(rows[0]?.maxUnitPrice).toBe("0.000005");

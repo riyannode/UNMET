@@ -1,4 +1,8 @@
 import { deploymentPlan } from "./deployment-plan.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ActivityStore } from "./activity-store.ts";
 import { expect, test } from "bun:test";
 import { createApp } from "./server.ts";
 import { PaymentError } from "./payment-error.ts";
@@ -16,14 +20,14 @@ test("invalid requests never enter payment verification", async () => {
       ['{"minBounty":"' + "1".repeat(33_000) + '"}', "application/json", 413],
       ['{}', "text/plain", 415],
     ] as const) {
-      const response = await fetch("http://127.0.0.1:" + address.port + "/v1/opportunities", {
+      const response = await fetch("http://127.0.0.1:" + address.port + "/v1/insights", {
         method: "POST", headers: { "content-type": type }, body,
       });
       expect(response.status).toBe(status);
       await response.text();
     }
     expect(paid).toBe(0);
-    const valid = await fetch("http://127.0.0.1:" + address.port + "/v1/opportunities", {
+    const valid = await fetch("http://127.0.0.1:" + address.port + "/v1/insights", {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     });
     expect(valid.status).toBe(402);
@@ -57,14 +61,37 @@ async function withServer(app: Express, task: (url: string) => Promise<void>) {
   }
 }
 const post = (url: string, headers: Record<string, string> = {}) =>
-  fetch(url + "/v1/opportunities", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}" });
+  fetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}" });
+
+test("removed intelligence route follows the ordinary 404 path without payment", async () => {
+  let calls = 0;
+  const app = createApp({ middleware: (_req, res) => { calls++; res.status(402).end(); } });
+  await withServer(app, async (url) => {
+    const route = ["", "v1", "opportunities"].join("/");
+    for (const path of [route, route + "/", route.toUpperCase(), "/v1/missing"]) {
+      const response = await fetch(url + path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      expect(response.status).toBe(404);
+      expect((await response.json()).error.code).toBe("NOT_FOUND");
+      expect(response.headers.get("payment-required")).toBeNull();
+      expect(response.headers.get("payment-response")).toBeNull();
+      expect(response.headers.get("link")).toBeNull();
+    }
+    expect(calls).toBe(0);
+  });
+});
+
+test("retired intelligence settings fail closed", () => {
+  for (const env of [{ RATE_OPPORTUNITIES: "1" }, { OPPORTUNITY_PRICE: "0.01", INSIGHTS_PRICE: "0.01" }]) {
+    expect(() => loadOperationalConfig(env)).toThrow("CONFIG_INVALID: LEGACY_INSIGHTS_ENV");
+  }
+});
 
 test("per-route limits expire and forged forwarding headers cannot change an untrusted client", async () => {
   let paid = 0;
   let now = 1000;
   const app = createApp({ middleware: (_req, res) => { paid++; res.status(402).end(); } }, {
     client: { getBlock: async () => { throw new Error("offline fixture"); } } as unknown as PublicClient,
-    config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1", RATE_DEMANDS: "1" }), now: () => now,
+    config: loadOperationalConfig({ RATE_INSIGHTS: "1", RATE_DEMANDS: "1" }), now: () => now,
   });
   await withServer(app, async (url) => {
     expect((await post(url, { "x-forwarded-for": "192.0.2.1" })).status).toBe(402);
@@ -85,10 +112,10 @@ test("per-route limits expire and forged forwarding headers cannot change an unt
 
 test("different socket clients have independent quotas and full limiter state fails closed", async () => {
   const app = createApp({ middleware: (_req, res) => { res.status(402).end(); } }, {
-    config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1", RATE_MAX_KEYS: "2" }),
+    config: loadOperationalConfig({ RATE_INSIGHTS: "1", RATE_MAX_KEYS: "2" }),
   });
   const send = (url: string, localAddress: string) => new Promise<number>((resolve, reject) => {
-    const req = request(url + "/v1/opportunities", { method: "POST", localAddress, headers: { "content-type": "application/json" } }, (res) => {
+    const req = request(url + "/v1/insights", { method: "POST", localAddress, headers: { "content-type": "application/json" } }, (res) => {
       res.resume(); res.on("end", () => resolve(res.statusCode || 0));
     });
     req.on("error", reject); req.end("{}");
@@ -114,7 +141,7 @@ test("overload precedes payment and finish, errors, and aborts release admission
       res.once("close", () => closed?.());
       entered?.();
     } else res.status(402).end();
-  } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }) });
+  } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_INSIGHTS: "100" }) });
   await withServer(app, async (url) => {
     const started = new Promise<void>((resolve) => { entered = resolve; });
     const first = post(url, { "test-hold": "1" });
@@ -133,7 +160,7 @@ test("overload precedes payment and finish, errors, and aborts release admission
     const abort = new AbortController();
     const holding = new Promise<void>((resolve) => { entered = resolve; });
     const released = new Promise<void>((resolve) => { closed = resolve; });
-    const pending = fetch(url + "/v1/opportunities", {
+    const pending = fetch(url + "/v1/insights", {
       method: "POST", headers: { "content-type": "application/json", "test-hold": "1" }, body: "{}", signal: abort.signal,
     }).catch(() => undefined);
     await holding;
@@ -322,7 +349,7 @@ test("official SDK diagnostic scope never prints raw payment/provider data", asy
 test("trusted proxy IPs receive distinct IPv4 and IPv6 quotas", async () => {
   let calls = 0;
   await withServer(createApp({ middleware: (_req, res) => { calls++; res.status(402).end(); } }, {
-    config: loadOperationalConfig({ TRUSTED_PROXIES: "127.0.0.1/32", RATE_OPPORTUNITIES: "1", RATE_DEMANDS: "1" }),
+    config: loadOperationalConfig({ TRUSTED_PROXIES: "127.0.0.1/32", RATE_INSIGHTS: "1", RATE_DEMANDS: "1" }),
     client: { getBlock: async () => { throw new Error("offline fixture"); } } as unknown as PublicClient,
   }), async (url) => {
     const request = (ip: string) => post(url, { "x-forwarded-for": ip });
@@ -343,7 +370,7 @@ test("trusted proxy IPs receive distinct IPv4 and IPv6 quotas", async () => {
 test("malformed trusted-proxy identity fails closed", async () => {
   let calls = 0;
   await withServer(createApp({ middleware: (_req, res) => { calls++; res.status(402).end(); } }, {
-    config: loadOperationalConfig({ TRUSTED_PROXIES: "127.0.0.1/32", RATE_OPPORTUNITIES: "1" }),
+    config: loadOperationalConfig({ TRUSTED_PROXIES: "127.0.0.1/32", RATE_INSIGHTS: "1" }),
   }), async (url) => {
     const response = await post(url, { "x-forwarded-for": "invalid" });
     expect(response.status).toBe(503);
@@ -354,7 +381,7 @@ test("malformed trusted-proxy identity fails closed", async () => {
 
 test("untrusted forwarded headers cannot change client quota identity", async () => {
   await withServer(createApp({ middleware: (_req, res) => { res.status(402).end(); } }, {
-    config: loadOperationalConfig({ RATE_OPPORTUNITIES: "1" }),
+    config: loadOperationalConfig({ RATE_INSIGHTS: "1" }),
   }), async (url) => {
     expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.1", "x-forwarded-for": "198.51.100.1" })).status).toBe(402);
     expect((await post(url, { "x-vercel-forwarded-for": "192.0.2.2", "x-forwarded-for": "198.51.100.2" })).status).toBe(429);
@@ -389,10 +416,10 @@ for (const outcome of ["resolve", "reject"] as const) {
         res.status(402).end();
       } catch (error) { next(error); }
       finally { active--; done.resolve(); }
-    } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }) });
+    } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_INSIGHTS: "100" }) });
     await withServer(app, async (url) => {
       const controller = new AbortController();
-      const pending = fetch(url + "/v1/opportunities", {
+      const pending = fetch(url + "/v1/insights", {
         method: "POST", headers: { "content-type": "application/json", "test-hold": "1" }, body: "{}", signal: controller.signal,
       }).catch(() => undefined);
       try {
@@ -420,7 +447,7 @@ test("response completion cannot release a slot while asynchronous settlement is
       await unblock.promise;
       done.resolve();
     }
-  } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }) }), async (url) => {
+  } }, { config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_INSIGHTS: "100" }) }), async (url) => {
     try {
       expect((await post(url, { "test-hold": "1" })).status).toBe(402);
       expect((await post(url)).status).toBe(503);
@@ -470,15 +497,17 @@ for (const phase of ["execution failure", "verification", "settlement"] as const
       getBlockNumber: async () => 1n,
       readContract: async ({ functionName }: { functionName: string }) => functionName === "token" ? fixtureToken : functionName === "decimals" ? 6 : 1n,
     } as unknown as PublicClient;
-    await withServer(createApp({ middleware: (req, res, next) => {
+    const activityDir = mkdtempSync(join(tmpdir(), "unmet-hardening-"));
+    const activity = new ActivityStore(join(activityDir, "activity.sqlite"), { chainId: "1952", contract: fixtureContract, escrowToken: fixtureToken, tokenDecimals: 6, deployBlock: "0" });
+    try { await withServer(createApp({ middleware: (req, res, next) => {
       res.once("close", disconnected.resolve);
       return Promise.resolve(middleware(req, res, next)).finally(done.resolve);
     } }, {
-      config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_OPPORTUNITIES: "100" }),
-      market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment }, client,
+      config: loadOperationalConfig({ MAX_IN_FLIGHT: "1", RATE_INSIGHTS: "100" }),
+      market: { ...loadConfig(), contract: fixtureContract, deployment: fixtureDeployment }, client, activity,
     }), async (url) => {
       const controller = new AbortController();
-      const pending = fetch(url + "/v1/opportunities", {
+      const pending = fetch(url + "/v1/insights", {
         method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: controller.signal,
       }).catch(() => undefined);
       try {
@@ -493,7 +522,7 @@ for (const phase of ["execution failure", "verification", "settlement"] as const
       // Another request must reach the SDK rather than a permanently leaked slot.
       const recovered = await post(url);
       expect(recovered.status).toBe(200);
-    });
+    }); } finally { activity.close(); rmSync(activityDir, { recursive: true }); }
   });
 }
 

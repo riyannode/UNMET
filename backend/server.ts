@@ -1,7 +1,7 @@
 import { durablePayment } from "./durable-payment.ts";
 import { assertPublishedPaymentDiscovery } from "./payment-discovery.ts";
-import { opportunityPaymentOptions, resolveX402PaymentConfig as resolvePaymentConfig } from "./payment-config.ts";
-export { opportunityPaymentOptions } from "./payment-config.ts";
+import { insightsPaymentOptions, resolveX402PaymentConfig as resolvePaymentConfig } from "./payment-config.ts";
+export { insightsPaymentOptions } from "./payment-config.ts";
 import type { PaymentStore } from "./payment-store.ts";
 import { PaymentError } from "./payment-error.ts";
 import { loadOperationalConfig, type OperationalConfig } from "./config.ts";
@@ -35,6 +35,9 @@ import { loadDiscoveryConfig } from "./discovery-config.ts";
 import { matchesRecord, parseStoredObservation, startDiscoveryScheduler } from "./discovery-scheduler.ts";
 import { isDiscoveryState, type DiscoveryView } from "../shared/discovery-types.ts";
 import type { DiscoveryConfig } from "./discovery-config.ts";
+import type { ActivityStore } from "./activity-store.ts";
+import { startActivityScheduler, validateActivityCheckpoint } from "./activity-index.ts";
+import { buildInsights } from "./insights.ts";
 
 const cfg = loadConfig();
 const operations = loadOperationalConfig();
@@ -382,7 +385,7 @@ function toOpportunity(entry: IndexEntry, score: number, nowUnix: bigint, decima
 const SORTS = new Set(["bounty", "supporters", "calls", "deadline", "score"]);
 const STATUSES = new Set(["open", "submitted", "ready", "rejected", "expired", "fulfilled", "closed", "cancelled"]);
 
-export function validateOpportunitiesInput(body: unknown, decimals = 6): { ok: true; value: QueryInput } | { ok: false; code: string; message: string } {
+export function validateInsightsInput(body: unknown, decimals = 6): { ok: true; value: QueryInput } | { ok: false; code: string; message: string } {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { ok: false, code: "INVALID_JSON", message: "Body must be a JSON object" };
   }
@@ -623,8 +626,8 @@ export async function createPaymentMiddleware(): Promise<RequestHandler & { read
   await resourceServer.initialize();
 
   const middleware = paymentMiddleware({
-    "POST /v1/opportunities": {
-    accepts: opportunityPaymentOptions(pay, pay.payTo),
+    "POST /v1/insights": {
+    accepts: insightsPaymentOptions(pay, pay.payTo),
       description: "Rank funded AI-agent capabilities that still need builders",
       mimeType: "application/json",
     },
@@ -677,6 +680,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   discovery?: DiscoveryStore;
   discoveryConfig?: DiscoveryConfig;
   discoveryStartedAt?: number;
+  activity?: ActivityStore;
 } = {}) {
   const config = options.config || operations;
   const market = options.market || cfg;
@@ -696,7 +700,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
   app.use(secureHeaders);
   app.use(cors);
   app.use((req, res, next) => {
-    if (req.path === "/" || req.path === "/v1/demands" || /^\/v1\/services(?:\/[^/]+)?$/.test(req.path) || req.path === "/v1/demands/prepare" || req.path === "/v1/opportunities") {
+    if (req.path === "/" || req.path === "/v1/demands" || /^\/v1\/services(?:\/[^/]+)?$/.test(req.path) || req.path === "/v1/demands/prepare" || req.path === "/v1/insights") {
       res.append("Link", [
         "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"; profile=\"https://www.rfc-editor.org/info/rfc9727\"",
         "</openapi.json>; rel=\"service-desc\"; type=\"application/vnd.oai.openapi+json;version=3.1\"",
@@ -802,6 +806,11 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
         res.status(503).json({ ok: false, error: { code: "PAYMENT_UNAVAILABLE", message: "Payment service unavailable" } });
         return;
       }
+      try { options.activity?.state(); }
+      catch {
+        res.status(503).json({ ok: false, error: { code: "ACTIVITY_STORAGE_UNAVAILABLE", message: "Activity storage unavailable" } });
+        return;
+      }
       const result = await health();
       res.status(result.status).json(result.body);
     })().catch(next);
@@ -827,6 +836,37 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
     } catch (error) { next(error); }
   }));
 
+  const serviceRow = (entry: IndexEntry) => {
+    const identity = `${market.deployment!.chainId}:${market.deployment!.contract.toLowerCase()}:${entry.demandId}`;
+    const record = options.discovery?.get(identity);
+    let discovery: DiscoveryView = { metadataState: "missing", state: "pending", offers: [] };
+    if (record) {
+      try {
+        const metadata = parseDiscoveryMetadata(Buffer.from(JSON.stringify({ ...JSON.parse(record.payload), signature: record.signature })));
+        if (metadata.builder !== entry.data.builder.toLowerCase() || metadata.serviceUrl !== entry.data.serviceUrl || metadata.evidenceHash !== entry.data.evidenceHash.toLowerCase()) discovery = { metadataState: "invalid", state: "metadata_invalid", offers: [] };
+        else {
+          discovery = { metadataState: "valid", state: "pending", metadata, offers: [] };
+          if (record.observation) {
+            const observation = parseStoredObservation(record.observation);
+            if (observation.result && !matchesRecord(observation.result, record)) throw new Error("DISCOVERY_INVALID_OBSERVATION");
+            const stale = observation.observedAt === null || observation.generation !== (indexState.entryVersions.get(entry.demandId.toString()) ?? 0) || observation.observedAt < (options.discoveryStartedAt ?? 0) || (options.now?.() ?? Date.now()) - observation.observedAt >= discoveryConfig.staleMs;
+            discovery.state = observation.failure ? "unavailable" : stale ? "stale" : isDiscoveryState(observation.result?.state) ? observation.result.state : "pending";
+            if (!stale && !observation.failure && observation.result?.state === "metadata_invalid") discovery.metadataState = "invalid";
+            discovery.observedAt = observation.observedAt === null ? null : new Date(observation.observedAt).toISOString();
+            discovery.lastAttemptAt = new Date(observation.lastAttemptAt).toISOString();
+            discovery.reason = observation.failure || observation.result?.reason || null;
+            discovery.requestHash = observation.result?.requestHash;
+            discovery.blockHash = observation.result?.blockHash;
+            discovery.metadataRevision = observation.result?.metadataRevision;
+            discovery.offers = observation.result?.offers || [];
+          }
+        }
+      } catch { discovery = { metadataState: "invalid", state: "metadata_invalid", offers: [] }; }
+    }
+    return { demandId: entry.demandId.toString(), capability: entry.data.capability,
+      specification: entry.data.specification, builder: entry.data.builder, serviceUrl: entry.data.serviceUrl, evidenceHash: entry.data.evidenceHash, discovery };
+  };
+
   app.get(["/v1/services", "/v1/services/:id"], limiter("demands", config.demandsPerWindow), gate, admittedWork(async (req, res, next) => {
     const id = req.params.id;
     if (id !== undefined && (!/^[1-9][0-9]*$/.test(id) || BigInt(id) >= 1n << 256n)) {
@@ -842,50 +882,20 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       } else await refreshIndex(rpc(), market.deployment, indexState, config);
       if (req.aborted || res.destroyed) { res.statusCode = 503; res.end(); return; }
       if (!indexState.lastIndexedBlockHash) throw new Error("CHAIN_RPC_UNAVAILABLE");
-      const row = (entry: IndexEntry) => {
-        const identity = `${market.deployment!.chainId}:${market.deployment!.contract.toLowerCase()}:${entry.demandId}`;
-        const record = options.discovery?.get(identity);
-        let discovery: DiscoveryView = { metadataState: "missing", state: "pending", offers: [] };
-        if (record) {
-          try {
-            const metadata = parseDiscoveryMetadata(Buffer.from(JSON.stringify({ ...JSON.parse(record.payload), signature: record.signature })));
-            if (metadata.builder !== entry.data.builder.toLowerCase() || metadata.serviceUrl !== entry.data.serviceUrl || metadata.evidenceHash !== entry.data.evidenceHash.toLowerCase()) discovery = { metadataState: "invalid", state: "metadata_invalid", offers: [] };
-            else {
-              discovery = { metadataState: "valid", state: "pending", metadata, offers: [] };
-              if (record.observation) {
-                const observation = parseStoredObservation(record.observation);
-                if (observation.result && !matchesRecord(observation.result, record)) throw new Error("DISCOVERY_INVALID_OBSERVATION");
-                const stale = observation.observedAt === null || observation.generation !== (indexState.entryVersions.get(entry.demandId.toString()) ?? 0) || observation.observedAt < (options.discoveryStartedAt ?? 0) || (options.now?.() ?? Date.now()) - observation.observedAt >= discoveryConfig.staleMs;
-                discovery.state = observation.failure ? "unavailable" : stale ? "stale" : isDiscoveryState(observation.result?.state) ? observation.result.state : "pending";
-                if (!stale && !observation.failure && observation.result?.state === "metadata_invalid") discovery.metadataState = "invalid";
-                discovery.observedAt = observation.observedAt === null ? null : new Date(observation.observedAt).toISOString();
-                discovery.lastAttemptAt = new Date(observation.lastAttemptAt).toISOString();
-                discovery.reason = observation.failure || observation.result?.reason || null;
-                discovery.requestHash = observation.result?.requestHash;
-                discovery.blockHash = observation.result?.blockHash;
-                discovery.metadataRevision = observation.result?.metadataRevision;
-                discovery.offers = observation.result?.offers || [];
-              }
-            }
-          } catch { discovery = { metadataState: "invalid", state: "metadata_invalid", offers: [] }; }
-        }
-        return { demandId: entry.demandId.toString(), capability: entry.data.capability,
-          specification: entry.data.specification, builder: entry.data.builder, serviceUrl: entry.data.serviceUrl, evidenceHash: entry.data.evidenceHash, discovery };
-      };
       const envelope = { chainId: market.deployment.chainId, contract: market.deployment.contract,
         blockNumber: indexState.lastIndexedBlock.toString(), blockHash: indexState.lastIndexedBlockHash,
         generatedAt: new Date(options.now?.() ?? Date.now()).toISOString() };
       if (id !== undefined) {
         const entry = indexState.entries.get(id);
         if (!entry || entry.data.status !== 2) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Service not found" } }); return; }
-        res.json({ ...envelope, service: row(entry) });
+        res.json({ ...envelope, service: serviceRow(entry) });
       } else {
         const allowed = ["capability", "network", "asset", "maxPrice", "state"];
         if (Object.keys(req.query).some((key) => !allowed.includes(key) || typeof req.query[key] !== "string")) { res.status(400).json({ error: { code: "DISCOVERY_INVALID_FILTER", message: "Invalid discovery filter" } }); return; }
         const { capability, network, asset, maxPrice, state } = req.query as Record<string, string | undefined>;
         if ((capability !== undefined && (!capability || capability.length > 128)) || (network !== undefined && !/^eip155:[1-9][0-9]{0,31}$/.test(network)) || (asset !== undefined && !/^0x[0-9a-f]{40}$/.test(asset)) || (maxPrice !== undefined && (!network || !asset || maxPrice.length > 78 || !/^(0|[1-9][0-9]*)$/.test(maxPrice) || BigInt(maxPrice) >= 1n << 256n)) || (state !== undefined && !["pending", "metadata_invalid", "compatible", "incompatible", "unavailable", "stale"].includes(state))) { res.status(400).json({ error: { code: "DISCOVERY_INVALID_FILTER", message: "Invalid discovery filter" } }); return; }
         const services = [...indexState.entries.values()].filter((entry) => entry.data.status === 2)
-          .sort((a, b) => a.demandId > b.demandId ? -1 : a.demandId < b.demandId ? 1 : 0).map(row).filter((service) => {
+          .sort((a, b) => a.demandId > b.demandId ? -1 : a.demandId < b.demandId ? 1 : 0).map(serviceRow).filter((service) => {
             if (capability && !service.capability.toLowerCase().includes(capability.toLowerCase())) return false;
             if (state && service.discovery.state !== state) return false;
             if (network || asset || maxPrice !== undefined) return service.discovery.state === "compatible" && service.discovery.offers.some((offer) => (!network || offer.network === network) && (!asset || offer.asset === asset) && (maxPrice === undefined || BigInt(offer.amount) <= BigInt(maxPrice)));
@@ -901,15 +911,15 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       res.status(415).json({ error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "Use application/json" } });
       return;
     }
-    const parsed = validateOpportunitiesInput(req.body, market.deployment?.escrowToken.decimals ?? 6);
+    const parsed = validateInsightsInput(req.body, market.deployment?.escrowToken.decimals ?? 6);
     if (!parsed.ok) {
       res.status(400).json({ error: { code: parsed.code, message: parsed.message } });
       return;
     }
-    res.locals.opportunityInput = parsed.value;
+    res.locals.insightsInput = parsed.value;
     next();
   };
-  app.post("/v1/opportunities", validate, limiter("opportunities", config.opportunitiesPerWindow), gate, admittedWork(payment.middleware), admittedWork(async (req, res, next) => {
+  app.post("/v1/insights", validate, limiter("insights", config.insightsPerWindow), gate, admittedWork(payment.middleware), admittedWork(async (req, res, next) => {
     try {
       if (!market.deployment) throw new Error("CHAIN_CONTRACT_UNCONFIGURED");
       if ((await health()).status !== 200) throw new Error("CHAIN_RPC_UNAVAILABLE");
@@ -922,18 +932,34 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
         res.end();
         return;
       }
-      const input: QueryInput = res.locals.opportunityInput;
+      const input: QueryInput = res.locals.insightsInput;
       const evaluationTime = options.now?.() ?? Date.now();
       const nowUnix = BigInt(Math.floor(evaluationTime / 1000));
-      const result = paidAnalysis([...indexState.entries.values()], input, nowUnix, market.deployment.escrowToken.address, market.deployment.escrowToken.decimals);
+      if (!indexState.lastIndexedBlockHash) throw new Error("CHAIN_RPC_UNAVAILABLE");
+      if (!options.activity) throw new Error("ACTIVITY_STORAGE_UNAVAILABLE");
+      const entries = [...indexState.entries.values()];
+      const marketBlock = indexState.lastIndexedBlock;
+      const marketBlockHash = indexState.lastIndexedBlockHash;
+      let discovery: Map<string, DiscoveryView> | null = null;
+      if (options.discovery) {
+        try {
+          discovery = new Map(entries.filter((entry) => entry.data.status === 2).map((entry) => [entry.demandId.toString(), serviceRow(entry).discovery]));
+        } catch { discovery = null; }
+      }
+      const result = paidAnalysis(entries, input, nowUnix, market.deployment.escrowToken.address, market.deployment.escrowToken.decimals);
+      const trusted = await validateActivityCheckpoint(options.activity, rpc());
+      const additions = buildInsights(entries, discovery, options.activity.state(), trusted ? options.activity.events() : [], trusted);
+      if (req.aborted || res.destroyed) { res.statusCode = 503; res.end(); return; }
       res.json({
         chainId: market.deployment.chainId,
         contract: market.deployment.contract,
         escrowToken: market.deployment.escrowToken,
-        blockNumber: indexState.lastIndexedBlock.toString(),
+        blockNumber: marketBlock.toString(),
+        blockHash: marketBlockHash,
         generatedAt: new Date(evaluationTime).toISOString(),
         analysis: { poolSize: result.poolSize, rankingScope: result.rankingScope, scoreVersion: result.scoreVersion, marketToken: result.marketToken, tokenDecimals: result.tokenDecimals },
         opportunities: result.opportunities,
+        ...additions,
       });
     } catch (error) { next(error); }
   }));
@@ -955,7 +981,7 @@ export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware
       : parserStatus === 413 ? "BODY_TOO_LARGE"
       : parserStatus === 415 ? "UNSUPPORTED_MEDIA_TYPE"
       : error instanceof SyntaxError && "body" in error ? "INVALID_JSON"
-      : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "INDEX_DEPLOYMENT_MISMATCH", "CHAIN_CONTRACT_UNCONFIGURED"].includes(error.message) ? error.message
+      : error instanceof Error && ["INDEX_CAPACITY", "INDEX_BUDGET_EXCEEDED", "INDEX_REORG", "INDEX_DEPLOYMENT_MISMATCH", "CHAIN_CONTRACT_UNCONFIGURED", "ACTIVITY_STORAGE_UNAVAILABLE"].includes(error.message) ? error.message
       : "CHAIN_RPC_UNAVAILABLE";
     const status = error instanceof PaymentError ? error.status
       : code === "BODY_TOO_LARGE" ? 413 : code === "UNSUPPORTED_MEDIA_TYPE" ? 415 : code === "INVALID_JSON" ? 400 : 503;
@@ -973,19 +999,26 @@ export default app;
 
 export async function startServer() {
   if (!cfg.deployment) throw new Error("CONFIG_INVALID: ESCROW_DEPLOYMENT");
+  if (!operations.activityDbPath) throw new Error("CONFIG_INVALID: ACTIVITY_DB_PATH");
   const pay = requirePaymentEnv();
   if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_ORIGIN?.trim()) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
   const middleware = await createPaymentMiddleware();
   const discoveryConfig = loadDiscoveryConfig(process.env.DISCOVERY_CONFIG_PATH);
   const discovery = process.env.DISCOVERY_DB_PATH ? new (await import("./discovery-store.ts")).DiscoveryStore(process.env.DISCOVERY_DB_PATH) : undefined;
   const deployment = cfg.deployment;
+  await verifyMarket(getPublicClient(deployment), deployment);
+  const activity = new (await import("./activity-store.ts")).ActivityStore(operations.activityDbPath, {
+    chainId: String(deployment.chainId), contract: deployment.contract.toLowerCase(), escrowToken: deployment.escrowToken.address.toLowerCase(),
+    tokenDecimals: deployment.escrowToken.decimals, deployBlock: deployment.deployBlock.toString(),
+  }, operations.activityMaxEvents);
+  const stopActivity = startActivityScheduler(activity, (signal) => getPublicClient(deployment, signal), deployment.contract, operations, operations.activityPollMs);
   const stopDiscovery = discovery && process.env.DISCOVERY_SOCKET_PATH ? startDiscoveryScheduler(discovery, discoveryConfig, process.env.DISCOVERY_SOCKET_PATH, `${deployment.chainId}:${deployment.contract.toLowerCase()}:`, async (record) => {
     await ensureIndex(getPublicClient(deployment), deployment);
     const metadata = parseDiscoveryMetadata(Buffer.from(JSON.stringify({ ...JSON.parse(record.payload), signature: record.signature })));
     const entry = demandIndex.entries.get(metadata.demandId);
     return !!entry && entry.data.status === 2 && entry.data.builder.toLowerCase() === metadata.builder && entry.data.serviceUrl === metadata.serviceUrl && entry.data.evidenceHash.toLowerCase() === metadata.evidenceHash;
   }, (record) => demandIndex.entryVersions.get(record.identity.slice(record.identity.lastIndexOf(":") + 1)) ?? 0) : undefined;
-  const application = createApp({ middleware, ready: middleware.ready }, { discovery, discoveryConfig, discoveryStartedAt: Date.now() });
+  const application = createApp({ middleware, ready: middleware.ready }, { discovery, discoveryConfig, discoveryStartedAt: Date.now(), activity });
   const port = operations.port;
   const host = process.env.HOST || "0.0.0.0";
   const server = application.listen(port, host, () => {
@@ -1005,11 +1038,12 @@ export async function startServer() {
     }, operations.shutdownTimeoutMs);
     deadline.unref();
     server.close((error) => { void (async () => {
-      await stopDiscovery?.();
+      const stopped = await Promise.allSettled([stopDiscovery?.(), stopActivity()]);
       clearTimeout(deadline);
       paymentStore?.close();
       discovery?.close();
-      process.exit(error ? 1 : 0);
+      activity.close();
+      process.exit(error || stopped.some((item) => item.status === "rejected") ? 1 : 0);
     })(); });
     server.closeIdleConnections();
   };

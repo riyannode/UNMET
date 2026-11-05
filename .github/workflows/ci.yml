@@ -120,6 +120,11 @@ jobs:
             --mount "type=bind,source=${GITHUB_WORKSPACE}/backend/payment-discovery-smoke.ts,target=/app/backend/payment-discovery-smoke.ts,readonly" \
             -e NODE_ENV=production -e X402_CHAIN_ID=196 \
             "unmet-api:${IMAGE_TAG}" bun /app/backend/payment-discovery-smoke.ts
+      - name: Smoke test packaged activity storage
+        run: |
+          docker run --rm --network none --user bun --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            "unmet-api:${IMAGE_TAG}" bun /app/backend/activity-smoke.ts
       - run: docker compose build web
       - name: Build validation, signer and observer image
         run: docker compose -f compose.yaml -f compose.validation.yaml build validator

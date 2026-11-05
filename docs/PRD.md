@@ -93,7 +93,7 @@ These are illustrative Testnet values, not deployment readback.
 
 No protocol fee is charged merely for posting a failed demand. Unfulfilled supporters retain their pull-refund entitlement.
 
-Secondary revenue: paid `POST /v1/opportunities`, protected with official OKX x402 middleware. Production Mainnet billing is fixed at `$0.01` per query across three native EIP-3009 exact offers (USD₮0, USDC, and USDG); other configured price values fail startup. The query payment goes to the configured API recipient for a ranked comparison, separately from the Testnet demand escrow and contract treasury. Demand commitments finance service creation; they do not prepay API calls or grant usage credits. After fulfillment, supporters and other consumers pay for service usage directly to the provider through its x402 endpoint. Contributors have no included or reserved usage entitlement.
+Secondary revenue: paid `POST /v1/insights`, protected with official OKX x402 middleware. Production Mainnet billing is fixed at `$0.01` per query across three native EIP-3009 exact offers (USD₮0, USDC, and USDG); other configured price values fail startup. The query payment goes to the configured API recipient for a ranked comparison, separately from the Testnet demand escrow and contract treasury. Demand commitments finance service creation; they do not prepay API calls or grant usage credits. After fulfillment, supporters and other consumers pay for service usage directly to the provider through its x402 endpoint. Contributors have no included or reserved usage entitlement.
 
 ## Canonical storage
 
@@ -180,7 +180,7 @@ Routes:
 - `GET /v1/demands` free chain-derived board with raw specification preserved
 - `GET /v1/services` and `GET /v1/services/:id` free fulfilled-demand service reads from the canonical index; `/services` displays builder-signed metadata and cached unpaid x402 observations. Provider probing occurs in the isolated observer, not in GET requests.
 - `POST /v1/demands/prepare` free unsigned creation intent; structured v1 description and existing onchain economic arguments
-- `POST /v1/opportunities` paid OKX.AI/A2MCP route
+- `POST /v1/insights` paid OKX.AI/A2MCP route
 
 Requirements:
 - official `@okxweb3/x402-*` packages

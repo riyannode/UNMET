@@ -1,6 +1,6 @@
 # API
 
-`frontend/public/openapi.json` publishes machine-readable payment discovery metadata for `POST /v1/opportunities`. Runtime payment initialization checks that it matches the resolved x402 profile. If `X402_CHAIN_ID` or `OPPORTUNITY_PRICE` changes, regenerate and validate the artifact with `bun run sync:payment-discovery` and `bun run check:payment-discovery`; a mismatch fails closed. The static artifact can describe only payment options supported by the configured x402 scheme and identity validation; adding another network requires corresponding verification and settlement support.
+`frontend/public/openapi.json` publishes machine-readable payment discovery metadata for `POST /v1/insights`. Runtime payment initialization checks that it matches the resolved x402 profile. If `X402_CHAIN_ID` or `INSIGHTS_PRICE` changes, regenerate and validate the artifact with `bun run sync:payment-discovery` and `bun run check:payment-discovery`; a mismatch fails closed. The static artifact can describe only payment options supported by the configured x402 scheme and identity validation; adding another network requires corresponding verification and settlement support.
 
 Default local base URL: `http://127.0.0.1:8787`.
 
@@ -12,14 +12,14 @@ The public frontend serves the [OpenAPI 3.1 description](../frontend/public/open
 | --- | --- | --- |
 | `GET /live` | Public | Cheap process liveness: `{ "ok": true, "name": "UNMET" }`; no dependency calls |
 | `GET /health` | Public | Checks market RPC chain ID, latest block and contract bytecode |
-| `GET /ready` | Public | Payment middleware/storage readiness, then the health check |
+| `GET /ready` | Public | Payment and activity storage readiness, then the health check |
 | `GET /v1/demands` | Free | Up to 50 public chain-derived demands and the legacy score |
 | `GET /v1/services` | Free | Up to 50 fulfilled services from the canonical index |
 | `GET /v1/services/:id` | Free | Look up a fulfilled service by demand ID |
 | `POST /v1/demands/prepare` | Free | Validate RFQ v1 and return an unsigned zero-native-value createDemand intent |
-| `POST /v1/opportunities` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
+| `POST /v1/insights` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
 
-`OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure, then uses the same health result. It sends no payment and does not guarantee future settlement or index capacity.
+`OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure or `ACTIVITY_STORAGE_UNAVAILABLE` for activity storage failure, then uses the same health result. It sends no payment and does not guarantee future settlement or index capacity.
 
 ## Standalone G0.2 validation runtime
 
@@ -122,9 +122,11 @@ Success is HTTP 200 with exactly `{ chainId, to, data, value: "0" }`. `data` enc
 
 Preparation reserves nothing and is not an execution guarantee. The caller must review decoded arguments and target, use the intended account/chain, arrange any required token allowance, and recheck deadline, deployment and current contract state before explicitly signing. Account, allowance, active duplicate demand and contract state can change after preparation. An active duplicate may revert at execution. Demand identity still depends on exact capability and specification bytes; economics do not change that key.
 
-## POST /v1/opportunities
+## POST /v1/insights
 
-Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `OPPORTUNITY_PRICE` fails configuration. Agents receive a comparison within their matching demand pool, inspectable factor contributions, escrow/usage and review calculations, and deterministic evidence and cautions for further investigation. Public blockchain facts remain free; payment buys the comparison and interpretation.
+Paid OKX.AI/A2MCP Demand Intelligence route. Mainnet billing is fixed at `$0.01` per call; any other `INSIGHTS_PRICE` fails configuration. Agents receive a comparison within their matching demand pool, inspectable factor contributions, escrow/usage and review calculations, and deterministic evidence and cautions for further investigation. Public blockchain facts remain free; payment buys the comparison and interpretation.
+
+The former paid intelligence route is removed and returns ordinary `404 NOT_FOUND`; it has no payment challenge. Rename client requests and operator settings to `/v1/insights`, `RATE_INSIGHTS`, and `INSIGHTS_PRICE`. The retired settings are rejected.
 
 The returned opportunity data is read from the core market network (`CHAIN_ID=1952` in production). The payment network is configured independently with `X402_CHAIN_ID=196` in production; this does not change demand reads or escrow.
 
@@ -171,7 +173,15 @@ Rules:
 
 ### Success
 
-Synthetic example for `{"sort":"score","limit":1}`: three OPEN demands match before the limit, and demand 3 has strictly more escrow, calls and supporters than both peers. Its deadline is 30 days away. This is fixture data, not live market or payment evidence.
+The response also contains `blockHash`, `marketActivity` and `usageEvidence`; their complete required field shapes and nullability are specified by [OpenAPI](../frontend/public/openapi.json). The market snapshot uses the same block as `blockNumber` and includes all indexed demands before request filters. Counts, atomic token amounts, block numbers and timestamps in these additions are canonical decimal strings. Capability groups use the exact onchain string, ordered by current escrow descending and then capability ascending, with at most 50 returned and an explicit total and truncation flag.
+
+`snapshot` reports raw contract status counts, currently funded demands and escrow, historical expected calls and supporter participations, fulfilled canonical services, discovery metadata/observation buckets and conversion numerator/denominator. A funded demand has positive current escrow. Discovery buckets cover fulfilled services only; unavailable discovery has null buckets rather than zeros. Expected calls are intent, not measured usage, and supporter participations do not identify unique people.
+
+`history.coverage` describes the indexed prefix, cutoff and target block anchors and last validation time. Its anchors are independent of the current market snapshot and do not claim finality. `reorg` reports unchecked, clear, detected or rebuilding; a detected reorg causes a full derived-history rebuild. Whole-history quantities are available only for complete, validated, clear coverage. Partial or unavailable coverage makes every historical quantity null. Gross support sums `DemandSupported` amounts, including initial support once; submission and reopen counts follow `ServiceSubmitted` and `SubmissionRejected` events. Repeat creations use the demand key, and fulfillment duration sums seconds from creation to fulfillment. The trailing window is `(cutoff timestamp - 86400, cutoff timestamp]`; it reports gross support and first-seen demand/supporter pairs only when the full window is covered. Otherwise its values are null.
+
+`usageEvidence` explicitly marks declared, payment-observed, execution-attested and independently verified usage unsupported. No service consumption, provider revenue or execution is inferred from escrow or G3 discovery.
+
+The following excerpt shows the existing ranking fields for `{"sort":"score","limit":1}`; it omits the additions described above. Three OPEN demands match before the limit, and demand 3 has strictly more escrow, calls and supporters than both peers. Its deadline is 30 days away. This is fixture data, not live market or payment evidence.
 
 ```json
 {

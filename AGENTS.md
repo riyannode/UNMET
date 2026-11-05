@@ -10,7 +10,7 @@ The demand lifecycle is create → support → builder proposal → commitment-w
 
 Demand funding and API billing are separate:
 - Demand-market reads, wallet actions and escrow bind to one configured deployment. The reviewed acceptance deployment uses faucet `USDC_TEST` on X Layer Testnet `1952`; `.env.example` and the public Gate-0 policy pin its contract identity. Service prices remain separately denominated in Mainnet USDC.
-- `POST /v1/opportunities` sells demand intelligence through official OKX x402. Production billing requires X Layer Mainnet `196` independently of the market network.
+- `POST /v1/insights` sells demand intelligence through official OKX x402. Production billing requires X Layer Mainnet `196` independently of the market network.
 - An intelligence payment does not fund a demand, buy service execution or change escrow state.
 
 ## Repository map

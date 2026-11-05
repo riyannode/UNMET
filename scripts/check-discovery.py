@@ -25,7 +25,15 @@ receipt = base64.b64encode(json.dumps({"success": True, "network": "eip155:196",
 class Fixture(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        requests.append({"headers": dict(self.headers), "body": body.decode()})
+        requests.append({"path": self.path, "headers": dict(self.headers), "body": body.decode()})
+        if self.path != "/v1/insights":
+            data = b'{"error":{"code":"NOT_FOUND"}}'
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         paid = self.headers.get("payment-signature") == "synthetic-fixture"
         data = b'{"opportunities":[],"synthetic":true}' if paid else b"{}"
         self.send_response(200 if paid else 402)
@@ -196,14 +204,20 @@ try:
                 check(path, mime="text/html")
 
             headers = {"Content-Type": "application/json", "Accept": "text/markdown", "X-Forwarded-For": "198.51.100.44", "CF-Connecting-IP": "198.51.100.45", "X-Request-ID": "untrusted-fixture-id"}
-            response, body = check("/v1/opportunities", 402, "POST", headers, b"{}", "application/json")
+            response, body = check("/v1/insights", 402, "POST", headers, b"{}", "application/json")
             assert response["PAYMENT-REQUIRED"] == challenge and body == b"{}" and response["Cache-Control"] == "no-store"
             headers["PAYMENT-SIGNATURE"] = "synthetic-fixture"
-            response, body = check("/v1/opportunities", 200, "POST", headers, b"{}", "application/json")
+            response, body = check("/v1/insights", 200, "POST", headers, b"{}", "application/json")
             assert response["PAYMENT-RESPONSE"] == receipt and response["Cache-Control"] == "no-store"
             assert json.loads(body)["synthetic"] and len(requests) == 2
             assert all(item["headers"].get("X-Forwarded-For") == "127.0.0.1" and not item["headers"].get("X-Request-Id") for item in requests), requests
             assert requests[1]["headers"].get("Payment-Signature") == "synthetic-fixture"
+            retired = "/" + "/".join(["v1", "opportunities"])
+            for path in [retired, retired + "/", retired.upper()]:
+                response, body = check(path, 404, "POST", headers, b"{}", "application/json")
+                assert json.loads(body)["error"]["code"] == "NOT_FOUND"
+                assert response.get("PAYMENT-REQUIRED") is None and response.get("PAYMENT-RESPONSE") is None
+                assert requests[-1]["path"] == path
             print(json.dumps({"checks": len(checks), "payment_headers_preserved": True, "api_json_preserved": True, "no_proxy_retries": True, "forwarded_ip_replaced": True}, indent=2))
 finally:
     if process is not None and process.poll() is None:

@@ -29,6 +29,7 @@ Edit `.env` privately. It starts with **Compose production defaults**, including
 - Frontend: set matching public `VITE_CHAIN_ID`, `VITE_DEMAND_CONTRACT`, `VITE_PAYMENT_TOKEN`, `VITE_PAYMENT_TOKEN_DECIMALS`, `VITE_XLAYER_RPC_URL`, and your public `VITE_REOWN_PROJECT_ID`; allow the local origin in Reown. Builder validation additionally needs an explicitly configured public `VITE_VALIDATION_URL` and approved `VITE_VALIDATION_NETWORKS`. See the standalone validator CORS/proxy procedure in [API](docs/API.md#standalone-g02-validation-runtime).
 - `VITE_*` is public build-time data. Keep private provider credentials, OKX secrets and wallet keys out of it. No deployment key is needed to develop or run checks.
 - For standalone durable payments, create a private local directory first and set an absolute `PAYMENT_DB_PATH`. Compose fixes this path to `/data/payments.sqlite`. See [payment recovery](docs/PAYMENT_RECOVERY.md).
+- Standalone API startup also requires an absolute `ACTIVITY_DB_PATH` in an API-owned directory with mode 700. Compose supplies `/data/activity.sqlite`; see [activity operations and backup](docs/SELF_HOSTING.md#configuration-matrix).
 
 Run in two terminals from the root (explicit root env loading avoids workspace working-directory differences):
 

@@ -30,7 +30,7 @@ Reflect.set(globalThis, "fetch", async (..._args: Parameters<typeof fetch>) => {
 });
 
 const noStorageSideEffect = () => assert.deepEqual(readdirSync(storageDirectory), []);
-const operation = openapi.paths["/v1/opportunities"].post;
+const operation = openapi.paths["/v1/insights"].post;
 const original = structuredClone(operation["x-payment-info"]);
 
 try {
@@ -40,9 +40,9 @@ try {
   const profile = resolveX402PaymentConfig(process.env, 1952);
   const packaged = JSON.parse(readFileSync("/app/frontend/public/openapi.json", "utf8"));
   assert.deepEqual(packaged, openapi, "packaged OpenAPI file must match the imported discovery document");
-  await validatePaymentDiscovery(openapi.paths["/v1/opportunities"].post["x-payment-info"], profile);
+  await validatePaymentDiscovery(openapi.paths["/v1/insights"].post["x-payment-info"], profile);
   await assertPublishedPaymentDiscovery(profile);
-  assert.deepEqual(openapi.paths["/v1/opportunities"].post["x-payment-info"], await paymentDiscovery(profile));
+  assert.deepEqual(openapi.paths["/v1/insights"].post["x-payment-info"], await paymentDiscovery(profile));
 
   const mismatches: Array<(metadata: typeof original) => void> = [
     (metadata) => { Reflect.set(metadata.protocols[0].x402.accepts[0], "network", "eip155:1"); },
