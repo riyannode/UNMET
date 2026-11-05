@@ -47,6 +47,7 @@ void (async () => {
     createRoot(root).render(<MemoryRouter initialEntries={["/services"]}><Harness /></MemoryRouter>);
     await waitFor(() => root.textContent?.includes("Loading services") && pending.length > 0, "loading shell did not render");
     check(root.querySelector(".services-search") && root.querySelector(".services-rail") && root.querySelectorAll(".service-skeleton").length === 3, "loading shell");
+    check(requested[0] === "/v1/services", "unfiltered list request");
     const listFooter = footer();
     await reply({ ...envelope, services: [] }); check(root.textContent?.includes("No fulfilled services"), "empty");
     await navigate("detail"); check(root.textContent?.includes("Loading services"), "detail loading");
@@ -102,19 +103,6 @@ void (async () => {
     root.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')?.click(); await tick();
     check(root.querySelectorAll(".services-grid li").length === 2 && input.value === "" && document.activeElement === input, "clear search and restore focus");
     await search("   "); check(root.querySelectorAll(".services-grid li").length === 2, "whitespace search");
-    const maxPrice = [...root.querySelectorAll<HTMLInputElement>(".services-filters input")][3];
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(maxPrice, "100"); maxPrice.dispatchEvent(new Event("input", { bubbles: true }));
-    await tick();
-    root.querySelector<HTMLFormElement>(".services-filters")?.requestSubmit();
-    await waitFor(() => root.textContent?.includes("Maximum price requires"), "price identity feedback");
-    const fields = [...root.querySelectorAll<HTMLInputElement>(".services-filters input")];
-    for (const [index, value] of [[1, "eip155:1"], [2, `0x${"1".repeat(40)}`]] as const) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(fields[index], value); fields[index].dispatchEvent(new Event("input", { bubbles: true })); }
-    await tick(); root.querySelector<HTMLFormElement>(".services-filters")?.requestSubmit();
-    await waitFor(() => pending.length > 0, "filtered request");
-    check(requested.at(-1)?.includes("maxPrice=100") && requested.at(-1)?.includes("network=eip155%3A1"), "filter query");
-    await reply({ ...envelope, services: [] }); check(root.textContent?.includes("No matching services") && !root.textContent.includes("No fulfilled services"), "filtered empty state");
-    root.querySelector<HTMLButtonElement>(".services-filters button[type=button]")?.click();
-    await waitFor(() => pending.length > 0, "clear filters request"); await reply({ ...envelope, services: [service] });
     await navigate("detail"); await reply({ ...envelope, service: { ...service, discovery: { metadataState: "missing", state: "pending", offers: [] } } });
     check(root.textContent?.includes("missing") && root.textContent.includes("pending"), "missing metadata");
     await navigate("list"); await reply({ ...envelope, services: [service] });

@@ -36,15 +36,12 @@ export function safeServiceUrl(value: string): string | null {
 
 export default function Services({ detail = false }: { detail?: boolean }) {
   const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState({ capability: "", network: "", asset: "", maxPrice: "", state: "" });
-  const [applied, setApplied] = useState("");
-  const [filterError, setFilterError] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const params = useParams();
   const identity = detail ? parseDemandRoute(params.chainId, params.contract, params.demandId) : null;
   const invalid = detail && (!identity || identity.chainId !== CHAIN_ID || !DEMAND_CONTRACT || identity.contract !== DEMAND_CONTRACT.toLowerCase());
   const id = identity?.demandId.toString();
-  const requestKey = detail ? `detail:${id}` : `list:${applied}`;
+  const requestKey = detail ? `detail:${id}` : "list";
   const [loaded, setLoaded] = useState<{ key: string; result: Result }>({ key: requestKey, result: { state: "loading" } });
   const result: Result = loaded.key === requestKey ? loaded.result : { state: "loading" };
   useEffect(() => {
@@ -54,7 +51,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
     setResult({ state: "loading" });
     void (async () => {
       try {
-        const response = await fetch(detail ? `/v1/services/${id}` : `/v1/services${applied ? `?${applied}` : ""}`, { signal: controller.signal });
+        const response = await fetch(detail ? `/v1/services/${id}` : "/v1/services", { signal: controller.signal });
         if (response.status === 404 && detail) { if (!controller.signal.aborted) setResult({ state: "notfound" }); return; }
         if (!response.ok) throw new Error("unavailable");
         const value: unknown = await response.json();
@@ -67,7 +64,7 @@ export default function Services({ detail = false }: { detail?: boolean }) {
       } catch { if (!controller.signal.aborted) setResult({ state: "error" }); }
     })();
     return () => controller.abort();
-  }, [detail, id, invalid, requestKey, applied]);
+  }, [detail, id, invalid, requestKey]);
   const service = result.state === "ready" ? result.services[0] : undefined;
   const search = query.trim().toLowerCase();
   const filtered = result.state === "ready" ? result.services.filter((item) =>
@@ -93,16 +90,6 @@ export default function Services({ detail = false }: { detail?: boolean }) {
       <header className="services-header"><h1>Services</h1><p>Services created from fulfilled UNMET demands.</p></header>
       <label className="services-search-label" htmlFor="services-search">Search services</label>
       <InputGroup className="services-search"><InputGroupInput ref={searchInput} id="services-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by capability, request, or demand ID" /><InputGroupAddon><Search size={18} aria-hidden="true" /></InputGroupAddon>{query && <InputGroupAddon align="inline-end"><Button type="button" variant="ghost" size="icon-sm" aria-label="Clear search" onClick={() => { setQuery(""); searchInput.current?.focus(); }}><X size={16} /></Button></InputGroupAddon>}</InputGroup>
-      <form className="services-filters" onSubmit={(event) => { event.preventDefault(); if (filters.maxPrice.trim() && (!filters.network.trim() || !filters.asset.trim())) { setFilterError("Maximum price requires a payment network and asset address."); return; } setFilterError(""); const params = new URLSearchParams(); for (const [key, value] of Object.entries(filters)) if (value.trim()) params.set(key, value.trim()); setApplied(params.toString()); }}>
-        <label>Capability<input value={filters.capability} onChange={(event) => setFilters({ ...filters, capability: event.target.value })} /></label>
-        <label>Payment network<input placeholder="eip155:1" value={filters.network} onChange={(event) => setFilters({ ...filters, network: event.target.value })} /></label>
-        <label>Asset address<input value={filters.asset} onChange={(event) => setFilters({ ...filters, asset: event.target.value })} /></label>
-        <label>Maximum price (atomic units)<input inputMode="numeric" value={filters.maxPrice} onChange={(event) => setFilters({ ...filters, maxPrice: event.target.value })} /></label>
-        <label>Observation state<select value={filters.state} onChange={(event) => setFilters({ ...filters, state: event.target.value })}><option value="">Any state</option><option value="compatible">Compatible</option><option value="incompatible">Incompatible</option><option value="pending">Pending</option><option value="unavailable">Unavailable</option><option value="stale">Stale</option><option value="metadata_invalid">Metadata invalid</option></select></label>
-        <Button type="submit">Apply filters</Button>
-        {applied && <Button type="button" variant="outline" onClick={() => { setFilters({ capability: "", network: "", asset: "", maxPrice: "", state: "" }); setApplied(""); setFilterError(""); }}>Clear filters</Button>}
-      </form>
-      {filterError && <p role="alert">{filterError}</p>}
       <div className="services-layout">
         <aside className="services-rail" aria-label="Service categories"><span aria-current="page">All Services</span></aside>
         <div className="services-results">
@@ -117,8 +104,6 @@ export default function Services({ detail = false }: { detail?: boolean }) {
             </div>
           </> : result.state !== "ready" ? (
             <p className="services-error" role="alert">Services are unavailable. Please try again later.</p>
-          ) : result.services.length === 0 && applied ? (
-            <Empty className="services-empty"><EmptyHeader><EmptyTitle>No matching services.</EmptyTitle><EmptyDescription>Change or clear your filters.</EmptyDescription></EmptyHeader></Empty>
           ) : result.services.length === 0 ? (
             <Empty className="services-empty"><EmptyHeader><EmptyTitle>No fulfilled services yet.</EmptyTitle><EmptyDescription>Services will appear here when demands are fulfilled.</EmptyDescription></EmptyHeader></Empty>
           ) : filtered.length === 0 ? (
