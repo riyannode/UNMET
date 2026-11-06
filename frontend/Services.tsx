@@ -27,7 +27,7 @@ function isService(value: unknown): value is Service {
     (row.discovery === undefined || isDiscoveryView(row.discovery));
 }
 
-export function safeServiceUrl(value: string): string | null {
+function safeServiceUrl(value: string): string | null {
   try {
     const url = new URL(value);
     return url.protocol === "https:" && !url.username && !url.password ? value : null;

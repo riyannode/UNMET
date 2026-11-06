@@ -89,8 +89,6 @@
 }
 .unmet-app-shell [data-slot="sidebar-menu-button"],
 body:has(.unmet-app-shell) [data-slot="sheet-portal"] [data-slot="sidebar-menu-button"] { font-size: 16px; }
-.unmet-app-shell [data-slot="sidebar-group-label"],
-body:has(.unmet-app-shell) [data-slot="sheet-portal"] [data-slot="sidebar-group-label"] { font-size: 14px; }
 .unmet-app-shell [data-slot="sidebar-menu-button"] > .grid > .text-sm,
 body:has(.unmet-app-shell) [data-slot="sheet-portal"] [data-slot="sidebar-menu-button"] > .grid > .text-sm { font-size: 16px; }
 .unmet-app-shell [data-slot="sidebar-menu-button"] > .grid > .text-xs,
@@ -165,10 +163,7 @@ body:has(.unmet-app-shell) [data-slot="sheet-portal"] *::after,
 .unmet-workspace-content {
   color-scheme: dark;
   --background-deep: #070b12;
-  --background-base: #0a111b;
   --surface-default: #101a28;
-  --surface-elevated: #152131;
-  --surface-selected: #142640;
   --text-primary: #e8eef8;
   --text-secondary: #bdc9da;
   --text-muted: #95a4b9;
@@ -182,14 +177,6 @@ body:has(.unmet-app-shell) [data-slot="sheet-portal"] *::after,
   --border-strong: #5779a5;
   --sans: "Inter Tight", sans-serif;
   --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", monospace;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
   font-family: var(--sans);
   color: var(--text-primary);
   background: var(--background-deep);
@@ -337,11 +324,9 @@ body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: clip; backgro
   .market-card-escrow strong { font-size: 24px; }
 }
 
-.unmet-workspace-content button.ghost, .unmet-workspace-content button.primary { min-height: 40px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 6px; white-space: nowrap; font-size: 15px; font-weight: 630; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+.unmet-workspace-content button.ghost { min-height: 40px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 6px; white-space: nowrap; font-size: 15px; font-weight: 630; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
 .unmet-workspace-content button.ghost { background: transparent; color: var(--text-primary); }
 .unmet-workspace-content button.ghost:hover:not(:disabled) { border-color: var(--signal-primary); background: rgb(29 49 74 / 68%); }
-.unmet-workspace-content button.primary { border-color: var(--signal-primary); background: var(--signal-primary); color: var(--text-inverse); }
-.unmet-workspace-content button.primary:hover:not(:disabled) { border-color: var(--signal-glow); background: var(--signal-glow); }
 .unmet-workspace-content input, .unmet-workspace-content textarea { width: 100%; min-width: 0; min-height: 40px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: 5px; background: #0a121d; color: var(--text-primary); caret-color: var(--signal-primary); font-size: 16px; }
 .unmet-workspace-content input::placeholder, .unmet-workspace-content textarea::placeholder { color: var(--text-muted); opacity: 1; }
 .unmet-workspace-content input:focus, .unmet-workspace-content textarea:focus { border-color: var(--signal-primary); outline: 1px solid var(--signal-primary); outline-offset: -1px; }
@@ -487,10 +472,7 @@ body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: clip; backgro
 .demand-detail-content {
   color-scheme: light;
   --background-deep: #ffffff;
-  --background-base: #ffffff;
   --surface-default: #ffffff;
-  --surface-elevated: #f8fbf1;
-  --surface-selected: #eff6e5;
   --text-primary: #192800;
   --text-secondary: #344a20;
   --text-muted: #536844;
@@ -706,10 +688,7 @@ html[data-theme="dark"] .unmet-app-shell { color-scheme: dark; background: var(-
 html[data-theme="dark"] .unmet-workspace-content {
   color-scheme: dark;
   --background-deep: var(--unmet-theme-page);
-  --background-base: #151515;
   --surface-default: var(--unmet-theme-surface);
-  --surface-elevated: var(--unmet-theme-surface-raised);
-  --surface-selected: #272d21;
   --text-primary: var(--unmet-theme-text);
   --text-secondary: #c5c5c5;
   --text-muted: var(--unmet-theme-subtle);

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { PaymentStore, type Reservation } from "./payment-store.ts";
 import { reconcilePayments } from "./durable-payment.ts";
 
-export const reservation = (suffix = "a"): Reservation => ({
+const reservation = (suffix = "a"): Reservation => ({
   payment: suffix.repeat(64), binding: "b".repeat(64), logicalKey: null,
   network: "eip155:196", recipient: "0x" + "1".repeat(40), payer: "0x" + "2".repeat(40),
   amount: "10000", validBefore: Date.now() + 60_000,

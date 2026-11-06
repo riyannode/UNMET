@@ -1,6 +1,6 @@
 import type { Plugin } from "vite";
 
-export const docsGroups: readonly { title: string; items: readonly (readonly [string, string])[] }[] = [
+const docsGroups: readonly { title: string; items: readonly (readonly [string, string])[] }[] = [
   { title: "Overview", items: [
     ["Introduction", "/docs"],
     ["How UNMET works", "/docs#how-it-works"],
@@ -41,7 +41,7 @@ export const docsFile = (route: string) => route === "/docs" ? "docs/index.html"
 
 const escape = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 
-export function docsLayout(html: string, filename: string): string {
+function docsLayout(html: string, filename: string): string {
   const route = docsRoutes.find((route) => filename.replaceAll("\\", "/").endsWith("/" + docsFile(route)));
   if (!route) return html;
   const group = docsGroups.find((group) => group.items.some(([, href]) => href.split("#")[0] === route))!;
