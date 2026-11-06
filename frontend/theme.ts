@@ -1,8 +1,7 @@
 import { useSyncExternalStore } from "react";
-import { THEME_BOOTSTRAP, THEME_STORAGE_KEY } from "./theme-bootstrap.ts";
+import { THEME_STORAGE_KEY } from "./theme-bootstrap.ts";
 
 export type Theme = "light" | "dark";
-export { THEME_BOOTSTRAP, THEME_STORAGE_KEY };
 
 let currentTheme: Theme = typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 const listeners = new Set<() => void>();

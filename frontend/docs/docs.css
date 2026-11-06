@@ -60,7 +60,6 @@ body { margin: 0; background: #fff; }
 .docs-code-command { color: #e8c184; }
 .docs-code-option, .docs-code-key { color: #9cc8f5; }
 .docs-code-string { color: #d0efad; }
-.docs-code-number { color: #d6b4f2; }
 .docs-table { margin: 20px 0; overflow-x: auto; }
 .docs-article table { border-collapse: collapse; width: 100%; text-align: left; font-size: 15px; line-height: 1.6; }
 .docs-article th { color: var(--docs-ink); font-weight: 600; background: #f7f9f3; }

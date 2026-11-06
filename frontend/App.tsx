@@ -102,7 +102,6 @@ import {
   storePendingTransaction,
   TransactionLifecycleError,
   transactionFailureOutcome,
-  type LegacyPendingCreate,
   type PendingTransactionRecord,
   type TransactionFailureOutcome,
   type TransactionUpdateHandler,
@@ -125,10 +124,6 @@ type RunHandler = {
   (label: "create", actionId: typeof CREATE_DEMAND_ACTION_ID, fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<CreateDemandRunOutcome>;
   (label: string, actionId: string, fn: (onUpdate: TransactionUpdateHandler, session: WalletSession) => Promise<Hash>, createdDemand?: CreateDemandInput): Promise<AppTransactionOutcome>;
 };
-type VerifyPendingHandler = {
-  (record: CreateDemandPendingTransactionRecord): Promise<CreateDemandRunOutcome>;
-  (record: PendingTransactionRecord): Promise<AppTransactionOutcome>;
-};
 
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID?.trim();
 const EMPTY_SUPPORT: SupportView = { commitment: 0n, expectedCalls: 0n, approved: false, rejected: false, refundable: false };
@@ -141,7 +136,6 @@ const MARKET_SORTS = [
 ] as const satisfies readonly { value: MarketSort; label: string }[];
 type TransactionPersistenceState = {
   records: PendingTransactionRecord[];
-  legacy: LegacyPendingCreate | null;
   warning: string | null;
 };
 
@@ -164,7 +158,7 @@ function readTransactionPersistence(): TransactionPersistenceState {
       : legacy.record
         ? "An older unresolved transaction was preserved but cannot be safely associated with a deployment"
         : null;
-  return { records: pending.records, legacy: legacy.record, warning };
+  return { records: pending.records, warning };
 }
 
 function upsertPendingRecord(records: readonly PendingTransactionRecord[], next: PendingTransactionRecord): PendingTransactionRecord[] {
@@ -242,11 +236,9 @@ type AppOutletContext = {
   supportState: "loading" | "ready" | "error";
   busy: boolean;
   disconnecting: boolean;
-  lastTx: Hash | null;
   pendingCreate: CreateDemandTransactionOutcome | null;
   blockedActionIds: string[];
   run: RunHandler;
-  verifyPendingTransaction: VerifyPendingHandler;
   verifyCreate: (outcome: CreateDemandTransactionOutcome) => Promise<CreateDemandRunOutcome>;
   connect: () => Promise<void>;
   refreshBoard: () => Promise<readonly DemandReadbackMatch[] | null>;
@@ -905,11 +897,9 @@ export default function App() {
     supportState: currentSupportState,
     busy: walletActionsBlocked,
     disconnecting,
-    lastTx,
     pendingCreate,
     blockedActionIds,
     run,
-    verifyPendingTransaction,
     verifyCreate,
     connect,
     refreshBoard: refreshBoardForCreate,

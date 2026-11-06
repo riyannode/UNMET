@@ -38,7 +38,7 @@ const FAQ_DATA = [
   },
 ];
 
-export function FaqMiddleSimple({ className }: { className?: string }) {
+function FaqMiddleSimple({ className }: { className?: string }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const sectionId = useId();
   const reducedMotion = useReducedMotion();
