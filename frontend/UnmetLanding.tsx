@@ -492,8 +492,8 @@ export default function UnmetLanding() {
               ))}
             </p>
 
-            <Link className="unmet-primary-cta" to={ROUTES.market.href}>
-              <RollText text="Explore Market" variant="dark" />
+            <Link className="unmet-primary-cta" to={ROUTES.services.href}>
+              <RollText text="Explore Services" variant="dark" />
               <MiniBars />
             </Link>
 
