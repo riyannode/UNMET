@@ -6,7 +6,7 @@ Audit date: 26 October 2026 (Asia/Jakarta). Repository baseline: `923ff6804ccc87
 
 The latest remote `main` was fetched before creating `feat/agent-api-discovery`. [PR #17](https://github.com/riyannode/UNMET/pull/17) merged on 25 October 2026 at 18:50:29 UTC as `aec576461356cd6cfd76090c0d974b4a36155e72`. [PR #19](https://github.com/riyannode/UNMET/pull/19) merged on 26 October at 03:11:55 UTC as `923ff6804ccc877853581508598d32a850e59c72`. No open PRs were returned at audit time. The new branch includes both implementations; #19 is not an outstanding conflicting branch.
 
-Current product ownership remains [PRD](PRD.md), version 1.2. The [Future Implementation roadmap](FUTURE_IMPLEMENTATION.md), V2.0, explicitly remains proposed. Gate 0 validation Worker, RFQ, Service Registry, Service Discovery and Capability Resolver are not implemented or advertised as working APIs here. Demand escrow and paid intelligence are separate operations.
+As of 26 October 2026, product ownership was [PRD](PRD.md), version 1.2. The [Future Implementation roadmap](https://github.com/riyannode/UNMET/blob/923ff6804ccc877853581508598d32a850e59c72/docs/FUTURE_IMPLEMENTATION.md), V2.0, was proposed. At that date, Gate 0 validation Worker, RFQ, Service Registry, Service Discovery and Capability Resolver were not implemented or advertised as working APIs here. Demand escrow and paid intelligence were separate operations.
 
 This dated audit inspected the Express API, payment configuration/factory, bounded upstream transport, durable payment wrapper, identity/confirmation/store/operator modules and regressions; frontend routing and public build; Caddy, Docker, Compose; CI and product/operations documentation. Its runtime measurements are evidence from that audit date only.
 
