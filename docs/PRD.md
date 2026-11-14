@@ -309,4 +309,4 @@ Evidence is transaction receipt + state readback, not transaction submission alo
 
 ## Documentation ownership
 
-Proposed plans, requirements and per-phase roadmap status are maintained in the [Future Implementation roadmap](FUTURE_IMPLEMENTATION.md). This PRD describes the current Post-Hackathon product; [STATUS](STATUS.md) and dated verification records describe evidence and its limits.
+The [historical G0–G5 roadmap](archive/FUTURE_IMPLEMENTATION_G0_G5.md) records completed scope and deferred G5. This PRD owns current shipped product requirements; [STATUS](STATUS.md) and dated verification records describe evidence and its limits.
