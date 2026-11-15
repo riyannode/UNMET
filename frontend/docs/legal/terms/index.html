@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Rules for using the hosted UNMET site and API, funding demands, and buying Demand Intelligence." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/legal/terms/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Terms of Use · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-grid">
+        <div class="docs-toolbar">
+          <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+        </div>
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Terms of Use</h1>
+            <p class="docs-description">Rules for using the hosted UNMET site and API, funding demands, and buying Demand Intelligence.</p>
+            <p><small>Effective: <time datetime="2026-11-15">November 15, 2026</time></small></p>
+<h2 id="using-unmet">Using UNMET</h2>
+<p>These Terms govern the hosted UNMET website, API, and related hosted services. The source code published in the UNMET repository is governed by the license identified in that repository.</p>
+<p>UNMET lets requesters describe capabilities they need, supporters fund those requests, and builders propose services. The hosted site also lists fulfilled services, and the API sells Demand Intelligence about the market. By using the hosted site or API, you agree to these terms. If you operate an agent or act for someone else, make sure you have permission for the requests, signatures, and spending you authorize.</p>
+<h2 id="wallets-and-public-transactions">Wallets and public transactions</h2>
+<p>You choose the wallet and control what it signs. Keep your keys and recovery phrases secure. Check the network, contract or recipient, token, amount, and action before approving a signature. Blockchain transactions are public and may be irreversible once confirmed. A refund, where available, is a separate transaction under the escrow rules.</p>
+<h2 id="testnet-escrow">Testnet demand escrow</h2>
+<p>The demand market runs on X Layer Testnet (chain ID 1952). Its escrow uses faucet USDC_TEST for testing. Treat it as a test token, with no assumed redemption or equivalence to Mainnet USDC. The escrow contract governs commitments, votes, fees, settlement, and <a href="/docs/demand-market/refunds/">refund eligibility</a>. When the contract's settlement conditions are met, only the commitments that explicitly approved the proposal fund the builder payout and protocol fee. Eligible supporters claim their own refunds through the contract. The escrow contract is unaudited.</p>
+<h2 id="paid-demand-intelligence">Paid Demand Intelligence</h2>
+<p>The hosted production API charges $0.01 per Demand Intelligence query through OKX x402 on X Layer Mainnet (chain ID 196). Review the payment challenge and sign only the authorization you intend to use. The payment applies to that Demand Intelligence query. Demand funding and payments to service providers are separate. If settlement is unclear, follow the <a href="/payment.md">payment recovery steps</a> before signing again.</p>
+<p>Demand Intelligence is market information for your own review and does not constitute financial or investment advice. Scores can change with the data and the matching pool. They offer no guarantee of profit, service quality, or fulfillment.</p>
+<h2 id="builder-services-and-public-content">Builder services and public content</h2>
+<p>Builders operate their own services, set their offers, and receive payment for execution directly at their endpoints. Demand funding does not prepay service calls or reserve access. A <a href="/services">Services listing</a> may show a cached observation of a payment offer. Check the current offer, provider terms, and endpoint before paying.</p>
+<p>Demand specifications and associated onchain activity are public and can be read through UNMET. Builder submissions can also expose service URLs, evidence hashes, and listing metadata. Share only material you have permission to publish. Keep credentials, personal information, and confidential material out of public submissions.</p>
+<p>You retain any ownership rights you hold in the material you submit. By intentionally submitting material for public demand listings, onchain use, or service discovery, you give UNMET a non-exclusive license to host, reproduce, display, and distribute that material only as reasonably necessary to operate the hosted service, including its public listings and API.</p>
+<h2 id="acceptable-use">Acceptable use</h2>
+<ul>
+  <li>Respect rate limits and access controls. Do not flood the service, evade limits, or interfere with access for others.</li>
+  <li>Do not submit fraudulent demands or proposals, impersonate others, or publish unlawful or infringing material.</li>
+  <li>Use wallet and payment authorizations only with permission. Do not attempt to charge another wallet or disrupt settlement.</li>
+</ul>
+<h2 id="availability-and-liability">Availability and liability</h2>
+<p>Wallet connections, chain access, payments, and builder endpoints rely on infrastructure operated by others, including wallet providers, Reown and WalletConnect, RPC providers, and OKX. Outages, chain delays, and changes to third-party services can affect the site and API. UNMET may change or discontinue hosted features or restrict abusive access. Onchain escrow actions remain subject to the contract.</p>
+<p>UNMET provides the hosted service and its information as available, without a warranty of uninterrupted or error-free operation. To the extent applicable law permits, UNMET disclaims implied warranties and liability for indirect or consequential losses from use of the hosted service. Any rights and remedies that cannot be limited by agreement still apply.</p>
+<h2 id="changes-to-these-terms">Changes to these Terms</h2>
+<p>UNMET may update these Terms. The current version is published on this page and applies to use of the hosted service from its stated effective date.</p>
+<p>For details on data handled by the site and API, see the <a href="/docs/legal/privacy/">Privacy Policy</a>.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

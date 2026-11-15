@@ -168,7 +168,8 @@ try:
                 ("/docs" if page.parent == dist / "docs" else "/" + page.parent.relative_to(dist).as_posix() + "/"): page
                 for page in (dist / "docs").rglob("index.html")
             }
-            assert len(docs_pages) == 13, ("unexpected Docs page count", len(docs_pages))
+            assert len(docs_pages) == 15, ("unexpected Docs page count", len(docs_pages))
+            assert {"/docs/legal/terms/", "/docs/legal/privacy/"} <= docs_pages.keys(), "missing packaged Legal pages"
             for route, page in docs_pages.items():
                 html = page.read_bytes()
                 aliases = [route, route.rstrip("/"), "/" + page.relative_to(dist).as_posix(), route + "?from=sidebar"]

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="What the hosted UNMET site and API process, what becomes public, and what is stored for recovery." />
+    <link rel="canonical" href="https://unmetxyz.my.id/docs/legal/privacy/" />
+    <link rel="icon" type="image/png" href="/logos/unmet.png" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json" />
+    <link rel="stylesheet" href="/unmet-landing.css" />
+    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>Privacy Policy · UNMET Docs</title>
+    <script type="module" src="/docs/navigation.tsx"></script>
+    <script type="module" src="/docs/interactions.ts"></script>
+  </head>
+  <body>
+    <a class="unmet-docs-skip" href="#docs-content">Skip to documentation</a>
+    <div id="docs-navigation" class="unmet-docs-navigation"></div>
+    <div class="docs-layout">
+      <div class="docs-grid">
+        <div class="docs-toolbar">
+          <button id="docs-menu-toggle" class="docs-menu-toggle" type="button" aria-controls="docs-sidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Browse documentation" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 2 1 3 3 0 0 1 2-1h6v15h-6a3 3 0 0 0-2 1 3 3 0 0 0-2-1H4zM12 5v15"/></svg>Documentation</span>
+        </div>
+        <dialog open id="docs-sidebar" class="docs-sidebar" aria-label="Documentation navigation">
+          <button id="docs-sidebar-close" class="docs-sidebar-close" type="button" hidden>Close navigation</button>
+          <nav aria-label="Documentation"><!--docs-sidebar--></nav>
+        </dialog>
+        <main id="docs-content" tabindex="-1" class="docs-main">
+          <article class="docs-article">
+            <p class="docs-eyebrow"><!--docs-group--></p>
+            <h1>Privacy Policy</h1>
+            <p class="docs-description">What the hosted UNMET site and API process, what becomes public, and what is stored for recovery.</p>
+            <p><small>Effective: <time datetime="2026-11-15">November 15, 2026</time></small></p>
+<h2 id="scope-and-wallets">Scope and wallets</h2>
+<p>This policy covers the hosted UNMET website and API. Reading the site or using public discovery endpoints requires no UNMET account. Wallet actions use the address you connect and require your wallet's approval. Wallet addresses, transaction hashes, and related chain identifiers are used to show market activity and check transaction results.</p>
+<h2 id="public-blockchain">Public blockchain</h2>
+<p>Demand specifications, wallet addresses, amounts, and transactions can appear in public chain data when you create a demand, support it, vote, or move funds. UNMET reads and republishes public demand information. Mainnet x402 transfers are also visible onchain. Other parties can index and copy public chain data. UNMET cannot delete the underlying blockchain record. Keep private details and credentials out of public submissions.</p>
+<h2 id="browser-storage">Browser storage</h2>
+<ul>
+  <li><code>sessionStorage</code> holds pending transaction recovery data for the tab. A record can contain the wallet address, chain ID, contract, action identifier, transaction hash, transaction intent, and information used to verify a demand after confirmation.</li>
+  <li><code>localStorage</code> remembers your light or dark theme. The Docs sidebar also uses <code>sessionStorage</code> to remember which groups you opened.</li>
+</ul>
+<p>Clearing site data removes these local records. This can interrupt recovery in the browser. It leaves already-broadcast transactions on the network.</p>
+<h2 id="api-limits-and-logs">API limits and logs</h2>
+<p>The API uses client IP addresses in memory to enforce per-route request limits. Operational logs may include timestamps, log levels, request identifiers, request methods and routes, response status, duration, and stable error codes. The application request logger is designed to omit client IP addresses, request bodies, and payment authorization headers.</p>
+<h2 id="payment-records">Payment records</h2>
+<p>x402 payment records can include identifiers and fingerprints for payment operations, payer and recipient wallet addresses, network, amount, authorization expiry, settlement state, a transaction hash when available, timestamps, and operational error codes. These records help prevent duplicate settlement and reconcile payments with uncertain outcomes.</p>
+<p>Settled, failed, or cancelled payment records become eligible for cleanup only after the configured retention period has elapsed since their last update and the payment authorization has expired. Active or unresolved records can be kept for reconciliation. Public blockchain records are unaffected by payment record cleanup. See the <a href="/payment.md">payment guide</a> for recovery behavior.</p>
+<h2 id="service-discovery-data">Service discovery data</h2>
+<p>UNMET stores builder-signed discovery metadata in a separate SQLite store. It records the listing identity, revision, signed payload and hash, signature, latest observation, and last check attempt. Public discovery responses can include service URLs and payment-offer observations. A listing's revision marker can remain after it becomes inactive.</p>
+<h2 id="infrastructure-and-data-handling">Infrastructure and data handling</h2>
+<p>Wallet connection can use Reown AppKit and WalletConnect. UNMET disables analytics in its AppKit configuration. RPC providers handle chain requests, and OKX facilitates x402 verification and settlement. Independent builders handle requests and payments you send to their endpoints. These services handle data under their own terms and policies.</p>
+<p>The hosted configuration restricts direct access to the backend and stores operational SQLite data separately from public site files. For rules on using the hosted service, see the <a href="/docs/legal/terms/">Terms of Use</a>.</p>
+          </article>
+          <nav class="docs-related" aria-label="Article navigation"><!--docs-pagination--></nav>
+        </main>
+        <aside class="docs-toc" aria-label="On this page">
+          <p>On this page</p>
+          <nav aria-label="Article sections"><ul><!--docs-toc--></ul></nav>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

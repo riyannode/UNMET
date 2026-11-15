@@ -13,7 +13,7 @@ body { margin: 0; background: #fff; }
 .docs-menu-toggle, .docs-sidebar-close { padding: 7px 12px; border: 1px solid var(--docs-line); border-radius: 6px; background: #fff; color: var(--docs-ink); font: inherit; cursor: pointer; }
 .docs-menu-toggle:active, .docs-sidebar-close:active { background: #eff6e5; }
 .docs-grid { display: grid; grid-template-columns: 272px minmax(0, 1fr) 216px; grid-template-areas: "toolbar main toc" "sidebar main toc"; grid-template-rows: 24px minmax(0, 1fr); column-gap: 8px; row-gap: 16px; width: 100%; padding: 32px 24px 80px 32px; align-items: start; }
-.docs-sidebar { grid-area: sidebar; position: sticky; top: 24px; margin: 0; padding: 0 16px 0 0; width: 100%; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; border: 0; background: #fff; color: var(--docs-ink); font: inherit; scrollbar-width: thin; }
+.docs-sidebar { grid-area: sidebar; position: sticky; top: 24px; margin: 0; padding: 0 16px 0 0; width: 100%; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; border: 0; background: transparent; color: var(--docs-ink); font: inherit; scrollbar-width: thin; }
 .docs-sidebar details { margin-bottom: 18px; }
 .docs-sidebar, .docs-sidebar nav { scrollbar-color: transparent transparent; }
 .docs-sidebar::-webkit-scrollbar, .docs-sidebar nav::-webkit-scrollbar { width: 6px; background: transparent; }
@@ -82,7 +82,7 @@ body { margin: 0; background: #fff; }
 .docs-toc a:hover, .docs-toc a[aria-current] { color: #192800; }
 .docs-toc a[aria-current] { font-weight: 600; }
 .docs-toc-subsection { padding-left: 12px; }
-.docs-sidebar:modal { position: fixed; inset: 0 auto 0 0; margin: 0; width: min(320px, calc(100vw - 32px)); height: 100dvh; max-height: none; padding: 24px; display: flex; flex-direction: column; overflow: hidden; }
+.docs-sidebar:modal { position: fixed; inset: 0 auto 0 0; margin: 0; width: min(320px, calc(100vw - 32px)); height: 100dvh; max-height: none; padding: 24px; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
 .docs-sidebar:modal .docs-sidebar-close { display: block; flex-shrink: 0; }
 .docs-sidebar:modal nav { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .docs-sidebar::backdrop { background: rgb(25 40 0 / 24%); }
@@ -126,8 +126,8 @@ body { margin: 0; background: #fff; }
 html[data-theme="dark"] .docs-layout { background: var(--unmet-theme-page); color: var(--unmet-theme-text); }
 html[data-theme="dark"] .unmet-docs-navigation { color: var(--unmet-theme-text); }
 html[data-theme="dark"] .docs-layout { --docs-ink: var(--unmet-theme-text); --docs-muted: var(--unmet-theme-muted); --docs-line: var(--unmet-theme-border); }
-html[data-theme="dark"] .docs-sidebar,
-html[data-theme="dark"] .docs-sidebar:modal { background: #151515; color: var(--unmet-theme-text); }
+html[data-theme="dark"] .docs-sidebar { color: var(--unmet-theme-text); }
+html[data-theme="dark"] .docs-sidebar:modal { background: #151515; }
 html[data-theme="dark"] .docs-sidebar [data-active-group] > summary,
 html[data-theme="dark"] .docs-toc a:hover,
 html[data-theme="dark"] .docs-toc a[aria-current] { color: var(--unmet-theme-accent); }

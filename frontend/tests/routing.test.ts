@@ -21,6 +21,8 @@ describe("app routes", () => {
     }
     expect(footer).toContain('<a href="https://x.com/Unmetxyz" target="_blank" rel="noopener noreferrer">X</a>');
     expect(footer).toContain("<span>GitHub</span>");
+    expect(footer).toContain('<h3>Legal</h3><a href="/docs/legal/terms/">Terms of Use</a>' +
+      '<a href="/docs/legal/privacy/">Privacy Policy</a>');
   });
   test.each([
     ["/", "landing"],
@@ -51,6 +53,7 @@ describe("app routes", () => {
     expect(marketAnchor).toContain("data-discover");
     expect(analyticsAnchor).toContain("data-discover");
     expect(markup).toContain('href="/services"');
+    expect(markup).not.toContain('href="/docs/legal/');
   });
 
   test.each([
