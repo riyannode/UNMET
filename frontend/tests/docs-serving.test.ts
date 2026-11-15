@@ -115,7 +115,8 @@ describe("Vite documentation MPA", () => {
   test("publishes exactly the approved routes with complete static navigation", async () => {
     const approved = ["/docs", "/docs/getting-started/", "/docs/getting-started/builders/", "/docs/getting-started/agents/",
       "/docs/demand-market/", "/docs/demand-market/proposals/", "/docs/demand-market/review/", "/docs/demand-market/refunds/",
-      "/docs/api/", "/docs/api/intelligence/", "/docs/api/payments/", "/docs/api/errors/", "/docs/roadmap/"];
+      "/docs/api/", "/docs/api/intelligence/", "/docs/api/payments/", "/docs/api/errors/", "/docs/roadmap/",
+      "/docs/legal/terms/", "/docs/legal/privacy/"];
     expect(docsRoutes).toEqual(approved);
     const htmlPages = new Map(await Promise.all(approved.map(async (route) =>
       [route, await readFile(path.join(directory, docsFile(route)), "utf8")] as const)));
@@ -129,7 +130,13 @@ describe("Vite documentation MPA", () => {
       expect(html).not.toContain(">Documents<");
       expect(html).toContain('aria-label="Browse documentation"');
       expect(html).toMatch(/<div class="docs-grid">\s*<div class="docs-toolbar">/);
-      expect(html.match(/<details[ >]/g)?.length).toBe(5);
+      expect(html.match(/<details[ >]/g)?.length).toBe(6);
+      expect(html.replace(' aria-current="page"', "")).toContain('<summary>Legal</summary><ul>' +
+        '<li><a href="/docs/legal/terms/">Terms of Use</a></li>' +
+        '<li><a href="/docs/legal/privacy/">Privacy Policy</a></li></ul>');
+      if (route.startsWith("/docs/legal/")) {
+        expect(html).toContain('<details open data-active-group><summary>Legal</summary>');
+      }
       expect(html.match(/<details open data-active-group/g)?.length).toBe(1);
       expect(html.match(/<details open/g)?.length).toBe(1);
       expect(html.match(/data-active-group/g)?.length).toBe(1);
@@ -183,7 +190,7 @@ describe("Vite documentation MPA", () => {
     }
   });
 
-  test.each(["/docs/missing", "/docs/api/missing/", "/docs/sources/AGENTS.md", "/docs/missing.html"])("%s returns real 404 without the app fallback", async (route) => {
+  test.each(["/docs/missing", "/docs/api/missing/", "/docs/sources/AGENTS.md", "/docs/missing.html", "/docs/legal/invalid"])("%s returns real 404 without the app fallback", async (route) => {
     for (const base of [devOrigin, previewOrigin]) {
       for (const method of ["GET", "HEAD"]) {
         const response = await fetch(base + route, { method, headers: { Accept: "text/html" } });

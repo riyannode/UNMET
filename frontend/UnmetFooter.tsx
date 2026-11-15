@@ -21,6 +21,11 @@ export default function UnmetFooter() {
             <h3>Community</h3>
             <a href="https://x.com/Unmetxyz" target="_blank" rel="noopener noreferrer">X</a>
           </div>
+          <div className="unmet-footer-group">
+            <h3>Legal</h3>
+            <a href="/docs/legal/terms/">Terms of Use</a>
+            <a href="/docs/legal/privacy/">Privacy Policy</a>
+          </div>
         </nav>
 
         <div className="unmet-footer-bottom">

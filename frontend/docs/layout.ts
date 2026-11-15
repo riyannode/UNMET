@@ -34,6 +34,10 @@ const docsGroups: readonly { title: string; items: readonly (readonly [string, s
     ["Intelligence Expansion", "/docs/roadmap/#intelligence-expansion"],
     ["Capability Resolver", "/docs/roadmap/#capability-resolver"],
   ] },
+  { title: "Legal", items: [
+    ["Terms of Use", "/docs/legal/terms/"],
+    ["Privacy Policy", "/docs/legal/privacy/"],
+  ] },
 ];
 
 export const docsRoutes = [...new Set(docsGroups.flatMap((group) => group.items.map(([, href]) => href.split("#")[0]!)))];
