@@ -23,8 +23,8 @@ function runBootstrap(value: string | Error | undefined) {
 
 describe("theme preference", () => {
   it("selects the light and dark UNMET logo assets", () => {
-    expect(unmetLogoSource("light")).toBe("/logos/unmet.png");
-    expect(unmetLogoSource("dark")).toBe("/logos/unmet-dark.png");
+    expect(unmetLogoSource("light")).toBe("/assets/unmet-96-39fd20212f24.png");
+    expect(unmetLogoSource("dark")).toBe("/assets/unmet-dark-96-38b65fb53ed0.png");
   });
   it("runs the pre-CSS bootstrap for saved, invalid, missing, and blocked storage", () => {
     expect(runBootstrap("dark").theme).toBe("dark");

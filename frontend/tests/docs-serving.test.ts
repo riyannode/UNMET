@@ -14,6 +14,10 @@ let directory: string;
 let devOrigin: string;
 let previewOrigin: string;
 const docsPaths = ["/docs", "/docs/", "/docs/index.html", "/docs?from=nav", "/docs/?from=nav"];
+const fontStylesheets = [
+  "https://api.fontshare.com/v2/css?f[]=satoshi@700&display=swap",
+  "https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&display=swap",
+];
 
 function origin(server: ViteDevServer | PreviewServer): string {
   const address = server.httpServer?.address();
@@ -68,6 +72,11 @@ describe("Vite documentation MPA", () => {
       expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
       expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
     }
+    for (const html of [app, ...await Promise.all(docsRoutes.map((route) => readFile(path.join(directory, docsFile(route)), "utf8")))]) {
+      for (const href of fontStylesheets) expect(html.split(`rel="stylesheet" href="${href}"`)).toHaveLength(2);
+      expect(html).toContain('rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32-3c098c6b358e.png"');
+      expect(html).toContain('rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48-97773cb7f176.png"');
+    }
     expect(docs).not.toBe(source);
     expect(docs).not.toContain('src="/docs/navigation.tsx"');
     const sharedAssets = [...docs.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]).filter((asset) => app.includes(asset));
@@ -108,6 +117,31 @@ describe("Vite documentation MPA", () => {
         const response = await fetch(base + "/" + resource);
         expect(response.status).toBe(200);
         expect(await response.text()).toBe(await readFile(path.join(frontendRoot, "public", resource), "utf8"));
+      }
+    }
+  });
+
+  test("serves llms.txt as the same plain text in dev and preview", async () => {
+    const expected = await readFile(path.join(frontendRoot, "public/llms.txt"), "utf8");
+    expect(expected).toMatch(/^# UNMET\n/);
+    expect([...expected.matchAll(/\]\((https:\/\/[^)]+)\)/g)].map((match) => match[1])).toEqual([
+      "https://unmetxyz.my.id/docs",
+      "https://unmetxyz.my.id/docs/getting-started/agents/",
+      "https://unmetxyz.my.id/api.md",
+      "https://unmetxyz.my.id/.well-known/api-catalog",
+      "https://unmetxyz.my.id/openapi.json",
+      "https://unmetxyz.my.id/payment.md",
+    ]);
+    for (const base of [devOrigin, previewOrigin]) {
+      for (const route of ["/llms.txt", "/llms.txt?source=test"]) {
+        const response = await fetch(base + route, { headers: { Accept: "text/html" } });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/plain");
+        expect(await response.text()).toBe(expected);
+        const head = await fetch(base + route, { method: "HEAD", headers: { Accept: "text/html" } });
+        expect(head.status).toBe(200);
+        expect(head.headers.get("content-type")).toContain("text/plain");
+        expect(await head.text()).toBe("");
       }
     }
   });
@@ -160,7 +194,9 @@ describe("Vite documentation MPA", () => {
       }
       const cssLinks = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)];
       expect(cssLinks.length).toBeGreaterThan(0);
-      const css = (await Promise.all(cssLinks.map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
+      const externalCss = cssLinks.map(([, href]) => href!).filter((href) => !href.startsWith("/"));
+      expect(externalCss).toEqual(fontStylesheets);
+      const css = (await Promise.all(cssLinks.filter(([, href]) => href!.startsWith("/")).map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
       expect(css).toContain(".docs-grid");
       expect(css).toContain("grid-template-columns");
       expect(css).toContain("--unmet-theme-page");

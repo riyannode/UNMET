@@ -497,10 +497,6 @@ const MagicRings = ({
       }
       return programs.get(key) ?? null;
     };
-    if (!programFor('glow', []) || !programFor('compose', []) || !programFor('line', [])) {
-      programs.forEach(entry => entry && gl.deleteProgram(entry.program));
-      return;
-    }
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const vao = gl.createVertexArray();
