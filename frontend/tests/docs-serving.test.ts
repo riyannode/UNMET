@@ -14,6 +14,10 @@ let directory: string;
 let devOrigin: string;
 let previewOrigin: string;
 const docsPaths = ["/docs", "/docs/", "/docs/index.html", "/docs?from=nav", "/docs/?from=nav"];
+const fontStylesheets = [
+  "https://api.fontshare.com/v2/css?f[]=satoshi@700&display=swap",
+  "https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&display=swap",
+];
 
 function origin(server: ViteDevServer | PreviewServer): string {
   const address = server.httpServer?.address();
@@ -67,6 +71,9 @@ describe("Vite documentation MPA", () => {
       expect(html.indexOf('<meta name="theme-color"')).toBeLessThan(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`));
       expect(html).toContain(`<script>${THEME_BOOTSTRAP}</script>`);
       expect(html.indexOf(`<script>${THEME_BOOTSTRAP}</script>`)).toBeLessThan(html.indexOf('rel="stylesheet"'));
+    }
+    for (const html of [app, ...await Promise.all(docsRoutes.map((route) => readFile(path.join(directory, docsFile(route)), "utf8")))]) {
+      for (const href of fontStylesheets) expect(html.split(`rel="stylesheet" href="${href}"`)).toHaveLength(2);
     }
     expect(docs).not.toBe(source);
     expect(docs).not.toContain('src="/docs/navigation.tsx"');
@@ -160,7 +167,9 @@ describe("Vite documentation MPA", () => {
       }
       const cssLinks = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)];
       expect(cssLinks.length).toBeGreaterThan(0);
-      const css = (await Promise.all(cssLinks.map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
+      const externalCss = cssLinks.map(([, href]) => href!).filter((href) => !href.startsWith("/"));
+      expect(externalCss).toEqual(fontStylesheets);
+      const css = (await Promise.all(cssLinks.filter(([, href]) => href!.startsWith("/")).map(([, href]) => readFile(path.join(directory, href!), "utf8")))).join("");
       expect(css).toContain(".docs-grid");
       expect(css).toContain("grid-template-columns");
       expect(css).toContain("--unmet-theme-page");

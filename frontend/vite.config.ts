@@ -32,7 +32,12 @@ const themeBootstrapPlugin: Plugin = {
   name: "theme-bootstrap",
   transformIndexHtml: {
     order: "pre",
-    handler: (html) => html.replace(/<head([^>]*)>/, `<head$1><meta name="theme-color" content="#070b12"><script>${THEME_BOOTSTRAP}</script>`),
+    handler: (html) => html.replace(/<head([^>]*)>/, [
+      '<head$1><meta name="theme-color" content="#070b12">',
+      `<script>${THEME_BOOTSTRAP}</script>`,
+      '<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@700&display=swap">',
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&display=swap">',
+    ].join("")),
   },
 };
 

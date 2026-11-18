@@ -170,6 +170,10 @@ try:
             }
             assert len(docs_pages) == 15, ("unexpected Docs page count", len(docs_pages))
             assert {"/docs/legal/terms/", "/docs/legal/privacy/"} <= docs_pages.keys(), "missing packaged Legal pages"
+            font_stylesheets = {
+                "https://api.fontshare.com/v2/css?f[]=satoshi@700&display=swap",
+                "https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&display=swap",
+            }
             for route, page in docs_pages.items():
                 html = page.read_bytes()
                 aliases = [route, route.rstrip("/"), "/" + page.relative_to(dist).as_posix(), route + "?from=sidebar"]
@@ -178,8 +182,13 @@ try:
                     assert body == html, (path, "wrong built article")
                     check(path, method="HEAD", mime="text/html")
                 assert b"github.com" not in html
-                for raw_href in re.findall(rb'href="([^"]+)"', html):
+                found_fonts = []
+                for tag, raw_href in re.findall(rb'(<[^>]+\bhref="([^"]+)"[^>]*>)', html):
                     href = raw_href.decode()
+                    if href in font_stylesheets:
+                        assert re.match(rb'<link\b', tag) and re.search(rb'\brel="stylesheet"', tag), (route, href, "font is not a stylesheet")
+                        found_fonts.append(href)
+                        continue
                     parsed = urllib.parse.urlsplit(urllib.parse.urljoin("https://unmetxyz.my.id" + route, href))
                     assert parsed.hostname == "unmetxyz.my.id", (route, href, "unexpected external documentation link")
                     path = parsed.path
@@ -198,6 +207,7 @@ try:
                         assert marker in body, (path, "wrong public resource")
                     if parsed.fragment:
                         assert target and ('id="' + parsed.fragment + '"').encode() in target.read_bytes(), (route, href, "missing heading")
+                assert len(found_fonts) == 2 and set(found_fonts) == font_stylesheets, (route, "missing or duplicate font stylesheets")
             for path in ["/docs/missing", "/docs/api/missing/", "/docs/sources/AGENTS.md", "/docs/navigation.tsx"]:
                 for method in ["GET", "HEAD"]:
                     check(path, expected=404, method=method)
