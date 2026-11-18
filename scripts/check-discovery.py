@@ -1,5 +1,6 @@
 import base64
 import gzip
+import hashlib
 import http.server
 import json
 import os
@@ -223,6 +224,19 @@ try:
                 check(path, mime="text/html")
 
             assets = dist / "assets"
+            optimized_assets = [*assets.glob("unmet*-96-*.png"), *assets.glob("favicon-*.png"),
+                                *assets.glob("okx*-288-*.png"), *assets.glob("usdt0*-366-*.png"),
+                                *assets.glob("infrastructure-*.webp")]
+            assert len(optimized_assets) == 12, ("unexpected optimized asset count", len(optimized_assets))
+            for asset in optimized_assets:
+                body = asset.read_bytes()
+                assert asset.stem.endswith(hashlib.sha256(body).hexdigest()[:12]), (asset.name, "incorrect content hash")
+                path = "/assets/" + asset.name
+                response, served = check(path)
+                assert served == body and response.get("Cache-Control") == "public, max-age=31536000, immutable", (path, "asset or cache mismatch")
+                etag = response.get("ETag")
+                assert etag, (path, "missing ETag")
+                check(path, expected=304, headers={"If-None-Match": etag})
             css = next(path for path in assets.glob("*.css") if path.stat().st_size > 512)
             js = next(path for path in assets.glob("*.js") if path.stat().st_size > 512)
             for path in ["/", "/docs", "/assets/" + css.name, "/assets/" + js.name,

@@ -74,6 +74,8 @@ describe("Vite documentation MPA", () => {
     }
     for (const html of [app, ...await Promise.all(docsRoutes.map((route) => readFile(path.join(directory, docsFile(route)), "utf8")))]) {
       for (const href of fontStylesheets) expect(html.split(`rel="stylesheet" href="${href}"`)).toHaveLength(2);
+      expect(html).toContain('rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32-3c098c6b358e.png"');
+      expect(html).toContain('rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48-97773cb7f176.png"');
     }
     expect(docs).not.toBe(source);
     expect(docs).not.toContain('src="/docs/navigation.tsx"');

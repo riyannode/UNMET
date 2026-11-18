@@ -43,6 +43,13 @@ describe("landing FAQ", () => {
       expect(faq).toBeGreaterThan(marquee);
       expect(footer).toBeGreaterThan(faq);
       expect(markup.match(/Frequently asked questions<\/h2>/g)).toHaveLength(1);
+      expect(markup).toContain('type="image/webp"');
+      expect(markup).toContain('/assets/infrastructure-480-cef2886f24c7.webp 480w');
+      expect(markup).toContain('/assets/infrastructure-2172-a007b14e973a.webp 2172w');
+      const fallback = markup.match(/<img\b[^>]*src="\/images\/unmet-market-infrastructure\.png"[^>]*>/)?.[0] ?? "";
+      expect(fallback).toContain('width="2172"');
+      expect(fallback).toContain('height="724"');
+      expect(fallback).toContain('loading="lazy"');
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
     }

@@ -90,8 +90,8 @@ const MODELS: Record<ModelKey, ModelConfig> = {
 
 const MARQUEE_ITEMS = [
   { id: "x-layer", label: "X Layer", logo: null, darkLogo: null },
-  { id: "okx", label: "OKX", logo: "/logos/okx.png", darkLogo: "/logos/okx-dark.png" },
-  { id: "usdt0", label: "USD₮0", logo: "/logos/usdt0.png", darkLogo: "/logos/usdt0-dark.png" },
+  { id: "okx", label: "OKX", logo: "/assets/okx-288-b84d5177b214.png", darkLogo: "/assets/okx-dark-288-d6074af47b5d.png" },
+  { id: "usdt0", label: "USD₮0", logo: "/assets/usdt0-366-c674ce7e54a2.png", darkLogo: "/assets/usdt0-dark-366-6e3005628468.png" },
   { id: "usdc", label: "USDC", logo: "/logos/usdc.svg", darkLogo: null },
   { id: "usdg", label: "USDG", logo: "/logos/usdg.png", darkLogo: null },
   { id: "x402", label: "x402", logo: null, darkLogo: null },
@@ -628,7 +628,14 @@ export default function UnmetLanding() {
     </section>
     <ProblemSection />
     <div className="unmet-market-infrastructure" aria-hidden="true">
-      <img src="/images/unmet-market-infrastructure.png" alt="" width="2172" height="724" loading="lazy" />
+      <picture>
+        <source
+          type="image/webp"
+          srcSet="/assets/infrastructure-480-cef2886f24c7.webp 480w, /assets/infrastructure-960-4ab4e486a096.webp 960w, /assets/infrastructure-1440-aeef35deefe5.webp 1440w, /assets/infrastructure-2172-a007b14e973a.webp 2172w"
+          sizes="(max-width: 479px) 480px, (max-width: 767px) 100vw, (max-width: 1260px) 1260px, 100vw"
+        />
+        <img src="/images/unmet-market-infrastructure.png" alt="" width="2172" height="724" loading="lazy" />
+      </picture>
     </div>
     <UnmetHowItWorks />
     <div className="unmet-marquee" aria-label="UNMET ecosystem">
