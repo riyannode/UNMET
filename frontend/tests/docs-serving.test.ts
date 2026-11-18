@@ -121,6 +121,31 @@ describe("Vite documentation MPA", () => {
     }
   });
 
+  test("serves llms.txt as the same plain text in dev and preview", async () => {
+    const expected = await readFile(path.join(frontendRoot, "public/llms.txt"), "utf8");
+    expect(expected).toMatch(/^# UNMET\n/);
+    expect([...expected.matchAll(/\]\((https:\/\/[^)]+)\)/g)].map((match) => match[1])).toEqual([
+      "https://unmetxyz.my.id/docs",
+      "https://unmetxyz.my.id/docs/getting-started/agents/",
+      "https://unmetxyz.my.id/api.md",
+      "https://unmetxyz.my.id/.well-known/api-catalog",
+      "https://unmetxyz.my.id/openapi.json",
+      "https://unmetxyz.my.id/payment.md",
+    ]);
+    for (const base of [devOrigin, previewOrigin]) {
+      for (const route of ["/llms.txt", "/llms.txt?source=test"]) {
+        const response = await fetch(base + route, { headers: { Accept: "text/html" } });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/plain");
+        expect(await response.text()).toBe(expected);
+        const head = await fetch(base + route, { method: "HEAD", headers: { Accept: "text/html" } });
+        expect(head.status).toBe(200);
+        expect(head.headers.get("content-type")).toContain("text/plain");
+        expect(await head.text()).toBe("");
+      }
+    }
+  });
+
   test("publishes exactly the approved routes with complete static navigation", async () => {
     const approved = ["/docs", "/docs/getting-started/", "/docs/getting-started/builders/", "/docs/getting-started/agents/",
       "/docs/demand-market/", "/docs/demand-market/proposals/", "/docs/demand-market/review/", "/docs/demand-market/refunds/",

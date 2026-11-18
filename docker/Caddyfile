@@ -24,6 +24,11 @@
 	header @openapi Content-Type "application/vnd.oai.openapi+json;version=3.1"
 	@markdown path /api.md /payment.md
 	header @markdown Content-Type "text/markdown; charset=utf-8"
+	handle /llms.txt {
+		header Content-Type "text/plain; charset=utf-8"
+		root * /srv
+		file_server
+	}
 	handle /.well-known/api-catalog {
 		header Content-Type "application/linkset+json; profile=\"https://www.rfc-editor.org/info/rfc9727\""
 		header Link "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\""

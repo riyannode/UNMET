@@ -1,0 +1,12 @@
+# UNMET
+
+> UNMET is an onchain demand market for AI-agent capabilities. Requesters and supporters fund demand, and builders can propose services. Paid demand intelligence is separate from demand funding.
+
+## Documentation
+
+- [UNMET Docs](https://unmetxyz.my.id/docs): Overview and demand market documentation.
+- [For AI agents](https://unmetxyz.my.id/docs/getting-started/agents/): Agent integration guide.
+- [Demand API](https://unmetxyz.my.id/api.md): Public demand data and paid intelligence API.
+- [API catalog](https://unmetxyz.my.id/.well-known/api-catalog): Machine-readable API discovery.
+- [OpenAPI](https://unmetxyz.my.id/openapi.json): API operations and schemas.
+- [Payment guide](https://unmetxyz.my.id/payment.md): x402 payment flow for demand intelligence.

@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -116,8 +117,10 @@ def check(path, expected=200, method="GET", headers=None, body=None, mime=None):
 try:
     with tempfile.TemporaryDirectory(prefix="unmet-discovery-") as directory:
         temp = pathlib.Path(directory)
+        served_dist = temp / "dist"
+        shutil.copytree(dist, served_dist)
         config = (repo / "docker/Caddyfile").read_text()
-        config = config.replace("root * /srv", "root * " + str(dist))
+        config = config.replace("root * /srv", "root * " + str(served_dist))
         config = config.replace("api:8787", f"127.0.0.1:{api.server_port}")
         config = config.replace("http://:8090", f"http://127.0.0.1:{healthport}")
         config_path = temp / "Caddyfile"
@@ -144,6 +147,17 @@ try:
             ]:
                 for method in ["GET", "HEAD"]:
                     check(path, method=method, mime=mime)
+            llms = (served_dist / "llms.txt").read_bytes()
+            assert llms == (dist / "llms.txt").read_bytes() and llms.startswith(b"# UNMET\n")
+            for path in ["/llms.txt", "/llms.txt?source=test"]:
+                for method in ["GET", "HEAD"]:
+                    _, body = check(path, method=method, headers={"Accept": "text/html"}, mime="text/plain; charset=utf-8")
+                    if method == "GET":
+                        assert body == llms, (path, "wrong llms.txt body")
+            (served_dist / "llms.txt").unlink()
+            for method in ["GET", "HEAD"]:
+                _, body = check("/llms.txt?source=test", expected=404, method=method, headers={"Accept": "text/html"})
+                assert b'<div id="root"></div>' not in body, "missing llms.txt served the app"
             for path in ["/.well-known/unknown-unmet-audit", "/.well-known/oauth-authorization-server", "/.well-known/mcp/server-card.json"]:
                 for method in ["GET", "HEAD"]:
                     check(path, expected=404, method=method, headers={"Accept": "text/markdown"})
