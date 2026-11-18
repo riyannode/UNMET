@@ -452,6 +452,7 @@ export default function UnmetLanding() {
 
   return (
     <>
+    <main>
     <section id="unmet-landing" className="unmet-landing">
       <div className="unmet-background" aria-hidden="true">
         <MagicRings
@@ -669,6 +670,7 @@ export default function UnmetLanding() {
       </div>
     </div>
     <FaqMiddleSimple />
+    </main>
     <UnmetFooter />
     </>
   );

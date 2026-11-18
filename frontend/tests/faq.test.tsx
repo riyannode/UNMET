@@ -38,6 +38,11 @@ describe("landing FAQ", () => {
       const marquee = markup.indexOf('aria-label="UNMET ecosystem"');
       const faq = markup.indexOf("Frequently asked questions</h2>");
       const footer = markup.indexOf('<footer class="unmet-footer"');
+      expect(markup.match(/<main\b/g)).toHaveLength(1);
+      expect(markup.indexOf('<main>')).toBeLessThan(markup.indexOf('id="unmet-landing"'));
+      expect(markup.indexOf('class="unmet-nav"')).toBeLessThan(markup.indexOf('class="unmet-hero"'));
+      expect(markup.indexOf('</main>')).toBeGreaterThan(faq);
+      expect(markup.indexOf('</main>')).toBeLessThan(footer);
       expect(how).toBeGreaterThan(-1);
       expect(marquee).toBeGreaterThan(how);
       expect(faq).toBeGreaterThan(marquee);
