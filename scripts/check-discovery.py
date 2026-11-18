@@ -1,4 +1,5 @@
 import base64
+import gzip
 import http.server
 import json
 import os
@@ -20,6 +21,7 @@ dist = pathlib.Path(os.environ["DIST_DIR"]).resolve()
 requests = []
 challenge = base64.b64encode(json.dumps({"x402Version": 2, "accepts": []}).encode()).decode()
 receipt = base64.b64encode(json.dumps({"success": True, "network": "eip155:196", "transaction": "synthetic-fixture"}).encode()).decode()
+api_fixture = json.dumps({"fixture": "x" * 1024}).encode()
 
 
 class Fixture(http.server.BaseHTTPRequestHandler):
@@ -35,7 +37,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         paid = self.headers.get("payment-signature") == "synthetic-fixture"
-        data = b'{"opportunities":[],"synthetic":true}' if paid else b"{}"
+        data = json.dumps({"opportunities": [], "synthetic": True, "padding": "x" * 1024}).encode() if paid else b"{}"
         self.send_response(200 if paid else 402)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
@@ -45,10 +47,16 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        self.send_response(404)
+        data = api_fixture if self.path in ["/v1", "/v1/insights", "/v1/x402/validate", "/health", "/live", "/ready"] else b'{"error":{"code":"NOT_FOUND"}}'
+        self.send_response(200 if data == api_fixture else 404)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(b'{"error":{"code":"NOT_FOUND"}}')
+        if self.command != "HEAD":
+            self.wfile.write(data)
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def log_message(self, *_args):
         pass
@@ -214,12 +222,52 @@ try:
             for path in ["/market", "/market/1", "/services", "/services/1952/0x1111111111111111111111111111111111111111/42", "/create-demand", "/analytics", "/docs-other"]:
                 check(path, mime="text/html")
 
-            headers = {"Content-Type": "application/json", "Accept": "text/markdown", "X-Forwarded-For": "198.51.100.44", "CF-Connecting-IP": "198.51.100.45", "X-Request-ID": "untrusted-fixture-id"}
+            assets = dist / "assets"
+            css = next(path for path in assets.glob("*.css") if path.stat().st_size > 512)
+            js = next(path for path in assets.glob("*.js") if path.stat().st_size > 512)
+            for path in ["/", "/docs", "/assets/" + css.name, "/assets/" + js.name,
+                         "/logos/usdc.svg", "/api.md", "/openapi.json", "/.well-known/api-catalog"]:
+                identity_headers, identity = check(path, headers={"Accept-Encoding": "identity"})
+                assert not identity_headers.get("Content-Encoding"), (path, "encoded identity")
+                identity_head, _ = check(path, method="HEAD", headers={"Accept-Encoding": "identity"})
+                assert not identity_head.get("Content-Encoding"), (path, "encoded identity HEAD")
+                for encoding in ["gzip", "zstd"]:
+                    encoded_headers, encoded = check(path, headers={"Accept-Encoding": encoding})
+                    assert encoded_headers.get("Content-Encoding") == encoding, (path, encoding, encoded_headers)
+                    assert "accept-encoding" in encoded_headers.get("Vary", "").lower(), (path, "missing Vary")
+                    assert len(encoded) < len(identity), (path, encoding, "no wire-size reduction")
+                    for header in ["Content-Type", "Cache-Control"]:
+                        assert encoded_headers.get(header) == identity_headers.get(header), (path, encoding, header)
+                    if encoding == "gzip":
+                        decoded = gzip.decompress(encoded)
+                    else:
+                        decoded = subprocess.run(["curl", "--silent", "--show-error", "--fail", "--max-time", "5", "--compressed", "-H", "Accept-Encoding: zstd", f"http://127.0.0.1:{webport}{path}"], check=True, capture_output=True).stdout
+                    assert decoded == identity, (path, encoding, "decoded bytes differ")
+                    head, _ = check(path, method="HEAD", headers={"Accept-Encoding": encoding})
+                    assert head.get("Content-Encoding") == encoding and "accept-encoding" in head.get("Vary", "").lower(), (path, encoding, "HEAD encoding")
+                    for header in ["Content-Type", "Cache-Control"]:
+                        assert head.get(header) == identity_headers.get(header), (path, encoding, "HEAD", header)
+
+            for path in ["/v1", "/v1/insights", "/v1/x402/validate", "/health", "/live", "/ready"]:
+                for encoding in ["identity", "gzip", "zstd"]:
+                    response, body = check(path, headers={"Accept-Encoding": encoding}, mime="application/json")
+                    assert body == api_fixture and not response.get("Content-Encoding"), (path, encoding, "API response changed")
+                    head, _ = check(path, method="HEAD", headers={"Accept-Encoding": encoding}, mime="application/json")
+                    assert not head.get("Content-Encoding"), (path, encoding, "API HEAD encoded")
+            for method in ["GET", "HEAD"]:
+                response, body = check("/v1/__missing", expected=404, method=method, headers={"Accept-Encoding": "zstd, gzip"}, mime="application/json")
+                assert not response.get("Content-Encoding")
+                if method == "GET":
+                    assert json.loads(body)["error"]["code"] == "NOT_FOUND"
+
+            headers = {"Content-Type": "application/json", "Accept": "text/markdown", "Accept-Encoding": "zstd, gzip", "X-Forwarded-For": "198.51.100.44", "CF-Connecting-IP": "198.51.100.45", "X-Request-ID": "untrusted-fixture-id"}
             response, body = check("/v1/insights", 402, "POST", headers, b"{}", "application/json")
             assert response["PAYMENT-REQUIRED"] == challenge and body == b"{}" and response["Cache-Control"] == "no-store"
+            assert not response.get("Content-Encoding")
             headers["PAYMENT-SIGNATURE"] = "synthetic-fixture"
             response, body = check("/v1/insights", 200, "POST", headers, b"{}", "application/json")
             assert response["PAYMENT-RESPONSE"] == receipt and response["Cache-Control"] == "no-store"
+            assert not response.get("Content-Encoding") and len(body) > 512
             assert json.loads(body)["synthetic"] and len(requests) == 2
             assert all(item["headers"].get("X-Forwarded-For") == "127.0.0.1" and not item["headers"].get("X-Request-Id") for item in requests), requests
             assert requests[1]["headers"].get("Payment-Signature") == "synthetic-fixture"

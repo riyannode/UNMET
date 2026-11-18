@@ -5,6 +5,17 @@
 }
 
 {$SITE_ADDRESS:http://localhost} {
+	@static not path /v1 /v1/* /health /live /ready
+	encode @static zstd gzip {
+		match {
+			header Content-Type text/*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type image/svg+xml*
+			header Content-Type application/vnd.oai.openapi+json*
+			header Content-Type application/linkset+json*
+		}
+	}
 	@homepage path /
 	header @homepage Link "<{$CANONICAL_ORIGIN:http://localhost}/>; rel=\"canonical\", </.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\"; profile=\"https://www.rfc-editor.org/info/rfc9727\", </openapi.json>; rel=\"service-desc\"; type=\"application/vnd.oai.openapi+json;version=3.1\", </docs>; rel=\"service-doc\", </payment.md>; rel=\"service-doc\"; title=\"Payment guide\""
 	@canonical_app path /market /market/* /create-demand /analytics
