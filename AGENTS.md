@@ -133,7 +133,7 @@ bun run check
 
 The real React session-race fixture is `frontend/tests/create-demand-chat-race.html`, served by Vite at `/tests/create-demand-chat-race.html`. It must finish with PASS; its synthetic outcomes send no wallet transactions. This is separate from interactive wallet acceptance.
 
-For container verification, configure the private `.env` with Compose defaults and your own RPC/OKX/Reown settings. Execute from root:
+For local container verification or an independent self-host installation, configure the private `.env` with Compose defaults and your own RPC/OKX/Reown settings. Execute from root:
 
 ```bash
 docker compose config --quiet
@@ -141,7 +141,7 @@ docker compose build
 docker compose up -d --build
 ```
 
-Use an isolated Compose project, free ports and nonconflicting subnet for disposable tests. The unpaid smoke script accepts local HTTP origins only; match the configured hostname and port:
+Use an isolated Compose project, free ports and nonconflicting subnet for disposable tests. The reviewed shared VPS uses the host-owned overlays and activation manifest under `/opt/unmet/deploy/`. Production activation requires explicit authorization and a targeted service list. Never use base Compose alone, generic quickstart commands, a project-wide `down`, or `--remove-orphans` on that VPS. See the [production runbook](docs/RUNBOOK.md#reviewed-shared-vps-frontend-release). The unpaid smoke script accepts local HTTP origins only; match the configured hostname and port:
 
 ```bash
 # Default localhost port 80 only:

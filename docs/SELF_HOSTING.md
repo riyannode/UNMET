@@ -14,7 +14,7 @@ All settings are integer values. Inclusive bounds are `tickMs` 1,000–3,600,000
 
 The refresh interval makes a record eligible; it does not guarantee that every service is observed in each interval. Work is bounded per tick and ordered by oldest attempt, so a large registry or unavailable dependencies can cause observations to become stale. After restart, persisted records are eligible for bounded revalidation before being presented as current.
 
-The opt-in `compose.validation.yaml` overlay extends the API/web images with one reusable validation image, run as validator, signer and observer services. Use this topology locally and on a later approved VPS; target-host security still needs independent validation.
+The opt-in `compose.validation.yaml` overlay extends the API/web images with one reusable validation image, run as validator, signer and observer services. These commands are for local and independent self-host installations. For the reviewed shared VPS use the [host-owned activation procedure](RUNBOOK.md#reviewed-shared-vps-frontend-release).
 
 ```bash
 UNMET_ENV_FILE=.env.gate0-local # Use the reviewed private environment file on each host.
@@ -72,7 +72,7 @@ For a later VPS, retain these images and topology. Change domain/origin, TLS, se
 
 The reviewed configuration installs [the repository policy `ops/firewall/unmet-egress.nft`](../ops/firewall/unmet-egress.nft) as `/etc/ufw/unmet-egress.nft` and owns only runtime `table bridge unmet_egress`; verify current host state for each release. It enforces the **shared web/validator/observer boundary**, not a per-process boundary: validator and observer both use web's network namespace. Native bridge `prerouting` at priority `-100` covers same-bridge, host-local and routed traffic without enabling `br_netfilter`; `DOCKER-USER` alone misses some of these paths.
 
-The reviewed production topology pins IPv4 sources `172.30.80.2` and `172.18.0.3`. Exact TCP exceptions for API `172.30.80.3:8787` and HOROI `172.18.0.2:3000` precede private/reserved/metadata denies; `43.156.68.254` is denied as the VPS public management address. Ingress replies, related traffic and public TCP HTTPS/443 remain allowed. Validator loopback and Docker DNS remain local; API egress is outside this policy and signer retains `network_mode: none`. Both reviewed bridge interfaces have IPv6 disabled: this IPv4 policy does not establish IPv6 protection. Review any IP, topology, port, dependency or IPv6 change before applying it elsewhere.
+The shared UNMET web namespace uses source `172.30.80.2` on `unmet_application`. The exact API exception `172.30.80.3:8787` precedes the private/reserved/metadata deny. HOROI and EVA belong to a separate workload plane and private cross-plane destinations are denied by default. The VPS public management address `43.156.68.254` is also denied. Ingress replies, related traffic and public TCP HTTPS/443 remain allowed. Validator loopback and Docker DNS stay local. API egress is outside this policy and signer retains `network_mode: none`. The rule set covers IPv4. Review any IP, topology, port, dependency or IPv6 change before applying it elsewhere.
 
 #### Install or update
 
@@ -97,17 +97,17 @@ printf 'UNMET_EGRESS bridge policy loaded\n'
 /usr/sbin/nft list table bridge unmet_egress || exit 1
 ```
 
-The file atomically adds/deletes/recreates its own table, so repeated loads are idempotent; it has no saved counter values and never flushes the host ruleset. Use the existing UFW lifecycle, with no new service or firewall framework:
+The file atomically replaces its own table on each load and resets its counters. On the reviewed shared VPS, invoke the existing UFW hook's `start` arm to reload only the owned table. This uses the same check and load as UFW startup:
 
 ```bash
-sudo ufw reload
+sudo /etc/ufw/after.init start
 systemctl is-active ufw
 sudo ufw status
 sudo nft list tables
 sudo nft list table bridge unmet_egress
 ```
 
-Verify the checks below directly after reload, then after the [five-service validation/discovery recreation](#update-rollback-and-stop), which recreates web, validator and observer together using both Compose files. Do not manually reapply nft rules after recreation.
+Verify the checks below directly after loading the policy. Repeat them after the [targeted shared VPS frontend release](RUNBOOK.md#reviewed-shared-vps-frontend-release) recreates web, validator and observer together. Normal container recreation keeps the host policy active.
 
 On 2026-11-02, this reviewed host passed UFW reload, canonical web/validator recreation and reboot autoload through the existing UFW hook, with required paths and deny counters verified after each and no manual reapplication after recreation or reboot. That historical acceptance covered web/validator only; it did not include observer. Repeat this acceptance for the current five-service topology on future deployments; the historical results apply only to the tested host and topology.
 
@@ -115,7 +115,7 @@ The one-time migration from historical `unmet-g06.nft` / `bridge unmet_g06` must
 
 #### Verify and roll back
 
-Require exactly one `bridge unmet_egress` table with **2 sets, 2 chains and 9 rules**. Verify SSH, public ingress, API, HOROI, Docker DNS, RPC, public HTTPS, validator and signer health; compare unrelated host services/firewall state with the baseline. Test all nine deny classes: metadata, host private addresses, Docker gateway, reserved addresses, HOROI wrong port, API wrong port, VPS public management, public HTTP/80 and unapproved external DNS/53. Include direct UDP DNS and require increasing host deny counters, not only connection timeouts. Repeat after recreation and the separately approved reboot. Use unpaid/read-only probes; no paid or onchain writes.
+Require exactly one `bridge unmet_egress` table with **2 sets, 2 chains and 8 rules**. Verify SSH, public UNMET/HOROI/EVA ingress, the UNMET API, Docker DNS, RPC, public HTTPS and validator/observer/signer health. Compare unrelated host services and firewall state with the baseline. Verify denies for metadata, host private and bridge gateway addresses, reserved addresses, HOROI private port 3000, API wrong port, VPS public management, public HTTP/80 and unapproved external DNS/53. Attribute the private HOROI failure to an increase on the private/reserved deny counter. Repeat after recreation and any separately approved reboot. Use unpaid, read-only probes.
 
 For rollback, restore the saved owned policy and hook with their original permissions, syntax-check and atomically apply the saved policy **before** retiring any superseded owned table. Verify recovery traffic, required paths, denies and unrelated state; confirm persistence through the restored UFW hook. On first install, absence of a prior policy is not a normal rollback that permits deleting protection: retain the reviewed fallback or maintenance boundary until protection is restored. Never flush the host ruleset, remove persistent volumes or use a namespace policy loader during normal deployment; any namespace fallback is confined to the reviewed emergency rollback.
 
@@ -319,7 +319,7 @@ Local validation changes no DNS, production certificates or production configura
 
 Record the current commit/image tag before updating. Retain known-good images with an explicit tag and matching private configuration securely. Never commit .env.
 
-These commands manage the five-service validation and discovery stack on local and VPS hosts. Set `UNMET_ENV_FILE` to that host's reviewed private environment file; retain the same project name and any extra host-specific Compose overrides on every command. Do not fall back to base Compose only. A base API/web installation without Gate-0 may omit the validation overlay.
+These commands manage a local or independently self-hosted stack. Set `UNMET_ENV_FILE` to the installation's private environment file and retain its project name and any overrides. A base API/web installation without Gate-0 may omit the validation overlay. The reviewed shared VPS uses the [production frontend release procedure](RUNBOOK.md#reviewed-shared-vps-frontend-release).
 
 ~~~bash
 UNMET_ENV_FILE=.env.gate0-local

@@ -125,7 +125,12 @@ jobs:
           docker run --rm --network none --user bun --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             "unmet-api:${IMAGE_TAG}" bun /app/backend/activity-smoke.ts
-      - run: docker compose build web
+      - name: Build web with restrictive public file modes
+        run: |
+          find frontend/public -type d -exec chmod 0700 {} +
+          find frontend/public -type f -exec chmod 0600 {} +
+          chmod 0600 docker/Caddyfile
+          docker compose build web
       - name: Build validation, signer and observer image
         run: docker compose -f compose.yaml -f compose.validation.yaml build validator
       - name: Smoke test packaged discovery routes
@@ -134,9 +139,31 @@ jobs:
           container="unmet-web-discovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           temp="$RUNNER_TEMP/unmet-web-discovery"
           mkdir -p "$temp/dist"
-          docker create --name "$container" "unmet-web:${IMAGE_TAG}" >/dev/null
-          trap 'docker rm "$container" >/dev/null' EXIT
+          docker run -d --name "$container" -p 127.0.0.1::8080 \
+            -e SITE_ADDRESS=http://:8080 "unmet-web:${IMAGE_TAG}" >/dev/null
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          test "$(docker inspect --format '{{.Config.User}}' "$container")" = web
+          docker exec "$container" sh -ec '
+            test "$(id -u)" -ne 0
+            directories=$(find /srv -type d ! -perm 0755 -print)
+            files=$(find /srv -type f ! -perm 0644 -print)
+            test -z "$directories" && test -z "$files"
+          '
+          base="http://$(docker port "$container" 8080/tcp)"
+          curl --fail --silent --show-error --retry 20 --retry-connrefused \
+            --retry-delay 1 --max-time 5 --output /dev/null "$base/"
           docker cp "$container:/usr/bin/caddy" "$temp/caddy"
           docker cp "$container:/srv/." "$temp/dist/"
+          check_static() {
+            local route="$1" mime="$2" expected="$3" response
+            response=$(curl --fail --silent --show-error --max-time 5 \
+              --output "$temp/response" --write-out '%{http_code} %{content_type}' "$base$route")
+            test "${response%%;*}" = "200 $mime"
+            cmp "$expected" "$temp/response"
+          }
+          check_static / text/html "$temp/dist/index.html"
+          check_static /llms.txt text/plain frontend/public/llms.txt
+          check_static /sitemap.xml text/xml frontend/public/sitemap.xml
+          check_static /robots.txt text/plain frontend/public/robots.txt
           chmod +x "$temp/caddy"
           CADDY_BIN="$temp/caddy" DIST_DIR="$temp/dist" python3 scripts/check-discovery.py
