@@ -4,9 +4,19 @@ For the validation and discovery runtime, use the canonical [validation overlay 
 
 For read-only acceptance, require `/live`, `/health`, `/ready` and `/v1/demands` to describe the configured deployment. POST `{}` as JSON to `/v1/x402/validate` must return `400 INVALID_REQUEST`; unsupported deployment/network requests must fail closed. Probe the signer through its authenticated Unix socket without issuing a synthetic attestation for a live demand. Unpaid `/v1/insights` smoke must return 402 without payment proof. Wallet protocol actions are separate owner tests.
 
-Use both `compose.yaml` and `compose.validation.yaml` for every build, update, rollback, status, stop and down operation, retaining the same project/environment and host overrides. Follow the [lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop); their `up --force-recreate` recreates web, validator and observer together so both join the current web network namespace.
+## Reviewed shared VPS frontend release
 
-The reviewed VPS configuration uses the existing UFW hook for [persistent host egress](SELF_HOSTING.md#persistent-egress-on-the-reviewed-vps). Check current UFW status and `sudo nft list table bridge unmet_egress` before/after deployment, then verify required traffic and deny counters. Keep both pinned web addresses and exact internal exceptions. Do not manually reapply a namespace policy after normal recreation or reboot; retain the namespace fallback only in the reviewed emergency rollback.
+UNMET owns only Compose project `unmet`. Follow the host-owned activation manifest and overlay order documented in `/opt/unmet/deploy/README.md`. `prod-edge` owns public ports 80/443 and forwards UNMET requests to `127.0.0.1:18080`. HOROI and EVA have separate workloads behind `hackathon-gateway`.
+
+Build and inspect an immutable web release image from the exact reviewed commit first. Use the build configuration for the source checkout and public frontend inputs. Use the approved production activation configuration for the live service topology and pinned images. Render the latter before cutover to verify the five-service topology, loopback publish, application bridge, shared network namespace and existing API/signer/validation images. A historical or broad Compose command can resolve and still target the wrong runtime.
+
+Before activation, start the candidate separately with its default non-root user and actual Caddy entrypoint. Require traversable `/srv` directories, readable static files, HTTP 200 HTML at `/`, 200 plain text at `/llms.txt` and `/robots.txt`, and 200 XML at `/sitemap.xml`. Match the static response bytes to the build inputs and check docs, hashed assets and immutable cache headers.
+
+Use the explicit frontend activation allowlist `web validator observer` with `up -d --no-deps --no-build --pull never --force-recreate`. The validator and observer share web's network namespace and must join the replacement web namespace. Leave API, signer, prod-edge, hackathon-gateway, HOROI and EVA running with their existing container IDs. Never use project-wide `up`, `down`, or `--remove-orphans` for this release. After cutover repeat HTTP and health checks and compare IDs, image revisions and namespaces. If the application gate fails, activate the recorded known-good image/overlay with the same three-service allowlist.
+
+The reviewed VPS uses the existing UFW hook for [persistent host egress](SELF_HOSTING.md#persistent-egress-on-the-reviewed-vps). Verify the source selector, required paths and deny counters before and after release. Normal recreation uses the persistent host policy. A firewall change requires its own backup, validation and rollback.
+
+For local and independent self-host operations, follow the [generic lifecycle commands](SELF_HOSTING.md#update-rollback-and-stop).
 
 Leave an explicitly requested local preview running until its owner requests closure. Restart only task-owned services for outage probes and verify their health afterward. Never leave validator in the previous namespace after replacing web. Preserve persistent volumes and unrelated projects.
 
