@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { createMagicRingsFrameBudget } from './magic-rings-frame-budget';
 import './MagicRings.css';
 
 type MagicRingsProps = {
@@ -428,6 +429,7 @@ const MagicRings = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wakeRef = useRef<(() => void) | null>(null);
   const [generation, setGeneration] = useState(0);
+  const [staticFallback, setStaticFallback] = useState(false);
 
   const light = theme === 'light';
   const first = parseColor(color);
@@ -477,7 +479,7 @@ const MagicRings = ({
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
-    if (!container || !canvas) return;
+    if (staticFallback || !container || !canvas) return;
 
     const gl = canvas.getContext('webgl2', {
       alpha: true,
@@ -531,6 +533,18 @@ const MagicRings = ({
     let visible = true;
     let pageVisible = document.visibilityState !== 'hidden';
     let lost = false;
+    let stopped = false;
+
+    const pause = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      budget?.reset();
+    };
+    const budget = reduced ? undefined : createMagicRingsFrameBudget(() => {
+      stopped = true;
+      pause();
+      setStaticFallback(true);
+    });
 
     const resize = () => {
       const s = settingsRef.current;
@@ -539,6 +553,7 @@ const MagicRings = ({
       const width = Math.max(1, Math.round(rect.width * ratio));
       const height = Math.max(1, Math.round(rect.height * ratio));
       if (canvas.width !== width || canvas.height !== height) {
+        budget?.reset();
         canvas.width = width;
         canvas.height = height;
       }
@@ -747,11 +762,13 @@ const MagicRings = ({
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (SEGMENTS + 1) * 2, slots);
       gl.disable(gl.BLEND);
       gl.bindVertexArray(null);
+      if (s.speed > 0) budget?.frame();
+      else budget?.reset();
     };
 
     const frame = (now: number) => {
       raf = 0;
-      if (lost) return;
+      if (stopped || lost || !visible || !pageVisible) return;
       const s = settingsRef.current;
       const dt = clamp((now - last) / 1000 || 0, 0, 0.05);
       last = Math.max(last, now);
@@ -785,11 +802,11 @@ const MagicRings = ({
         Math.abs(spring.vx) + Math.abs(spring.vy) + Math.abs(spring.hoverVelocity) > 1e-4 ||
         Math.abs((pointer.inside ? 1 : 0) - spring.hover) > 1e-3;
       const busy = (s.speed > 0 && !reduced) || settling || bursts.length > 0 || introLive;
-      if (busy && visible && pageVisible) raf = requestAnimationFrame(frame);
+      if (busy && !stopped && visible && pageVisible) raf = requestAnimationFrame(frame);
     };
 
     const wake = () => {
-      if (raf || lost || !visible || !pageVisible) return;
+      if (raf || stopped || lost || !visible || !pageVisible) return;
       last = performance.now();
       raf = requestAnimationFrame(frame);
     };
@@ -858,8 +875,7 @@ const MagicRings = ({
     const onLost = (event: Event) => {
       event.preventDefault();
       lost = true;
-      cancelAnimationFrame(raf);
-      raf = 0;
+      pause();
     };
     const onRestored = () => setGeneration(value => value + 1);
     canvas.addEventListener('webglcontextlost', onLost);
@@ -873,13 +889,15 @@ const MagicRings = ({
 
     const intersection = new IntersectionObserver(entries => {
       visible = entries.some(entry => entry.isIntersecting);
-      wake();
+      if (visible) wake();
+      else pause();
     });
     intersection.observe(container);
 
     const onVisibility = () => {
       pageVisible = document.visibilityState !== 'hidden';
-      wake();
+      if (pageVisible) wake();
+      else pause();
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -888,6 +906,7 @@ const MagicRings = ({
 
     return () => {
       cancelAnimationFrame(raf);
+      budget?.dispose();
       wakeRef.current = null;
       resizeObserver.disconnect();
       intersection.disconnect();
@@ -908,11 +927,11 @@ const MagicRings = ({
         gl.deleteBuffer(stripBuffer);
       }
     };
-  }, [generation]);
+  }, [generation, staticFallback]);
 
   return (
-    <div ref={containerRef} className={`magic-rings${className ? ` ${className}` : ''}`} style={style}>
-      <canvas ref={canvasRef} className="magic-rings__canvas" aria-hidden="true" />
+    <div ref={containerRef} className={`magic-rings${staticFallback ? ' magic-rings--static' : ''}${className ? ` ${className}` : ''}`} style={style} aria-hidden="true">
+      {!staticFallback && <canvas ref={canvasRef} className="magic-rings__canvas" />}
     </div>
   );
 };
