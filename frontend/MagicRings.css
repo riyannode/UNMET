@@ -13,3 +13,25 @@
   height: 100%;
   pointer-events: none;
 }
+
+.magic-rings--static::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  --rings-ink: 91 140 50;
+  background: radial-gradient(circle closest-side,
+    transparent 105%,
+    rgb(var(--rings-ink) / 0.08) 119%,
+    rgb(var(--rings-ink) / 0.30) 121%,
+    rgb(var(--rings-ink) / 0.07) 122%,
+    transparent 130%,
+    rgb(var(--rings-ink) / 0.17) 136%,
+    transparent 138%,
+    rgb(var(--rings-ink) / 0.08) 151%,
+    transparent 153%);
+}
+
+[data-theme='dark'] .magic-rings--static::before {
+  --rings-ink: 163 201 106;
+}
