@@ -1,4 +1,4 @@
-import { durablePayment } from "./durable-payment.ts";
+import { durablePayment, type Facilitator } from "./durable-payment.ts";
 import { assertPublishedPaymentDiscovery } from "./payment-discovery.ts";
 import { insightsPaymentOptions, resolveX402PaymentConfig as resolvePaymentConfig } from "./payment-config.ts";
 export { insightsPaymentOptions } from "./payment-config.ts";
@@ -552,7 +552,7 @@ function requireFacilitatorCredentials() {
   return { apiKey, secretKey, passphrase };
 }
 
-function requirePaymentEnv() {
+function requirePaymentEnv(payment: ReturnType<typeof resolveX402PaymentConfig>) {
   const credentials = requireFacilitatorCredentials();
   const payToRaw = process.env.OKX_PAY_TO || process.env.PAY_TO_ADDRESS;
   if (!payToRaw) throw new Error("OKX_PAY_TO is required");
@@ -561,9 +561,8 @@ function requirePaymentEnv() {
     payTo = getAddress(payToRaw);
     if (/^0x0{40}$/i.test(payTo)) throw new Error();
   } catch { throw new Error("CONFIG_INVALID: OKX_PAY_TO"); }
-  const payment = resolveX402PaymentConfig();
   return {
-    ...credentials,
+    credentials,
     payTo,
     ...payment,
   };
@@ -598,8 +597,7 @@ async function initializePaymentStorage() {
   });
 }
 
-export function createOfficialFacilitator() {
-  const credentials = requireFacilitatorCredentials();
+export function createOfficialFacilitator(credentials = requireFacilitatorCredentials()): Facilitator {
   const facilitatorClient = new OKXFacilitatorClient({
     ...credentials,
     syncSettle: true,
@@ -615,15 +613,21 @@ export function createOfficialFacilitator() {
   };
 }
 
-export async function createPaymentMiddleware(): Promise<RequestHandler & { ready: () => Promise<void> }> {
+async function preparePayment() {
   const payment = resolveX402PaymentConfig();
   await assertPublishedPaymentDiscovery(payment);
+  const { credentials, ...pay } = requirePaymentEnv(payment);
   const store = await initializePaymentStorage();
-  const pay = requirePaymentEnv();
-  const boundedFacilitator = createOfficialFacilitator();
+  const boundedFacilitator = createOfficialFacilitator(credentials);
+  return { pay, store, boundedFacilitator };
+}
+
+export async function createPaymentMiddleware(prepared?: Awaited<ReturnType<typeof preparePayment>>): Promise<RequestHandler & { ready: () => Promise<void> }> {
+  const { pay, store, boundedFacilitator } = prepared ?? await preparePayment();
   const durable = store ? durablePayment(store, boundedFacilitator) : undefined;
   const resourceServer = new x402ResourceServer(durable?.client || boundedFacilitator).register(pay.network, new ExactEvmScheme());
   await resourceServer.initialize();
+  if (!resourceServer.getSupportedKind(2, pay.network, "exact")) throw new Error("PAYMENT_UNAVAILABLE");
 
   const middleware = paymentMiddleware({
     "POST /v1/insights": {
@@ -642,36 +646,39 @@ export async function createPaymentMiddleware(): Promise<RequestHandler & { read
   } });
 }
 
-let paymentMiddlewarePromise: ReturnType<typeof createPaymentMiddleware> | null = null;
-const lazyPaymentMiddleware: RequestHandler = (req, res, next) => {
-  if (!operations.paymentDbPath && (req.get("payment-signature") || req.get("x-payment"))) {
-    res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
-    return;
-  }
-  return initializedPayment().then((middleware) => {
-    if (req.aborted || res.destroyed) {
-      res.statusCode = 503;
-      res.end();
-      return;
-    }
-    return middleware(req, res, next);
-  }).catch(next);
-};
-
 type Payment = { middleware: RequestHandler; ready?: () => Promise<unknown> };
 
-let paymentRetryAt = 0;
-function initializedPayment() {
-  if (Date.now() < paymentRetryAt) return Promise.reject(new Error("PAYMENT_UNAVAILABLE"));
-  return paymentMiddlewarePromise ??= createPaymentMiddleware().catch((error: unknown) => {
-    paymentMiddlewarePromise = null;
-    paymentRetryAt = Date.now() + operations.dependencyCacheMs;
-    throw error;
-  });
+function lazyPayment(prepared?: Awaited<ReturnType<typeof preparePayment>>): Payment {
+  let promise: ReturnType<typeof createPaymentMiddleware> | null = null;
+  let retryAt = 0;
+  const initialized = () => {
+    if (Date.now() < retryAt) return Promise.reject(new PaymentError("PAYMENT_UNAVAILABLE"));
+    return promise ??= createPaymentMiddleware(prepared).catch(() => {
+      promise = null;
+      retryAt = Date.now() + operations.dependencyCacheMs;
+      throw new PaymentError("PAYMENT_UNAVAILABLE");
+    });
+  };
+  const middleware: RequestHandler = (req, res, next) => {
+    if (!operations.paymentDbPath && (req.get("payment-signature") || req.get("x-payment"))) {
+      res.status(503).json({ error: { code: "PAYMENT_STORAGE_UNAVAILABLE", message: "Payment service unavailable" } });
+      return;
+    }
+    return initialized().then((handler) => {
+      if (req.aborted || res.destroyed) {
+        res.statusCode = 503;
+        res.end();
+        return;
+      }
+      return handler(req, res, next);
+    }).catch(next);
+  };
+  return { middleware, ready: async () => { const handler = await initialized(); await handler.ready(); } };
 }
-const paymentReady = async () => { const middleware = await initializedPayment(); await middleware.ready(); };
 
-export function createApp(payment: Payment = { middleware: lazyPaymentMiddleware, ready: paymentReady }, options: {
+const defaultPayment = lazyPayment();
+
+export function createApp(payment: Payment = defaultPayment, options: {
   config?: OperationalConfig;
   client?: PublicClient;
   market?: ReturnType<typeof loadConfig>;
@@ -1000,9 +1007,8 @@ export default app;
 export async function startServer() {
   if (!cfg.deployment) throw new Error("CONFIG_INVALID: ESCROW_DEPLOYMENT");
   if (!operations.activityDbPath) throw new Error("CONFIG_INVALID: ACTIVITY_DB_PATH");
-  const pay = requirePaymentEnv();
   if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_ORIGIN?.trim()) throw new Error("CONFIG_INVALID: FRONTEND_ORIGIN");
-  const middleware = await createPaymentMiddleware();
+  const preparedPayment = await preparePayment();
   const discoveryConfig = loadDiscoveryConfig(process.env.DISCOVERY_CONFIG_PATH);
   const discovery = process.env.DISCOVERY_DB_PATH ? new (await import("./discovery-store.ts")).DiscoveryStore(process.env.DISCOVERY_DB_PATH) : undefined;
   const deployment = cfg.deployment;
@@ -1018,11 +1024,11 @@ export async function startServer() {
     const entry = demandIndex.entries.get(metadata.demandId);
     return !!entry && entry.data.status === 2 && entry.data.builder.toLowerCase() === metadata.builder && entry.data.serviceUrl === metadata.serviceUrl && entry.data.evidenceHash.toLowerCase() === metadata.evidenceHash;
   }, (record) => demandIndex.entryVersions.get(record.identity.slice(record.identity.lastIndexOf(":") + 1)) ?? 0) : undefined;
-  const application = createApp({ middleware, ready: middleware.ready }, { discovery, discoveryConfig, discoveryStartedAt: Date.now(), activity });
+  const application = createApp(lazyPayment(preparedPayment), { discovery, discoveryConfig, discoveryStartedAt: Date.now(), activity });
   const port = operations.port;
   const host = process.env.HOST || "0.0.0.0";
   const server = application.listen(port, host, () => {
-    log({ level: "info", event: "listen", host, port, chainId: cfg.chainId, contract: cfg.contract, paymentNetwork: pay.network });
+    log({ level: "info", event: "listen", host, port, chainId: cfg.chainId, contract: cfg.contract, paymentNetwork: preparedPayment.pay.network });
   });
   server.requestTimeout = 30_000;
   server.headersTimeout = 10_000;

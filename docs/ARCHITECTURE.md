@@ -160,6 +160,10 @@ The cache is never used as proof. API results include chain ID, contract and ind
 
 ## OKX x402 flow
 
+The owned insights offer uses one Mainnet billing profile: x402 v2 `exact` on `eip155:196`, with the three native EIP-3009 assets and fixed atomic amount. Configuration, native identity validation and independent receipt confirmation share this profile. The market deployment remains independent.
+
+Startup validates local payment configuration and published discovery, prepares the payment store and client, then binds without contacting the facilitator. The first `/ready` or valid insights request initializes OKX capabilities; concurrent requests share the attempt, and a later request after the failure cooldown retries. A successful initialization is cached and does not establish ongoing verify or settle availability.
+
 `POST /v1/insights` is the only paid route.
 
 ```text

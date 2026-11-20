@@ -1,4 +1,4 @@
-import { MAINNET_ASSETS } from "./payment-identity.ts";
+import { X_LAYER_MAINNET_PAYMENT_PROFILE } from "./payment-identity.ts";
 import { parseUnits6 } from "./contract.ts";
 import type { Address } from "viem";
 
@@ -13,18 +13,19 @@ type X402PaymentEnv = {
 export function resolveX402PaymentConfig(env: X402PaymentEnv = process.env, coreChainId = 1952) {
   if (env.RATE_OPPORTUNITIES !== undefined || env.OPPORTUNITY_PRICE !== undefined) throw new Error("CONFIG_INVALID: LEGACY_INSIGHTS_ENV");
   const isProduction = env.NODE_ENV === "production";
-  if (isProduction && env.X402_CHAIN_ID !== "196") {
+  if (isProduction && env.X402_CHAIN_ID !== String(X_LAYER_MAINNET_PAYMENT_PROFILE.chainId)) {
     throw new Error("X402_CHAIN_ID must be explicitly set to 196 in production");
   }
   const x402ChainId = env.X402_CHAIN_ID ?? String(coreChainId);
-  if (x402ChainId !== "1952" && x402ChainId !== "196") throw new Error("X402_CHAIN_ID must be 1952 or 196");
+  const isMainnet = x402ChainId === String(X_LAYER_MAINNET_PAYMENT_PROFILE.chainId);
+  if (x402ChainId !== "1952" && !isMainnet) throw new Error("X402_CHAIN_ID must be 1952 or 196");
   const priceRaw = env.INSIGHTS_PRICE || "0.01";
   if (!/^\d+(\.\d{1,6})?$/.test(priceRaw)) throw new Error("INSIGHTS_PRICE must be a decimal amount with <=6 decimals");
   const priceAmount = parseUnits6(priceRaw);
-  if (x402ChainId === "196" && priceAmount !== parseUnits6("0.01")) throw new Error("CONFIG_INVALID: INSIGHTS_PRICE");
+  if (isMainnet && priceAmount.toString() !== X_LAYER_MAINNET_PAYMENT_PROFILE.amount) throw new Error("CONFIG_INVALID: INSIGHTS_PRICE");
   return {
-    network: `eip155:${x402ChainId}` as `eip155:${number}`,
-    assets: x402ChainId === "196" ? MAINNET_ASSETS.map(({ asset, name, version }) => ({ asset, extra: { name, version } })) : null,
+    network: isMainnet ? X_LAYER_MAINNET_PAYMENT_PROFILE.network : `eip155:${x402ChainId}` as `eip155:${number}`,
+    assets: isMainnet ? X_LAYER_MAINNET_PAYMENT_PROFILE.assets.map(({ asset, name, version }) => ({ asset, extra: { name, version } })) : null,
     price: `$${priceRaw}`,
   };
 }

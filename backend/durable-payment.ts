@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { RequestHandler } from "express";
-import type { OKXFacilitatorClient } from "@okxweb3/x402-core";
+import type { PaymentPayload, PaymentRequirements, SupportedResponse, VerifyResponse, SettleResponse, SettleStatusResponse } from "@okxweb3/x402-core/types";
 import type { PaymentRecord, PaymentStore } from "./payment-store.ts";
 import { PaymentError } from "./payment-error.ts";
 import { authorizationFingerprint, paymentIdentity } from "./payment-identity.ts";
@@ -14,7 +14,12 @@ import {
 import { loadOperationalConfig } from "./config.ts";
 import { withBoundedFetchDeadline } from "./upstream.ts";
 
-type Facilitator = Pick<OKXFacilitatorClient, "getSupported" | "verify" | "settle" | "getSettleStatus">;
+export type Facilitator = {
+  getSupported(): Promise<SupportedResponse>;
+  verify(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse>;
+  settle(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse>;
+  getSettleStatus(hash: string): Promise<SettleStatusResponse>;
+};
 type Context = {
   method: string; route: string; input: unknown; key?: string;
   record?: PaymentRecord; failure?: PaymentError;

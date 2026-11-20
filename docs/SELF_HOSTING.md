@@ -263,7 +263,7 @@ Validation, rate limiting and admission precede official x402. Rejected inputs r
 
 - /live: cheap process liveness, no chain/payment call. Docker uses it to avoid restart loops on temporary RPC outages.
 - /health: preserves chain/contract verification and success fields, with short shared caching; checks chain ID, bytecode, immutable token, token decimals and latest block.
-- /ready: checks payment and activity storage readiness, then dependency health. It does not establish complete activity backfill, initiate payment or promise future verify/settle success. Chain outages appear after the dependency cache expires.
+- /ready: initializes the official facilitator if needed and checks payment and activity storage readiness, then dependency health. A failed initialization is retried by a later readiness or valid insights request after the dependency cooldown; successful initialization is cached. It does not establish complete activity backfill, initiate payment or promise future verify/settle success. Chain outages appear after the dependency cache expires.
 - The first data request warms the index under a single-flight promise. Readiness is dependency readiness, not proof a cold index fits its budget. Alert separately on INDEX_* failures.
 - Structured logs contain generated request IDs, registered method/route, status/duration and stable error codes. Application handlers omit raw bodies, payment headers, query strings and upstream exception text. The pinned official SDK lacks transport/log injection options: an async-local scope bounds its unchanged signed HTTP calls and replaces its warning/error diagnostics with a stable PAYMENT_SDK_DIAGNOSTIC record. Fetch and console calls outside that scope retain their original behavior.
 - Compose rotates JSON logs at 10 MiB, three files/container. The restart policy restarts exited containers; Docker does not automatically restart a merely unhealthy live process.
@@ -366,7 +366,7 @@ docker compose --env-file "$UNMET_ENV_FILE" -f compose.yaml -f compose.validatio
 | --- | --- |
 | Compose interpolation failure | Required fields and .env location; use config --quiet |
 | API exits before listening | Nonzero contract/token/payee, own OKX credentials, HTTP(S) RPC and production payment chain 196 |
-| PAYMENT_UNAVAILABLE/startup failure | Official facilitator credentials/network; initialization is bounded and lazy retries back off |
+| PAYMENT_UNAVAILABLE | Check official facilitator access and supported billing kind; initialization is bounded and retried by a later readiness or valid insights request after the cooldown. Invalid local configuration still fails startup. |
 | /live 200 but /ready or /health 503 | RPC quota, wrong chain, missing bytecode; liveness is not readiness |
 | INDEX_BUDGET_EXCEEDED/INDEX_CAPACITY | Cold-index cost, demand count, provider quota; tune measured bounds, never bypass completeness |
 | 429 | Shared-IP traffic/quota; respect Retry-After |

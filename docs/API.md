@@ -20,7 +20,7 @@ The public frontend serves the [OpenAPI 3.1 description](../frontend/public/open
 | `POST /v1/demands/prepare` | Free | Validate RFQ v1 and return an unsigned zero-native-value createDemand intent |
 | `POST /v1/insights` | $0.01, official x402 | Scoped ranks, score breakdown, economic signals and deterministic reasoning |
 
-`OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure or `ACTIVITY_STORAGE_UNAVAILABLE` for activity storage failure, then uses the same health result. It sends no payment and does not guarantee future settlement or index capacity.
+`OPTIONS` returns 204 with configured CORS headers. Unknown API routes return JSON 404. `/live` is a liveness probe, not evidence of dependency readiness. `/health` results are coalesced/cached for `DEPENDENCY_CACHE_MS` (default 5000). `/ready` returns 503 `PAYMENT_UNAVAILABLE` for payment initialization/storage failure or `ACTIVITY_STORAGE_UNAVAILABLE` for activity storage failure, then uses the same health result. A first `/ready` or valid insights request initializes the official facilitator after bind. Concurrent attempts are shared; a request after the failure cooldown retries. Initialization failure also returns 503 `PAYMENT_UNAVAILABLE` for valid insights requests. Readiness sends no payment and does not guarantee future verify/settle availability or index capacity.
 
 ## Standalone G0.2 validation runtime
 
