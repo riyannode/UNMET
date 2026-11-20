@@ -559,3 +559,103 @@ test("offline plan CLI emits eight ordered constructor arguments without credent
   expect(Object.keys(plan)).toEqual(["token", "treasury", "feeBps", "quorumBps", "minCommitment", "reviewPeriod", "verifier", "verifierAdmin"]);
   expect(Object.values(plan)).toEqual([fixtureToken, fixtureContract, "1", "5001", "2", "3600", fixtureContract, fixtureContract]);
 });
+
+test("real entrypoint binds during facilitator failure and recovers lazily", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "unmet-entrypoint-"));
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(join(dir, "credentials.json"), JSON.stringify({ OKX_API_KEY: "fixture", OKX_SECRET_KEY: "fixture", OKX_PASSPHRASE: "fixture" }));
+  writeFileSync(join(dir, "invalid.json"), "{");
+  const script = `
+    import { Server } from "node:http";
+    import { toFunctionSelector } from "viem";
+    const nativeFetch = globalThis.fetch;
+    let listener, supported = 0, transactions = 0, healthy = process.env.FIXTURE_MODE === "healthy";
+    const listen = Server.prototype.listen;
+    Server.prototype.listen = function(port, ...args) { listener = this; return listen.call(this, 0, ...args); };
+    const pad = (value) => "0x" + BigInt(value).toString(16).padStart(64, "0");
+    const token = "0x2222222222222222222222222222222222222222";
+    globalThis.fetch = async (input, init) => {
+      const req = new Request(input, init), url = new URL(req.url);
+      if (url.hostname === "market-fixture.invalid") {
+        const request = await req.json();
+        const respond = (item) => {
+          let result;
+          if (item.method === "eth_chainId") result = "0x7a0";
+          else if (item.method === "eth_getCode") result = "0x6000";
+          else if (item.method === "eth_blockNumber") result = "0x10";
+          else if (item.method === "eth_getLogs") result = [];
+          else if (item.method === "eth_getBlockByNumber") { const n = item.params[0] === "latest" ? "0x10" : item.params[0]; result = { number: n, hash: pad(n), parentHash: pad(0), timestamp: "0x66500000", transactions: [] }; }
+          else if (item.method === "eth_call") {
+            const selector = item.params[0].data.slice(0, 10);
+            result = selector === toFunctionSelector("token()") ? "0x" + token.slice(2).padStart(64, "0") : selector === toFunctionSelector("decimals()") ? pad(6) : selector === toFunctionSelector("nextDemandId()") ? pad(1) : pad(0);
+          } else throw Error("unexpected market method " + item.method);
+          return { jsonrpc: "2.0", id: item.id, result };
+        };
+        return Response.json(Array.isArray(request) ? request.map(respond) : respond(request));
+      }
+      if (url.hostname.includes("okx")) {
+        if (!url.pathname.includes("supported")) { transactions++; throw Error("unexpected payment request"); }
+        supported++;
+        await Bun.sleep(30);
+        if (!healthy && process.env.FIXTURE_MODE === "timeout") return new Promise((_resolve, reject) => req.signal.addEventListener("abort", () => reject(Error("aborted")), { once: true }));
+        if (!healthy && process.env.FIXTURE_MODE !== "wrong") return new Response("unavailable", { status: Number(process.env.FIXTURE_MODE) });
+        return Response.json({ kinds: [{ x402Version: 2, scheme: "exact", network: healthy ? "eip155:196" : "eip155:1952" }], extensions: [], signers: {} });
+      }
+      throw Error("unexpected upstream " + url.hostname);
+    };
+    await import("./start.ts");
+    if (process.env.EXPECT_START_FAILURE) {
+      if (listener || supported || process.exitCode !== 1) throw Error("invalid local configuration did not fail before bind");
+      process.exit(0);
+    }
+    if (!listener) throw Error("listener missing");
+    if (process.env.OKX_API_KEY || process.env.OKX_SECRET_KEY || process.env.OKX_PASSPHRASE) throw Error("credentials retained");
+    const url = "http://127.0.0.1:" + listener.address().port;
+    const get = (path) => nativeFetch(url + path);
+    const post = (headers = {}, signal) => nativeFetch(url + "/v1/insights", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}", signal });
+    const check = (condition, message) => { if (!condition) throw Error(message); };
+    check((await get("/live")).status === 200, "live");
+    check((await get("/health")).status === 200, "health");
+    check((await get("/v1/services")).status === 200, "services");
+    check(supported === 0, "early capability request");
+    if (!healthy) {
+    const controller = new AbortController();
+    const aborted = post({ "payment-signature": "fixture" }, controller.signal).catch(() => undefined);
+    const pending = Promise.all([get("/ready"), post(), post({ "payment-signature": "fixture" })]);
+    await Bun.sleep(10); controller.abort(); await aborted;
+    const first = await pending;
+    for (const response of first) { check(response.status === 503, "failure status"); check((await response.json()).error.code === "PAYMENT_UNAVAILABLE", "failure code"); check(!response.headers.get("payment-response"), "payment response"); }
+    check(supported === 1 && transactions === 0, "singleflight");
+    await get("/ready"); check(supported === 1, "cooldown");
+    healthy = true; await Bun.sleep(150);
+    }
+    const recovered = await Promise.all([get("/ready"), post()]);
+    check(recovered[0].status === 200 && recovered[1].status === 402, "recovery");
+    const required = JSON.parse(Buffer.from(recovered[1].headers.get("payment-required"), "base64").toString());
+    check(required.x402Version === 2 && required.accepts.length === 3, "offer");
+    check(required.accepts.every((entry) => entry.network === "eip155:196" && entry.scheme === "exact" && entry.amount === "10000" && entry.payTo.toLowerCase() === "0x5555555555555555555555555555555555555555"), "offer terms");
+    check(required.accepts.map((entry) => entry.asset.toLowerCase()).join(",") === ["0x779ded0c9e1022225f8e0630b35a9b54be713736", "0xb6ceceab302e2e4948951ee7843fc24e92933061", "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8"].join(","), "offer order");
+    check((await post()).status === 402, "cached challenge");
+    check(supported === (process.env.FIXTURE_MODE === "healthy" ? 1 : 2) && transactions === 0, "recovery count");
+    process.kill(process.pid, "SIGTERM");
+  `;
+  const env = { PATH: process.env.PATH, NODE_ENV: "production", HOST: "127.0.0.1", PORT: "8787", CHAIN_ID: "1952", X402_CHAIN_ID: "196", XLAYER_RPC_URL: "http://market-fixture.invalid", X402_RPC_URL: "http://billing-fixture.invalid", DEMAND_CONTRACT: "0x1111111111111111111111111111111111111111", DEMAND_DEPLOY_BLOCK: "1", PAYMENT_TOKEN: "0x2222222222222222222222222222222222222222", PAYMENT_TOKEN_DECIMALS: "6", FRONTEND_ORIGIN: "http://127.0.0.1:8787", OKX_PAY_TO: "0x5555555555555555555555555555555555555555", OKX_CREDENTIALS_PATH: join(dir, "credentials.json"), PAYMENT_DB_PATH: join(dir, "payment.sqlite"), ACTIVITY_DB_PATH: join(dir, "activity.sqlite"), FACILITATOR_TIMEOUT_MS: "160", DEPENDENCY_CACHE_MS: "100", RATE_INSIGHTS: "100" };
+  try {
+    const invalidCases = [
+      { OKX_PAY_TO: "invalid" }, { INSIGHTS_PRICE: "0.02" }, { OKX_CREDENTIALS_PATH: join(dir, "invalid.json") },
+      { NODE_ENV: "development", X402_CHAIN_ID: "1952" }, { PAYMENT_DB_PATH: dir },
+    ];
+    for (const [index, invalid] of invalidCases.entries()) {
+      const db = join(dir, "invalid-" + index + ".sqlite");
+      const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], { cwd: new URL(".", import.meta.url).pathname, env: { ...env, PAYMENT_DB_PATH: db, ...invalid, EXPECT_START_FAILURE: "1" }, stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      expect({ index, code, output: code ? stdout + stderr : "" }).toEqual({ index, code: 0, output: "" });
+      if (index < 4) expect(Bun.file(db).size).toBe(0);
+    }
+    for (const mode of ["401", "503", "timeout", "wrong", "healthy"]) {
+      const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], { cwd: new URL(".", import.meta.url).pathname, env: { ...env, FIXTURE_MODE: mode }, stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      expect({ mode, code, output: code ? stdout + stderr : "" }).toEqual({ mode, code: 0, output: "" });
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}, 15000);

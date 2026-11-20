@@ -8,6 +8,7 @@ export const MAINNET_ASSETS = [
   { asset: "0xb6ceceab302e2e4948951ee7843fc24e92933061", name: "USDC", version: "2" },
   { asset: "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", name: "Global Dollar", version: "1" },
 ] as const;
+export const X_LAYER_MAINNET_PAYMENT_PROFILE = { chainId: 196, network: "eip155:196", amount: "10000", assets: MAINNET_ASSETS } as const;
 const testnetAsset = "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c";
 
 export function canonical(value: unknown): string {
@@ -45,7 +46,7 @@ export function validateNativePayment(payload: PaymentPayload, requirements: Pay
   const fields = object(payload.payload), accepted = object(payload.accepted);
   const extra = object(requirements.extra ?? {}), buyerExtra = object(accepted.extra ?? {});
   const asset = address(requirements.asset);
-  const supported = MAINNET_ASSETS.find((entry) => entry.asset === asset);
+  const supported = X_LAYER_MAINNET_PAYMENT_PROFILE.assets.find((entry) => entry.asset === asset);
   const extraMatches = (value: Record<string, unknown>) => Object.entries(value).every(([key, item]) =>
     key === "assetTransferMethod" ? item === "eip3009" : (key === "name" || key === "version") && item === extra[key]) &&
     value.name === extra.name && value.version === extra.version;
@@ -53,9 +54,9 @@ export function validateNativePayment(payload: PaymentPayload, requirements: Pay
     accepted.scheme !== requirements.scheme || accepted.network !== requirements.network ||
     address(accepted.asset) !== asset || accepted.amount !== requirements.amount ||
     address(accepted.payTo) !== address(requirements.payTo) || !extraMatches(extra) || !extraMatches(buyerExtra) ||
-    requirements.network === "eip155:196" && (!supported || requirements.amount !== "10000" || extra.name !== supported.name || extra.version !== supported.version) ||
+    requirements.network === X_LAYER_MAINNET_PAYMENT_PROFILE.network && (!supported || requirements.amount !== X_LAYER_MAINNET_PAYMENT_PROFILE.amount || extra.name !== supported.name || extra.version !== supported.version) ||
     requirements.network === "eip155:1952" && asset !== testnetAsset ||
-    !["eip155:196", "eip155:1952"].includes(requirements.network)) {
+    ![X_LAYER_MAINNET_PAYMENT_PROFILE.network, "eip155:1952"].includes(requirements.network)) {
     throw new PaymentError("PAYMENT_IDENTITY_UNSUPPORTED", 400);
   }
 }

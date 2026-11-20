@@ -2,12 +2,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createPublicClient, decodeEventLog, decodeFunctionData, http, type PublicClient } from "viem";
 import { eip3009ABI } from "@okxweb3/x402-evm";
 import type { PaymentRecord } from "./payment-store.ts";
-import { fingerprint } from "./payment-identity.ts";
+import { fingerprint, X_LAYER_MAINNET_PAYMENT_PROFILE } from "./payment-identity.ts";
 import { createBoundedFetch, withBoundedFetch } from "./upstream.ts";
 import { loadOperationalConfig } from "./config.ts";
-import { MAINNET_ASSETS } from "./payment-identity.ts";
 
-const tokens = new Set<string>(MAINNET_ASSETS.map(({ asset }) => asset));
+const tokens = new Set<string>(X_LAYER_MAINNET_PAYMENT_PROFILE.assets.map(({ asset }) => asset));
 const directTransactionTypes = new Set(["legacy", "eip2930", "eip1559"]);
 type ConfirmationReadStage = "chain_id" | "transaction" | "receipt" | "block";
 const confirmationSignal = new AsyncLocalStorage<AbortSignal>();
@@ -82,8 +81,8 @@ const eventAbi = [
 ] as const;
 
 export async function confirmPayment(record: PaymentRecord, client: PublicClient): Promise<boolean> {
-  if (!record.txHash || record.network !== "eip155:196") return false;
-  if (await read("chain_id", () => client.getChainId()) !== 196) return false;
+  if (!record.txHash || record.network !== X_LAYER_MAINNET_PAYMENT_PROFILE.network) return false;
+  if (await read("chain_id", () => client.getChainId()) !== X_LAYER_MAINNET_PAYMENT_PROFILE.chainId) return false;
   const hash = record.txHash as `0x${string}`;
   const [txRead, receiptRead] = await Promise.allSettled([
     read("transaction", () => client.getTransaction({ hash })),
@@ -96,7 +95,7 @@ export async function confirmPayment(record: PaymentRecord, client: PublicClient
   if (!receipt) throw new PaymentConfirmationUnavailable("receipt");
   if (receipt.status !== "success" || receipt.transactionHash.toLowerCase() !== hash.toLowerCase() ||
     tx.hash.toLowerCase() !== hash.toLowerCase() || !directTransactionTypes.has(tx.type) ||
-    tx.chainId !== undefined && tx.chainId !== 196 || tx.blockNumber === null || tx.blockHash === null ||
+    tx.chainId !== undefined && tx.chainId !== X_LAYER_MAINNET_PAYMENT_PROFILE.chainId || tx.blockNumber === null || tx.blockHash === null ||
     receipt.blockNumber !== tx.blockNumber || receipt.blockHash?.toLowerCase() !== tx.blockHash.toLowerCase() ||
     receipt.transactionIndex !== tx.transactionIndex || receipt.to?.toLowerCase() !== tx.to?.toLowerCase() ||
     receipt.from.toLowerCase() !== tx.from.toLowerCase() || !tx.to || !tokens.has(tx.to.toLowerCase())) return false;

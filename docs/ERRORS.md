@@ -81,7 +81,7 @@ Canonical recovery reference for API, durable payment, wallet and contract error
 | `INDEX_BUDGET_EXCEEDED` | 503; refresh deadline/window bound | Check RPC latency/budget |
 | `INDEX_REORG` | 503; pinned block changed | Retry; previous checkpoint remains intact |
 | `INDEX_DEPLOYMENT_MISMATCH` | 503; checkpoint belongs to another chain or contract | Initialize a fresh disposable index for the selected deployment |
-| `PAYMENT_UNAVAILABLE` | 503 readiness | Check official facilitator initialization |
+| `PAYMENT_UNAVAILABLE` | 503 readiness or valid insights request | Check official facilitator initialization and supported billing kind. A later readiness or valid insights request retries after the dependency cooldown. |
 | `CONFIG_INVALID: PAYMENT_DISCOVERY` | Startup/readiness failure | Synchronize `frontend/public/openapi.json` with the configured `X402_CHAIN_ID` and `INSIGHTS_PRICE` using `bun run sync:payment-discovery`, then run `bun run check:payment-discovery`. |
 | `CONFIG_INVALID` | Startup failure | Correct the named environment field |
 | `STARTUP_UNAVAILABLE` | Nonzero startup exit | Verify required config/dependencies |
